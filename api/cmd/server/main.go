@@ -1,9 +1,12 @@
 package main
 
 import (
+	"github.com/ndquang191/Anochat/api/pkg/database"
 	"log"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -21,6 +24,19 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
+	// Initialize database
+	if err := database.InitDatabase(); err != nil {
+		slog.Error("Failed to initialize database", "error", err)
+		os.Exit(1)
+	}
+	defer database.CloseDatabase()
+
+	// Run database migrations
+	if err := database.RunMigrations(); err != nil {
+		slog.Error("Failed to run migrations", "error", err)
+		os.Exit(1)
+	}
+
 	// Get port from environment
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -36,16 +52,34 @@ func main() {
 
 	// Health check endpoint
 	router.GET("/healthz", func(c *gin.Context) {
+		// Check database health
+		if err := database.HealthCheck(); err != nil {
+			c.JSON(503, gin.H{
+				"status": "error",
+				"message": "Database connection failed",
+				"error": err.Error(),
+			})
+			return
+		}
+
 		c.JSON(200, gin.H{
 			"status": "ok",
 			"message": "Anonymous Chat API is running",
+			"database": "connected",
 		})
 	})
 
-	// Start server
-	slog.Info("Starting server", "port", port)
-	if err := router.Run(":" + port); err != nil {
-		slog.Error("Failed to start server", "error", err)
-		os.Exit(1)
-	}
+	// Graceful shutdown
+	go func() {
+		slog.Info("Starting server", "port", port)
+		if err := router.Run(":" + port); err != nil {
+			slog.Error("Failed to start server", "error", err)
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	slog.Info("Shutting down server...")
 }
