@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { UserSettingsDialog } from "@/components/user-settings-dialog";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/auth";
 
 // Mock user data
 const mockUser = {
@@ -37,28 +38,43 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 	const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
 	const [userData, setUserData] = React.useState(mockUser);
 	const router = useRouter();
+	const { logout } = useAuth();
 
 	const handleLogout = async () => {
-		// Placeholder for future logout implementation
-		console.log("Logout functionality will be implemented here");
+		console.log("Logging out...");
+		await logout();
+		console.log("Logout completed, redirecting to login");
 		router.push("/login");
 	};
 
 	// Helper function to display gender in Vietnamese
 	const getGenderDisplay = (genderValue: string) => {
 		switch (genderValue) {
-			case 'male': return 'Nam';
-			case 'female': return 'Nữ';
-			case 'other': return 'Khác';
-			default: return 'Khác';
+			case "male":
+				return "Nam";
+			case "female":
+				return "Nữ";
+			case "other":
+				return "Khác";
+			default:
+				return "Khác";
 		}
 	};
 
-	const handleSaveSettings = async (newSettings: typeof userData) => {
-		// Update local state
-		setUserData(newSettings);
+	const handleSaveSettings = async (newSettings: {
+		name: string;
+		nickname: string;
+		gender: string;
+		address: string;
+		isVisible: boolean;
+	}) => {
+		// Update local state with new settings while preserving id and email
+		setUserData((prev) => ({
+			...prev,
+			...newSettings,
+		}));
 		setIsSettingsOpen(false);
-		
+
 		// Placeholder for future settings save implementation
 		console.log("Settings save functionality will be implemented here", newSettings);
 	};
@@ -76,7 +92,9 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 								{state === "expanded" && (
 									<>
 										<span className="text-sm text-muted-foreground">
-											{userData.address !== "---" ? `${getGenderDisplay(userData.gender)}, ${userData.address}` : getGenderDisplay(userData.gender)}
+											{userData.address !== "---"
+												? `${getGenderDisplay(userData.gender)}, ${userData.address}`
+												: getGenderDisplay(userData.gender)}
 										</span>
 										<div className="flex items-center gap-2 mt-2">
 											<Switch

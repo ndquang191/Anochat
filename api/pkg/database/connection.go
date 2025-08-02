@@ -1,10 +1,11 @@
 package database
 
 import (
+	"fmt"
 	"log/slog"
-	"os"
 	"time"
 
+	"github.com/ndquang191/Anochat/api/pkg/config"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -14,22 +15,29 @@ var DB *gorm.DB
 
 // InitDatabase initializes the database connection using GORM
 func InitDatabase() error {
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		slog.Error("DATABASE_URL environment variable is not set")
-		return ErrDatabaseURLMissing
+	// Load configuration
+	cfg := config.Load()
+
+	// Check if required database configuration is set
+	if cfg.Database.Host == "" || cfg.Database.Port == "" || cfg.Database.User == "" || cfg.Database.Password == "" || cfg.Database.Name == "" {
+		slog.Error("Required database environment variables are not set")
+		return ErrDatabaseConfigMissing
 	}
+
+	// Build PostgreSQL DSN (Data Source Name)
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=UTC",
+		cfg.Database.Host, cfg.Database.Port, cfg.Database.User, cfg.Database.Password, cfg.Database.Name, cfg.Database.SSLMode)
 
 	// Configure GORM logger
 	var gormLogger logger.Interface
-	if os.Getenv("ENV") == "production" {
+	if cfg.IsProduction() {
 		gormLogger = logger.Default.LogMode(logger.Silent)
 	} else {
-		gormLogger = logger.Default.LogMode(logger.Info)
+		gormLogger = logger.Default.LogMode(logger.Warn) // Giảm log level
 	}
 
 	// Open database connection
-	db, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: gormLogger,
 		NowFunc: func() time.Time {
 			return time.Now().UTC()
@@ -48,9 +56,9 @@ func InitDatabase() error {
 	}
 
 	// Configure connection pool
-	sqlDB.SetMaxOpenConns(30)                 // Maximum number of open connections
-	sqlDB.SetMaxIdleConns(5)                  // Maximum number of idle connections
-	sqlDB.SetConnMaxLifetime(time.Hour)       // Maximum connection lifetime
+	sqlDB.SetMaxOpenConns(30)                  // Maximum number of open connections
+	sqlDB.SetMaxIdleConns(5)                   // Maximum number of idle connections
+	sqlDB.SetConnMaxLifetime(time.Hour)        // Maximum connection lifetime
 	sqlDB.SetConnMaxIdleTime(30 * time.Minute) // Maximum connection idle time
 
 	// Test the connection
@@ -60,7 +68,10 @@ func InitDatabase() error {
 	}
 
 	DB = db
-	slog.Info("Database connection established successfully")
+	slog.Info("Database connection established successfully",
+		"host", cfg.Database.Host,
+		"port", cfg.Database.Port,
+		"database", cfg.Database.Name)
 	return nil
 }
 

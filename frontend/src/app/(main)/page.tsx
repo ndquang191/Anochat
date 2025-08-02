@@ -1,3 +1,5 @@
+"use client";
+
 import Chatbox from "@/components/chat-box";
 
 const Page = () => {

@@ -1,17 +1,21 @@
 "use client";
 import React from "react";
 import { Loader2, RotateCw, X } from "lucide-react";
-import { useConnection } from "@/hooks/use-connection";
 
 function ConnectDisconnectButton() {
-	const { isConnected, isConnecting, connect, disconnect } = useConnection();
-
+	const [isConnected, setIsConnected] = React.useState(false);
+	const [isConnecting, setIsConnecting] = React.useState(false);
 
 	const handleClick = () => {
 		if (isConnected) {
-			disconnect();
+			setIsConnected(false);
 		} else if (!isConnecting) {
-			connect();
+			setIsConnecting(true);
+			// Simulate connection
+			setTimeout(() => {
+				setIsConnecting(false);
+				setIsConnected(true);
+			}, 2000);
 		}
 	};
 

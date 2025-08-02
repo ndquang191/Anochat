@@ -1,0 +1,85 @@
+package handler
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/ndquang191/Anochat/api/internal/service"
+	"golang.org/x/oauth2"
+)
+
+// AuthHandler handles authentication endpoints
+type AuthHandler struct {
+	authService *service.AuthService
+	oauthConfig *oauth2.Config
+}
+
+// NewAuthHandler creates a new auth handler
+func NewAuthHandler(authService *service.AuthService, oauthConfig *oauth2.Config) *AuthHandler {
+	return &AuthHandler{
+		authService: authService,
+		oauthConfig: oauthConfig,
+	}
+}
+
+// GoogleLogin redirects to Google OAuth
+func (h *AuthHandler) GoogleLogin(c *gin.Context) {
+	url := h.oauthConfig.AuthCodeURL("random-state")
+	c.Redirect(http.StatusTemporaryRedirect, url)
+}
+
+// GoogleCallback handles OAuth callback and returns JWT token
+func (h *AuthHandler) GoogleCallback(c *gin.Context) {
+	// Get authorization code from query params
+	code := c.Query("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Authorization code required"})
+		return
+	}
+
+	// Process OAuth callback
+	user, jwtToken, err := h.authService.ProcessOAuthCallback(c.Request.Context(), code)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Debug: Log the new approach
+	fmt.Printf("DEBUG: Setting JWT token in HTTP-only cookie and user data in temp cookie\n")
+	fmt.Printf("DEBUG: User ID: %s, Email: %s, Name: %s\n", user.ID, *user.Email, *user.Name)
+
+	// Set JWT token in HTTP-only cookie
+	c.SetCookie("jwt_token", jwtToken, 3600*24*7, "/", "", false, true) // 7 days, HTTP-only, no domain restriction
+
+	// Create user data for frontend
+	userData := gin.H{
+		"id":         user.ID,
+		"email":      *user.Email,
+		"name":       *user.Name,
+		"avatar_url": *user.AvatarURL,
+	}
+
+	// Set user data in a temporary cookie (will be cleared by frontend)
+	userDataJSON, _ := json.Marshal(userData)
+	c.SetCookie("temp_user_data", string(userDataJSON), 60, "/", "", false, false) // 1 minute, not HTTP-only, no domain restriction
+
+	// Debug: Log redirect
+	fmt.Printf("DEBUG: Redirecting to frontend callback page\n")
+
+	// Redirect to frontend callback page
+	frontendURL := "http://localhost:3000/callback"
+	c.Redirect(http.StatusTemporaryRedirect, frontendURL)
+}
+
+// Logout clears the JWT token cookie
+func (h *AuthHandler) Logout(c *gin.Context) {
+	// Clear JWT token cookie by setting it to expire immediately
+	c.SetCookie("jwt_token", "", -1, "/", "", false, true)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Logged out successfully",
+	})
+}

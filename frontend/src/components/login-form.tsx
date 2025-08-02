@@ -11,14 +11,14 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
 	const handleSocialLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
 		setIsLoading(true);
-		
-		// Placeholder for future authentication implementation
-		console.log("Login functionality will be implemented here");
-		
-		// Simulate loading
-		setTimeout(() => {
+
+		try {
+			// Redirect to backend OAuth endpoint
+			window.location.href = "http://localhost:8080/auth/google";
+		} catch (error) {
+			console.error("Login error:", error);
 			setIsLoading(false);
-		}, 1000);
+		}
 	};
 
 	return (

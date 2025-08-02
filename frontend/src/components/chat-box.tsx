@@ -4,7 +4,6 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useConnection } from "@/hooks/use-connection";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface Message {
@@ -29,7 +28,6 @@ const INITIAL_MESSAGES: Message[] = [
 ];
 
 export default function ChatBox() {
-	const { isConnected, isConnecting } = useConnection();
 	const [messages, setMessages] = React.useState<Message[]>(INITIAL_MESSAGES);
 	const [tips, setTips] = React.useState<Tip[]>([]);
 	const [inputMessage, setInputMessage] = React.useState("");
@@ -80,24 +78,6 @@ export default function ChatBox() {
 		},
 		[inputMessage, messages.length]
 	);
-
-	if (isConnecting) {
-		return (
-			<div className="flex flex-col bg-card text-card-foreground shadow-sm h-full p-4 gap-4">
-				<div className="text-lg font-semibold text-center">Đang kết nối...</div>
-			</div>
-		);
-	}
-
-	if (!isConnected) {
-		return (
-			<div className="flex items-center justify-center h-full bg-card text-card-foreground">
-				<div className="text-center">
-					<p className="text-muted-foreground">Chưa kết nối với người trò chuyện</p>
-				</div>
-			</div>
-		);
-	}
 
 	return (
 		<div className="flex flex-col bg-card text-card-foreground shadow-sm h-full relative">
