@@ -1,109 +1,124 @@
-✅ 1. Auth – Đăng nhập
-Method	Route	Mô tả
-GET	/auth/google	Redirect đến Google OAuth
-GET	/auth/callback	Nhận code và xử lý login
+# API Documentation
 
-✅ 2. User & Profile
-Method	Route	Mô tả
-GET	/user	Lấy thông tin người dùng hiện tại
-GET	/profile/:user_id	Lấy profile ẩn danh của người khác
-PUT	/profile	Cập nhật profile ẩn danh người dùng
+## Base URL
 
-✅ 3. Room & Chat
-Method	Route	Mô tả
-POST	/room	Tạo phòng khi ghép đôi thành công (WebSocket gọi nội bộ cũng được)
-PUT	/room/leave	Người dùng rời khỏi phòng
-PUT	/room/update	Cập nhật trạng thái phòng (VD: có lưu message không)
+```
+http://localhost:8080
+```
 
-✅ 4. Message
-Method	Route	Mô tả
-POST	/message	Lưu tin nhắn mới
-PUT	/message/seen	Cập nhật trạng thái đã xem (tuỳ chọn)
+## Authentication
 
-✅ 5. WebSocket
-Không cần REST, nhưng nên tài liệu rõ endpoint WebSocket:
+### Google OAuth Flow
 
-ws://host/ws (gửi JWT khi kết nối)
+1. **GET** `/auth/google` - Redirect to Google OAuth
+2. **GET** `/auth/callback` - OAuth callback (handled by backend)
+3. **POST** `/auth/logout` - Logout and clear cookies
 
-Tin nhắn gửi qua socket: send_message, leave_room, v.v.
+### Authentication Method
 
-✅ 6. Health / Internal
-Method	Route	Mô tả
-GET	/healthz	Kiểm tra server còn sống không
+-   Uses HTTP-only cookies for JWT token storage
+-   Frontend includes `credentials: "include"` in requests
+-   No need for Authorization header in most cases
 
-🔍 Bạn có thể thêm:
-API	Giải thích
-GET /room	Lấy room hiện tại (nếu user đang chat)
-GET /room/history/:room_id	Xem lại lịch sử tin nhắn (nếu là room sensitive)
+## Protected Endpoints
 
-Nếu bạn cần mình viết luôn bản Swagger mô tả các API trên (dưới dạng comment Go), chỉ cần nói nhé.
+### User State
 
+**GET** `/user/state`
 
+Returns current user state including profile information.
 
+**Response:**
 
+```json
+{
+	"user": {
+		"id": "uuid",
+		"email": "user@example.com",
+		"name": "User Name",
+		"avatar_url": "https://...",
+		"profile": {
+			"age": 25,
+			"city": "Ho Chi Minh City",
+			"is_male": true,
+			"is_hidden": false
+		}
+	},
+	"room": null,
+	"messages": null,
+	"is_new_user": false
+}
+```
 
+### Update Profile
 
+**PUT** `/profile`
 
+Update user profile information.
 
-You said:
-tạo 1 phiên bản markdown trước để tôi lưu lại
+**Request Body:**
 
+```json
+{
+	"age": 25, // optional, number
+	"city": "Hanoi", // optional, string
+	"is_male": true, // optional, boolean
+	"is_hidden": false // optional, boolean
+}
+```
 
-ChatGPT said:
-Dưới đây là phiên bản tài liệu API cho app chat ẩn danh của bạn, viết dưới dạng Markdown, chưa có phần chi tiết input/output – chỉ là mô tả sơ bộ để bạn lưu lại:
+**Response:**
 
-📘 Anonymous Chat App – API Specification
-Dành cho backend Golang (Gin), dùng Google OAuth2 và WebSocket.
+```json
+{
+	"message": "Profile updated successfully",
+	"profile": {
+		"age": 25,
+		"city": "Hanoi",
+		"is_male": true,
+		"is_hidden": false
+	}
+}
+```
 
-🔐 1. Authentication
-Method	Endpoint	Mô tả
-GET	/auth/google	Chuyển hướng đến Google OAuth
-GET	/auth/callback	Nhận mã từ Google, xử lý đăng nhập
+## Health Check
 
-🙍 2. User & Profile
-Method	Endpoint	Mô tả
-GET	/user	Lấy thông tin người dùng hiện tại
-GET	/profile/:user_id	Lấy profile ẩn danh của người khác
-PUT	/profile	Cập nhật profile ẩn danh của chính mình
+**GET** `/healthz`
 
-💬 3. Room Management
-Method	Endpoint	Mô tả
-POST	/room	Tạo room khi ghép đôi thành công
-PUT	/room/leave	Người dùng rời khỏi phòng
-PUT	/room/update	Cập nhật room (đánh dấu lưu message nếu nhạy cảm)
-GET	/room	Lấy room hiện tại của người dùng (nếu có)
-GET	/room/history/:id	Lấy lịch sử tin nhắn của room (nếu là sensitive)
+Returns server health status.
 
-✉️ 4. Message
-Method	Endpoint	Mô tả
-POST	/message	Lưu tin nhắn mới
-PUT	/message/seen	Cập nhật trạng thái đã xem (optional)
+**Response:**
 
-🔌 5. WebSocket
-Endpoint	Mô tả
-ws://host/ws	WebSocket endpoint, gửi token JWT khi kết nối
+```json
+{
+	"status": "ok",
+	"message": "Anonymous Chat API is running",
+	"database": "connected"
+}
+```
 
-Sự kiện WebSocket có thể bao gồm:
+## Error Responses
 
-send_message
+### Unauthorized (401)
 
-receive_message
+```json
+{
+	"error": "Authorization required"
+}
+```
 
-partner_left
+### Bad Request (400)
 
-you_matched
+```json
+{
+	"error": "Invalid request body"
+}
+```
 
-room_closed
+### Internal Server Error (500)
 
-🧪 6. Health Check
-Method	Endpoint	Mô tả
-GET	/healthz	Kiểm tra server còn sống
-
-📌 Notes
-Tất cả các endpoint yêu cầu JWT trừ /auth/*
-
-Hệ thống ghép đôi, queue xử lý bằng WebSocket + RAM
-
-Tất cả các route đều tuân thủ RESTful design
-
-Bạn có thể paste file này vào GitHub README hoặc Notion để quản lý tài liệu. Nếu cần mình thêm phần Request / Response mẫu sau này thì cứ nói nhé.
+```json
+{
+	"error": "Error message"
+}
+```

@@ -41,55 +41,73 @@
 // message.go - Message storage/retrieval ✅
 ```
 
-## Phase 3: Authentication
+## Phase 3: Authentication ✅ HOÀN THÀNH (95%)
 
-#### 3.1 Google OAuth (internal/service/auth.go)
-
-```go
-// OAuth2 configuration
-// Token exchange logic
-// JWT generation/validation
-```
-
-#### 3.2 Auth Middleware (internal/middleware/auth.go)
+#### 3.1 Google OAuth (internal/service/auth.go) ✅
 
 ```go
-// JWT validation middleware
-// User context injection
+// OAuth2 configuration ✅
+// Token exchange logic ✅
+// JWT generation/validation ✅
+// Google user info retrieval ✅
+// User creation/login logic ✅
 ```
 
-#### 3.3 Auth Handlers (internal/handler/auth.go)
+#### 3.2 Auth Middleware (internal/middleware/auth.go) ✅
 
 ```go
-// GET /auth/google
-// GET /auth/callback
+// JWT validation middleware ✅
+// User context injection ✅
+// Bearer token support ✅
+// Cookie token support ✅
 ```
 
-## Phase 4: User Management
+#### 3.3 Auth Handlers (internal/handler/auth.go) ✅
+
+```go
+// GET /auth/google ✅
+// GET /auth/callback ✅
+// POST /auth/logout ✅ (bonus)
+```
+
+#### 3.4 Cần bổ sung (5%):
+
+```go
+// State parameter validation (security)
+// Enhanced error handling (robustness)
+// Token refresh endpoint (optional)
+// Rate limiting cho auth endpoints (security)
+```
+
+## Phase 4: User Management ✅ HOÀN THÀNH
 
 #### 4.1 User Services (internal/service/user.go) ✅ HOÀN THÀNH
 
 ```go
 // Profile CRUD operations ✅
 // Privacy settings logic ✅
+// User state management ✅
+// Active room detection ✅
 ```
 
-#### 4.2 User Handlers (internal/handler/user.go)
+#### 4.2 User Handlers (internal/handler/user.go) ✅ HOÀN THÀNH
 
 ```go
-// GET /user - Current user info
-// GET /profile/:user_id - Get partner profile
-// PUT /profile - Update own profile
+// GET /user/state - Current user info ✅
+// PUT /profile - Update own profile ✅
+// Note: GET /profile/:user_id removed (privacy concern)
 ```
 
-## Phase 5: Matchmaking System
+## Phase 5: Matchmaking System ✅ HOÀN THÀNH
 
-#### 5.1 Queue Service (internal/service/queue.go)
+#### 5.1 Queue Service (internal/service/queue.go) ✅ HOÀN THÀNH
 
 ```go
-// In-memory queue management
-// Matching algorithm (opposite gender + same category)
-// Queue timeout handling
+// In-memory queue management ✅
+// Matching algorithm (opposite gender + same category) ✅
+// Queue timeout handling ✅
+// Queue cleanup goroutine ✅
+// Queue statistics ✅
 ```
 
 #### 5.2 Room Service (internal/service/room.go) ✅ HOÀN THÀNH
@@ -100,12 +118,14 @@
 // Sensitive keyword detection ✅
 ```
 
-#### 5.3 Queue Handlers
+#### 5.3 Queue Handlers (internal/handler/queue.go) ✅ HOÀN THÀNH
 
 ```go
-// POST /queue/join
-// DELETE /queue/leave
-// GET /queue/status
+// POST /queue/join ✅
+// DELETE /queue/leave ✅
+// GET /queue/status ✅
+// GET /queue/wait ✅ (long polling)
+// GET /queue/stats ✅ (admin endpoint)
 ```
 
 ## Phase 6: Real-time Chat
@@ -161,11 +181,12 @@
 // message_ratelimit.go - Message specific limits
 ```
 
-#### 8.2 CORS & Security (internal/middleware/)
+#### 8.2 CORS & Security (internal/middleware/) ✅ HOÀN THÀNH (50%)
 
 ```go
-// cors.go - CORS configuration
-// security.go - Security headers
+// CORS configuration ✅ (implemented in main.go)
+// Basic security headers ✅
+// Note: Need dedicated middleware files for better organization
 ```
 
 ## Phase 9: Testing & Polish
@@ -212,30 +233,29 @@
 
 ## 📊 TỔNG KẾT TIẾN ĐỘ
 
-### ✅ ĐÃ HOÀN THÀNH (25%):
+### ✅ ĐÃ HOÀN THÀNH (60%):
 
 -   **Phase 1: Foundation Setup** - 100% ✅
 -   **Phase 2: Core Models & Services** - 100% ✅
--   **Phase 4.1: User Services** - 100% ✅
--   **Phase 5.2: Room Service** - 100% ✅
+-   **Phase 3: Authentication** - 95% ✅ (còn 5% security enhancements)
+-   **Phase 4: User Management** - 100% ✅
+-   **Phase 5: Matchmaking System** - 100% ✅
 -   **Phase 6.3: Message Handlers** - 100% ✅
 -   **Phase 7.1: Room Handlers** - 100% ✅
+-   **Phase 8.2: CORS & Security** - 50% ✅
 
-### 🚧 CẦN LÀM TIẾP (75%):
+### 🚧 CẦN LÀM TIẾP (40%):
 
--   **Phase 3: Authentication** - 0% ❌
--   **Phase 4.2: User Handlers** - 0% ❌
--   **Phase 5.1: Queue Service** - 0% ❌
--   **Phase 5.3: Queue Handlers** - 0% ❌
 -   **Phase 6.1: WebSocket Hub** - 0% ❌
 -   **Phase 6.2: WebSocket Events** - 0% ❌
 -   **Phase 7.2: Post-Chat Cleanup** - 0% ❌
--   **Phase 8: Security & Rate Limiting** - 0% ❌
+-   **Phase 8.1: Rate Limiting** - 0% ❌
 -   **Phase 9: Testing & Polish** - 0% ❌
 
 ### 🎯 ƯU TIÊN TIẾP THEO:
 
-1. **Phase 3: Authentication** (Google OAuth + JWT)
-2. **Phase 4.2: User Handlers** (API endpoints)
-3. **Phase 5.1: Queue Service** (Matchmaking)
-4. **Phase 6.1: WebSocket Hub** (Real-time chat)
+1. **Phase 6.1: WebSocket Hub** (Real-time chat) - CRITICAL
+2. **Phase 6.2: WebSocket Events** (Real-time events) - CRITICAL
+3. **Phase 7.2: Post-Chat Cleanup** - HIGH
+4. **Phase 8.1: Rate Limiting** - MEDIUM
+5. **Phase 3.4: Auth Security Enhancements** (5% còn lại) - MEDIUM

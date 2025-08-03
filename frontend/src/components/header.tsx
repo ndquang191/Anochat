@@ -1,21 +1,20 @@
 "use client";
 import React from "react";
 import { Loader2, RotateCw, X } from "lucide-react";
+import { useQueue } from "@/hooks/use-queue";
 
 function ConnectDisconnectButton() {
-	const [isConnected, setIsConnected] = React.useState(false);
-	const [isConnecting, setIsConnecting] = React.useState(false);
+	const { isInQueue, isLoading, joinQueue, leaveQueue, queueStatus } = useQueue();
 
-	const handleClick = () => {
-		if (isConnected) {
-			setIsConnected(false);
-		} else if (!isConnecting) {
-			setIsConnecting(true);
-			// Simulate connection
-			setTimeout(() => {
-				setIsConnecting(false);
-				setIsConnected(true);
-			}, 2000);
+	const handleClick = async () => {
+		try {
+			if (isInQueue) {
+				await leaveQueue();
+			} else {
+				await joinQueue("polite"); // Default category
+			}
+		} catch (error) {
+			console.error("Queue operation failed:", error);
 		}
 	};
 
@@ -28,21 +27,22 @@ function ConnectDisconnectButton() {
 	return (
 		<button
 			onClick={handleClick}
-			disabled={isConnecting}
+			disabled={isLoading}
 			className={`relative w-10 h-10 rounded-full transition-all duration-300 ease-in-out transform hover:scale-110 bg-primary hover:bg-primary/90`}
+			title={isInQueue ? `Đang trong queue (vị trí: ${queueStatus?.position || 0})` : "Tham gia queue"}
 		>
-			{/* Icon loading tìm người */}
-			<div className={getIconClass(isConnecting, true)}>
+			{/* Icon loading */}
+			<div className={getIconClass(isLoading, true)}>
 				<Loader2 size={18} />
 			</div>
 
-			{/* Icon đang trò chuyện */}
-			<div className={getIconClass(isConnected)}>
+			{/* Icon đang trong queue */}
+			<div className={getIconClass(isInQueue && !isLoading)}>
 				<X size={18} />
 			</div>
 
-			{/* Icon ban đầu (chưa kết nối) */}
-			<div className={getIconClass(!isConnected && !isConnecting)}>
+			{/* Icon ban đầu (chưa tham gia queue) */}
+			<div className={getIconClass(!isInQueue && !isLoading)}>
 				<RotateCw size={18} />
 			</div>
 		</button>

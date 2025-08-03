@@ -11,23 +11,38 @@ import (
 // AuthMiddleware validates JWT token and injects user into context
 func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get Authorization header
+		var tokenString string
+
+		// Debug: Log all cookies
+		cookies := c.Request.Cookies()
+		for _, cookie := range cookies {
+			println("Cookie:", cookie.Name, "=", cookie.Value)
+		}
+
+		// First try to get token from Authorization header
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+		if authHeader != "" {
+			// Check Bearer token format
+			tokenParts := strings.Split(authHeader, " ")
+			if len(tokenParts) == 2 && tokenParts[0] == "Bearer" {
+				tokenString = tokenParts[1]
+				println("Token from Authorization header:", tokenString)
+			}
+		}
+
+		// If no token from header, try to get from HTTP-only cookie
+		if tokenString == "" {
+			tokenString, _ = c.Cookie("jwt_token")
+			println("Token from cookie:", tokenString)
+		}
+
+		// If still no token, return unauthorized
+		if tokenString == "" {
+			println("No token found")
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization required"})
 			c.Abort()
 			return
 		}
-
-		// Check Bearer token format
-		tokenParts := strings.Split(authHeader, " ")
-		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization format"})
-			c.Abort()
-			return
-		}
-
-		tokenString := tokenParts[1]
 
 		// Validate JWT token
 		claims, err := authService.ValidateJWT(tokenString)

@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useState } from "react";
+import { authAPI } from "@/lib/api";
 
 export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
 	const [isLoading, setIsLoading] = useState(false);
@@ -14,7 +15,7 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
 
 		try {
 			// Redirect to backend OAuth endpoint
-			window.location.href = "http://localhost:8080/auth/google";
+			window.location.href = authAPI.getGoogleAuthUrl();
 		} catch (error) {
 			console.error("Login error:", error);
 			setIsLoading(false);

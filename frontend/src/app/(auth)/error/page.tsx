@@ -2,8 +2,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
-export default async function Page({ searchParams }: { searchParams: { error?: string } }) {
-	console.error("[Auth Error]", searchParams?.error || "Unspecified error");
+export default async function Page({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+	const params = await searchParams;
+	console.error("[Auth Error]", params?.error || "Unspecified error");
 
 	return (
 		<div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
@@ -14,9 +15,9 @@ export default async function Page({ searchParams }: { searchParams: { error?: s
 							<CardTitle className="text-2xl">Authentication Error</CardTitle>
 						</CardHeader>
 						<CardContent className="flex flex-col gap-4">
-							{searchParams?.error ? (
+							{params?.error ? (
 								<p className="text-sm text-destructive-500 bg-destructive-50 p-3 rounded">
-									{searchParams.error}
+									{params.error}
 								</p>
 							) : (
 								<p className="text-sm text-muted-foreground">

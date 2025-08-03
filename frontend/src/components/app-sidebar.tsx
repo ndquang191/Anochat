@@ -21,15 +21,16 @@ import { UserSettingsDialog } from "@/components/user-settings-dialog";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth";
+import { userAPI } from "@/lib/api";
 
 // Mock user data
 const mockUser = {
 	id: "mock-user-id",
 	email: "user@example.com",
 	name: "John Doe",
-	nickname: "Johnny",
+	age: 25 as number | null,
 	gender: "male",
-	address: "Ho Chi Minh City",
+	city: "Ho Chi Minh City",
 	isVisible: true,
 };
 
@@ -40,10 +41,41 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 	const router = useRouter();
 	const { logout } = useAuth();
 
+	// Load user data from backend if available
+	React.useEffect(() => {
+		const loadUserData = async () => {
+			try {
+				// Try to load from backend first
+				const response = await userAPI.getState();
+
+				if (response.data) {
+					setUserData({
+						id: response.data.id,
+						email: response.data.email || "unknown@example.com",
+						name: response.data.name || "Unknown",
+						age: response.data.profile?.age || null,
+						gender:
+							response.data.profile?.is_male === true
+								? "male"
+								: response.data.profile?.is_male === false
+								? "female"
+								: "other",
+						city: response.data.profile?.city || "---",
+						isVisible: !response.data.profile?.is_hidden,
+					});
+					return;
+				}
+			} catch (error) {
+				// Backend not available, use mock data
+				console.log("Backend not available, using mock data:", error);
+			}
+		};
+
+		loadUserData();
+	}, []);
+
 	const handleLogout = async () => {
-		console.log("Logging out...");
 		await logout();
-		console.log("Logout completed, redirecting to login");
 		router.push("/login");
 	};
 
@@ -61,22 +93,48 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 		}
 	};
 
-	const handleSaveSettings = async (newSettings: {
-		name: string;
-		nickname: string;
-		gender: string;
-		address: string;
-		isVisible: boolean;
-	}) => {
-		// Update local state with new settings while preserving id and email
+	// Handle visibility toggle in sidebar
+	const handleVisibilityToggle = async (isVisible: boolean) => {
+		try {
+			// Update visibility in backend
+			await userAPI.updateProfile({
+				is_hidden: !isVisible,
+			});
+			// Update local state
+			setUserData((prev) => ({ ...prev, isVisible }));
+		} catch (error) {
+			// Error already handled by toast in API client
+			console.error("Visibility toggle error:", error);
+		}
+	};
+
+	// Handle settings dialog save (age, gender, city)
+	const handleSaveSettings = async (newSettings: { age: number | null; gender: string; city: string }) => {
+		try {
+			// Try to save to backend first
+			await userAPI.updateProfile({
+				age: newSettings.age,
+				city: newSettings.city,
+				is_male:
+					newSettings.gender === "male"
+						? true
+						: newSettings.gender === "female"
+						? false
+						: undefined,
+			});
+		} catch (error) {
+			// Error already handled by toast in API client
+			console.error("Settings save error:", error);
+		}
+
+		// Update local state with new settings
 		setUserData((prev) => ({
 			...prev,
-			...newSettings,
+			age: newSettings.age,
+			gender: newSettings.gender,
+			city: newSettings.city,
 		}));
 		setIsSettingsOpen(false);
-
-		// Placeholder for future settings save implementation
-		console.log("Settings save functionality will be implemented here", newSettings);
 	};
 
 	return (
@@ -92,17 +150,15 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 								{state === "expanded" && (
 									<>
 										<span className="text-sm text-muted-foreground">
-											{userData.address !== "---"
-												? `${getGenderDisplay(userData.gender)}, ${userData.address}`
+											{userData.city !== "---"
+												? `${getGenderDisplay(userData.gender)}, ${userData.city}`
 												: getGenderDisplay(userData.gender)}
 										</span>
 										<div className="flex items-center gap-2 mt-2">
 											<Switch
 												id="public-status"
 												checked={userData.isVisible}
-												onCheckedChange={(checked) =>
-													setUserData((prev) => ({ ...prev, isVisible: checked }))
-												}
+												onCheckedChange={handleVisibilityToggle}
 											/>
 											<Label htmlFor="public-status" className="text-sm">
 												{userData.isVisible ? "Công khai thông tin" : "Riêng tư"}
@@ -137,7 +193,11 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 			<UserSettingsDialog
 				open={isSettingsOpen}
 				onOpenChange={setIsSettingsOpen}
-				initialData={userData}
+				initialData={{
+					age: userData.age,
+					gender: userData.gender,
+					city: userData.city,
+				}}
 				onSave={handleSaveSettings}
 			/>
 		</>

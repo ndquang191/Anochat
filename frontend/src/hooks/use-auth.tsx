@@ -1,110 +1,94 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
+import { userAPI, authAPI } from "@/lib/api";
 
 interface User {
 	id: string;
 	email: string;
 	name: string;
-	avatar_url: string;
+	avatar: string;
+	gender: string;
 }
 
-interface AuthState {
-	isAuthenticated: boolean;
+interface AuthContextType {
 	user: User | null;
 	token: string | null;
-	loading: boolean;
+	isLoading: boolean;
+	login: (userData: User) => void;
+	logout: () => void;
+	checkAuth: () => Promise<void>;
 }
 
-export function useAuth() {
-	const [authState, setAuthState] = useState<AuthState>({
-		isAuthenticated: false,
-		user: null,
-		token: null,
-		loading: true,
-	});
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-	useEffect(() => {
-		// Check for existing token on mount
-		const token = localStorage.getItem("jwt_token");
-		const userInfo = localStorage.getItem("user_info");
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+	const [user, setUser] = useState<User | null>(null);
+	const [token, setToken] = useState<string | null>(null);
+	const [isLoading, setIsLoading] = useState(true);
 
-		if (token && userInfo) {
-			try {
-				const user = JSON.parse(userInfo);
-				setAuthState({
-					isAuthenticated: true,
-					user,
-					token,
-					loading: false,
-				});
-			} catch (error) {
-				console.error("Error parsing user info:", error);
-				logout();
-			}
-		} else {
-			setAuthState((prev) => ({ ...prev, loading: false }));
-		}
-	}, []);
-
-	const login = (token: string, user: User) => {
-		localStorage.setItem("jwt_token", token);
-		localStorage.setItem("user_info", JSON.stringify(user));
-		setAuthState({
-			isAuthenticated: true,
-			user,
-			token,
-			loading: false,
-		});
+	const login = (userData: User) => {
+		setUser(userData);
+		setToken(null); // Token is now in HTTP-only cookie
+		// Store user info in localStorage for persistence
+		localStorage.setItem("user_info", JSON.stringify(userData));
 	};
 
-	const logout = () => {
-		localStorage.removeItem("jwt_token");
-		localStorage.removeItem("user_info");
-		setAuthState({
-			isAuthenticated: false,
-			user: null,
-			token: null,
-			loading: false,
-		});
+	const logout = async () => {
+		try {
+			await authAPI.logout();
+		} catch (error) {
+			console.error("Logout error:", error);
+		} finally {
+			setUser(null);
+			setToken(null);
+			localStorage.removeItem("user_info");
+		}
 	};
 
 	const checkAuth = async () => {
-		const token = localStorage.getItem("jwt_token");
-		if (!token) {
-			logout();
-			return;
-		}
-
 		try {
-			// Call backend to validate token and get user state
-			const response = await fetch("http://localhost:8080/user/state", {
-				headers: {
-					Authorization: `Bearer ${token}`,
-				},
-			});
-
-			if (response.ok) {
-				const data = await response.json();
-				setAuthState({
-					isAuthenticated: true,
-					user: data.user,
-					token,
-					loading: false,
-				});
-			} else {
-				logout();
-			}
+			const response = await userAPI.getState();
+			// Map UserState to User type
+			const user: User = {
+				id: response.data.id,
+				email: response.data.email || "",
+				name: response.data.name || "",
+				avatar: response.data.avatar_url || "",
+				gender:
+					response.data.profile?.is_male === true
+						? "male"
+						: response.data.profile?.is_male === false
+						? "female"
+						: "other",
+			};
+			setUser(user);
+			setToken(null); // Token is in HTTP-only cookie
 		} catch (error) {
-			console.error("Auth check error:", error);
-			logout();
+			console.error("Auth check failed:", error);
+			setUser(null);
+			setToken(null);
+			localStorage.removeItem("user_info");
+		} finally {
+			setIsLoading(false);
 		}
 	};
 
-	return {
-		...authState,
-		login,
-		logout,
-		checkAuth,
-	};
+	useEffect(() => {
+		checkAuth();
+	}, []);
+
+	return (
+		<AuthContext.Provider value={{ user, token, isLoading, login, logout, checkAuth }}>
+			{children}
+		</AuthContext.Provider>
+	);
+}
+
+export function useAuth() {
+	const context = useContext(AuthContext);
+	if (context === undefined) {
+		throw new Error("useAuth must be used within an AuthProvider");
+	}
+	return context;
 }

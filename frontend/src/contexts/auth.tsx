@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { User, AuthState, AuthContextType } from "@/types";
 import { setCookie, getCookie, deleteCookie } from "@/lib/cookies";
+import { userAPI, authAPI } from "@/lib/api";
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
@@ -14,20 +15,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		loading: true,
 	});
 
-	console.log("AuthProvider render:", authState);
-
 	useEffect(() => {
-		// Check for existing token on mount
-		const token = getCookie("jwt_token");
+		// Check for existing user info on mount
 		const userInfo = getCookie("user_info");
 
-		if (token && userInfo) {
+		if (userInfo) {
 			try {
 				const user = JSON.parse(userInfo);
 				setAuthState({
 					isAuthenticated: true,
 					user,
-					token,
+					token: null, // Token is in HTTP-only cookie, not accessible from client
 					loading: false,
 				});
 			} catch (error) {
@@ -40,55 +38,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}, []);
 
 	const login = (token: string, user: User) => {
-		console.log("Auth login called:", {
-			token: token ? token.substring(0, 20) + "..." : "from-cookie",
-			user,
-		});
-
-		// If token is provided, set it in cookie (for backward compatibility)
-		if (token) {
-			setCookie("jwt_token", token, 7); // 7 days
-		}
-		// Token is already set in HTTP-only cookie by backend
-
+		// Token is set in HTTP-only cookie by backend, not accessible from client
 		setCookie("user_info", JSON.stringify(user), 7);
 		setAuthState({
 			isAuthenticated: true,
 			user,
-			token: token || getCookie("jwt_token"), // Use provided token or get from cookie
+			token: null, // Token is in HTTP-only cookie, not accessible from client
 			loading: false,
 		});
-		console.log("Auth state updated, isAuthenticated:", true);
 	};
 
 	const logout = async () => {
-		console.log("Logout called, calling backend to clear cookies");
-
 		try {
 			// Call backend to clear HTTP-only cookie
-			const response = await fetch("http://localhost:8080/auth/logout", {
-				method: "POST",
-				credentials: "include", // Include cookies
-			});
-
-			if (response.ok) {
-				console.log("Backend logout successful");
-			} else {
-				console.error("Backend logout failed:", response.status);
-			}
+			await authAPI.logout();
 		} catch (error) {
-			console.error("Error calling logout endpoint:", error);
+			// Error already handled by toast in API client
+			console.error("Logout error:", error);
 		}
 
-		// Clear frontend cookies
-		deleteCookie("jwt_token");
+		// Clear frontend cookies (JWT token is cleared by backend)
 		deleteCookie("user_info");
-		console.log("Frontend cookies cleared");
 
 		setAuthState({
 			isAuthenticated: false,
 			user: null,
-			token: null,
+			token: null, // Token is in HTTP-only cookie, not accessible from client
 			loading: false,
 		});
 
@@ -97,31 +72,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	};
 
 	const checkAuth = async () => {
-		const token = getCookie("jwt_token");
-		if (!token) {
-			await logout();
-			return;
-		}
-
 		try {
 			// Call backend to validate token and get user state
-			const response = await fetch("http://localhost:8080/user/state", {
-				headers: {
-					Authorization: `Bearer ${token}`,
-				},
+			const response = await userAPI.getState();
+			// Map UserState to User type
+			const user: User = {
+				id: response.data.id,
+				name: response.data.name,
+				email: response.data.email,
+				avatar_url: response.data.avatar_url,
+				is_active: response.data.is_active,
+				is_deleted: response.data.is_deleted,
+				created_at: response.data.created_at,
+				profile: response.data.profile,
+			};
+			setAuthState({
+				isAuthenticated: true,
+				user,
+				token: null, // Token is in HTTP-only cookie, not accessible from client
+				loading: false,
 			});
-
-			if (response.ok) {
-				const data = await response.json();
-				setAuthState({
-					isAuthenticated: true,
-					user: data.user,
-					token,
-					loading: false,
-				});
-			} else {
-				await logout();
-			}
 		} catch (error) {
 			console.error("Auth check error:", error);
 			await logout();

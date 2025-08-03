@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -46,10 +45,6 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 		return
 	}
 
-	// Debug: Log the new approach
-	fmt.Printf("DEBUG: Setting JWT token in HTTP-only cookie and user data in temp cookie\n")
-	fmt.Printf("DEBUG: User ID: %s, Email: %s, Name: %s\n", user.ID, *user.Email, *user.Name)
-
 	// Set JWT token in HTTP-only cookie
 	c.SetCookie("jwt_token", jwtToken, 3600*24*7, "/", "", false, true) // 7 days, HTTP-only, no domain restriction
 
@@ -64,9 +59,6 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 	// Set user data in a temporary cookie (will be cleared by frontend)
 	userDataJSON, _ := json.Marshal(userData)
 	c.SetCookie("temp_user_data", string(userDataJSON), 60, "/", "", false, false) // 1 minute, not HTTP-only, no domain restriction
-
-	// Debug: Log redirect
-	fmt.Printf("DEBUG: Redirecting to frontend callback page\n")
 
 	// Redirect to frontend callback page
 	frontendURL := "http://localhost:3000/callback"

@@ -88,4 +88,4 @@ var ChatSettings = struct {
 	Categories:        []string{"polite"},
 	SensitiveKeywords: []string{"hà nội", "bikini"},
 	MatchTimeoutSec:   30,
-} 
+}

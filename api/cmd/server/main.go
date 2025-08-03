@@ -79,26 +79,23 @@ func main() {
 		Endpoint:     google.Endpoint,
 	}
 
-	// Debug: Log OAuth config (remove in production)
-	slog.Info("OAuth Configuration",
-		"client_id", cfg.OAuth.GoogleClientID,
-		"redirect_url", cfg.OAuth.RedirectURL,
-	)
-
 	// Initialize services
 	db := database.GetDB()
 	userService := service.NewUserService(db)
+	roomService := service.NewRoomService(db)
 	authService := service.NewAuthService(userService, oauthConfig, cfg.OAuth.JWTSecret)
+	queueService := service.NewQueueService(db, roomService, userService, cfg)
 
 	// Initialize handlers
 	authHandler := handler.NewAuthHandler(authService, oauthConfig)
 	userHandler := handler.NewUserHandler(authService, userService)
+	queueHandler := handler.NewQueueHandler(queueService)
 
 	// Initialize middleware
 	authMiddleware := middleware.AuthMiddleware(authService)
 
 	// Setup routes
-	setupRoutes(router, authHandler, userHandler, authMiddleware)
+	setupRoutes(router, authHandler, userHandler, queueHandler, authMiddleware)
 
 	// Health check endpoint
 	router.GET("/healthz", func(c *gin.Context) {
@@ -132,10 +129,14 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	slog.Info("Shutting down server...")
+
+	// Stop queue service gracefully
+	queueService.Stop()
+	slog.Info("Queue service stopped")
 }
 
 // setupRoutes configures all API routes
-func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandler *handler.UserHandler, authMiddleware gin.HandlerFunc) {
+func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandler *handler.UserHandler, queueHandler *handler.QueueHandler, authMiddleware gin.HandlerFunc) {
 	// Auth routes (no middleware required)
 	router.GET("/auth/google", authHandler.GoogleLogin)
 	router.GET("/auth/callback", authHandler.GoogleCallback)
@@ -147,5 +148,14 @@ func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandl
 	{
 		// User state endpoint (main endpoint)
 		protected.GET("/user/state", userHandler.GetUserState)
+		// Profile update endpoint
+		protected.PUT("/profile", userHandler.UpdateProfile)
+
+		// Queue endpoints
+		protected.POST("/queue/join", queueHandler.JoinQueue)
+		protected.POST("/queue/leave", queueHandler.LeaveQueue)
+		protected.GET("/queue/status", queueHandler.GetQueueStatus)
+		protected.GET("/queue/stats", queueHandler.GetQueueStats)
+		protected.GET("/queue/match-stats", queueHandler.GetMatchStats)
 	}
 }

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -37,9 +38,17 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 		return
 	}
 
-	// Get JWT token from header for AuthService
-	authHeader := c.GetHeader("Authorization")
-	tokenString := authHeader[7:] // Remove "Bearer " prefix
+	// Get JWT token from context (set by middleware)
+	tokenString := ""
+	if authHeader := c.GetHeader("Authorization"); authHeader != "" {
+		tokenParts := strings.Split(authHeader, " ")
+		if len(tokenParts) == 2 && tokenParts[0] == "Bearer" {
+			tokenString = tokenParts[1]
+		}
+	}
+	if tokenString == "" {
+		tokenString, _ = c.Cookie("jwt_token")
+	}
 
 	// Get user state using AuthService
 	user, room, messages, err := h.authService.GetUserFromToken(c.Request.Context(), tokenString)
@@ -87,4 +96,51 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+// UpdateProfile updates a user's profile
+func (h *UserHandler) UpdateProfile(c *gin.Context) {
+	// Get user ID from context (set by auth middleware)
+	userIDInterface, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	userID, ok := userIDInterface.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	// Parse request body
+	var request struct {
+		Age      *int    `json:"age"`
+		City     *string `json:"city"`
+		IsMale   *bool   `json:"is_male"`
+		IsHidden *bool   `json:"is_hidden"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	// Update profile
+	profile, err := h.userService.UpdateProfile(c.Request.Context(), userID, request.IsMale, request.Age, request.City, request.IsHidden)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Return updated profile
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Profile updated successfully",
+		"profile": gin.H{
+			"age":       profile.Age,
+			"city":      profile.City,
+			"is_male":   profile.IsMale,
+			"is_hidden": profile.IsHidden,
+		},
+	})
 }

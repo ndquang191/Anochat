@@ -4,17 +4,11 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Skeleton } from "@/components/ui/skeleton";
 
 interface Message {
 	id: number;
 	text: string;
 	sender: "user" | "other";
-}
-
-interface Tip {
-	id: number;
-	content: string;
 }
 
 const INITIAL_MESSAGES: Message[] = [
@@ -29,17 +23,9 @@ const INITIAL_MESSAGES: Message[] = [
 
 export default function ChatBox() {
 	const [messages, setMessages] = React.useState<Message[]>(INITIAL_MESSAGES);
-	const [tips, setTips] = React.useState<Tip[]>([]);
+
 	const [inputMessage, setInputMessage] = React.useState("");
 	const messagesEndRef = React.useRef<HTMLDivElement>(null);
-
-	React.useEffect(() => {
-		// Load tips when component mounts
-		fetch("/tips.json")
-			.then((res) => res.json())
-			.then((data) => setTips(data.tips))
-			.catch((err) => console.error("Failed to load tips:", err));
-	}, []);
 
 	const scrollToBottom = React.useCallback(() => {
 		if (messagesEndRef.current) {
