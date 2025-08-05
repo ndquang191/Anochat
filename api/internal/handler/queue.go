@@ -61,8 +61,8 @@ type MatchStatsResponse struct {
 // JoinQueue handles the request to join a queue
 func (h *QueueHandler) JoinQueue(c *gin.Context) {
 	// Get user ID from context (set by auth middleware)
-	userIDStr := c.GetString("user_id")
-	if userIDStr == "" {
+	userIDInterface, exists := c.Get("user_id")
+	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"success": false,
 			"message": "User not authenticated",
@@ -70,8 +70,8 @@ func (h *QueueHandler) JoinQueue(c *gin.Context) {
 		return
 	}
 
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
+	userID, ok := userIDInterface.(uuid.UUID)
+	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"message": "Invalid user ID",
@@ -119,8 +119,8 @@ func (h *QueueHandler) JoinQueue(c *gin.Context) {
 // LeaveQueue handles the request to leave a queue
 func (h *QueueHandler) LeaveQueue(c *gin.Context) {
 	// Get user ID from context
-	userIDStr := c.GetString("user_id")
-	if userIDStr == "" {
+	userIDInterface, exists := c.Get("user_id")
+	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"success": false,
 			"message": "User not authenticated",
@@ -128,8 +128,8 @@ func (h *QueueHandler) LeaveQueue(c *gin.Context) {
 		return
 	}
 
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
+	userID, ok := userIDInterface.(uuid.UUID)
+	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"message": "Invalid user ID",
@@ -138,7 +138,7 @@ func (h *QueueHandler) LeaveQueue(c *gin.Context) {
 	}
 
 	// Leave queue
-	err = h.queueService.LeaveQueue(c.Request.Context(), userID)
+	err := h.queueService.LeaveQueue(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -156,8 +156,8 @@ func (h *QueueHandler) LeaveQueue(c *gin.Context) {
 // GetQueueStatus handles the request to get queue status
 func (h *QueueHandler) GetQueueStatus(c *gin.Context) {
 	// Get user ID from context
-	userIDStr := c.GetString("user_id")
-	if userIDStr == "" {
+	userIDInterface, exists := c.Get("user_id")
+	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"success": false,
 			"message": "User not authenticated",
@@ -165,8 +165,8 @@ func (h *QueueHandler) GetQueueStatus(c *gin.Context) {
 		return
 	}
 
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
+	userID, ok := userIDInterface.(uuid.UUID)
+	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"message": "Invalid user ID",

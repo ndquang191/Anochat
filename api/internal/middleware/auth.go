@@ -13,12 +13,6 @@ func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tokenString string
 
-		// Debug: Log all cookies
-		cookies := c.Request.Cookies()
-		for _, cookie := range cookies {
-			println("Cookie:", cookie.Name, "=", cookie.Value)
-		}
-
 		// First try to get token from Authorization header
 		authHeader := c.GetHeader("Authorization")
 		if authHeader != "" {
@@ -26,14 +20,12 @@ func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 			tokenParts := strings.Split(authHeader, " ")
 			if len(tokenParts) == 2 && tokenParts[0] == "Bearer" {
 				tokenString = tokenParts[1]
-				println("Token from Authorization header:", tokenString)
 			}
 		}
 
 		// If no token from header, try to get from HTTP-only cookie
 		if tokenString == "" {
 			tokenString, _ = c.Cookie("jwt_token")
-			println("Token from cookie:", tokenString)
 		}
 
 		// If still no token, return unauthorized
