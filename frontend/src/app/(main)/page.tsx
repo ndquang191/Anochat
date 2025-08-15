@@ -3,37 +3,12 @@
 import Chatbox from "@/components/chat-box";
 import { useQueue } from "@/hooks/use-queue";
 import { Loader2 } from "lucide-react";
-import { useEffect } from "react";
 
 const Page = () => {
-	const { isInQueue, queueStatus, leaveQueue } = useQueue();
+	const { isInQueue, queueStatus } = useQueue();
 
-	// Handle page unload and visibility changes to leave queue
-	useEffect(() => {
-		const handleBeforeUnload = () => {
-			if (isInQueue) {
-				// Try to leave queue before page unload
-				leaveQueue();
-			}
-		};
-
-		const handleVisibilityChange = () => {
-			if (document.hidden && isInQueue) {
-				// Leave queue when page becomes hidden (user switches tabs or minimizes)
-				leaveQueue();
-			}
-		};
-
-		// Add event listeners
-		window.addEventListener("beforeunload", handleBeforeUnload);
-		document.addEventListener("visibilitychange", handleVisibilityChange);
-
-		// Cleanup event listeners
-		return () => {
-			window.removeEventListener("beforeunload", handleBeforeUnload);
-			document.removeEventListener("visibilitychange", handleVisibilityChange);
-		};
-	}, [isInQueue, leaveQueue]);
+	console.log("IsInQueue", isInQueue);
+	// Handle page unload and visibility changes to leave queu
 
 	// Show loading indicator when in queue
 	if (isInQueue) {

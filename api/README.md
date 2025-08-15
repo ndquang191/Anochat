@@ -1,5 +1,70 @@
 # Anochat Backend - Flow Documentation
 
+## 🚀 Development Setup
+
+### Hot Reload with Air
+
+This project uses [Air](https://github.com/air-verse/air) for hot reload during development.
+
+#### Installation
+
+Air is automatically installed when you run the development script, or you can install it manually:
+
+```bash
+go install github.com/air-verse/air@latest
+```
+
+#### Running with Hot Reload
+
+**Option 1: Using the development script (Recommended)**
+
+```bash
+# Linux/Mac
+./dev.sh
+
+# Windows
+dev.bat
+```
+
+**Option 2: Direct Air command**
+
+```bash
+# From the api directory
+air
+```
+
+**Option 3: With custom configuration**
+
+```bash
+air -c .air.toml
+```
+
+#### Air Configuration
+
+The project includes a `.air.toml` configuration file with the following settings:
+
+-   **Build command**: `go build -o ./tmp/main ./cmd/server`
+-   **Binary location**: `./tmp/main`
+-   **Watch extensions**: `go`, `tpl`, `tmpl`, `html`
+-   **Excluded directories**: `assets`, `tmp`, `vendor`, `testdata`
+-   **Excluded files**: `*_test.go`
+
+#### What Air Does
+
+1. **Watches** your Go files for changes
+2. **Rebuilds** the application automatically
+3. **Restarts** the server when changes are detected
+4. **Shows** colored output for build status
+
+#### Troubleshooting
+
+If you encounter issues:
+
+1. **Check Air installation**: `air -v`
+2. **Verify configuration**: Check `.air.toml` exists
+3. **Clear tmp directory**: `rm -rf tmp/`
+4. **Check build errors**: Look at `build-errors.log`
+
 ## 🔐 Authentication Flow
 
 ### 1. Google OAuth Login Process

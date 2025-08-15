@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { Loader2, RotateCw, X } from "lucide-react";
+import { RotateCw, X } from "lucide-react";
 import { useQueue } from "@/hooks/use-queue";
 
 function ConnectDisconnectButton() {
@@ -9,15 +9,30 @@ function ConnectDisconnectButton() {
 	const handleClick = async () => {
 		try {
 			if (isInQueue) {
+				console.log("🔄 Leaving queue...");
 				await leaveQueue();
 			} else {
+				console.log("🚀 Joining queue...");
 				await joinQueue("polite"); // Default category
 			}
 		} catch (error) {
-			console.error("Queue operation failed:", error);
+			console.error("❌ Queue operation failed:", error);
 		}
 	};
 
+	// Calculate time remaining until TTL expires
+	const getTimeRemaining = () => {
+		if (!queueStatus?.expiresAt) return null;
+		const now = new Date();
+		const expiresAt = new Date(queueStatus.expiresAt);
+		const remaining = expiresAt.getTime() - now.getTime();
+
+		if (remaining <= 0) return "Hết hạn";
+		const seconds = Math.ceil(remaining / 1000);
+		return `${seconds}s`;
+	};
+
+	const timeRemaining = getTimeRemaining();
 	const iconBaseClass = `absolute inset-0 flex items-center justify-center text-white transition-all duration-300`;
 	const getIconClass = (visible: boolean, spinning = false) =>
 		`${iconBaseClass} ${visible ? "opacity-100 scale-100 rotate-0" : "opacity-0 scale-0 rotate-90"} ${
@@ -29,22 +44,30 @@ function ConnectDisconnectButton() {
 			onClick={handleClick}
 			disabled={isLoading}
 			className={`relative w-10 h-10 rounded-full transition-all duration-300 ease-in-out transform hover:scale-110 bg-primary hover:bg-primary/90`}
-			title={isInQueue ? `Đang trong queue (vị trí: ${queueStatus?.position || 0})` : "Tham gia queue"}
+			title={
+				isInQueue
+					? `Đang trong queue (vị trí: ${queueStatus?.position || 0}, còn lại: ${
+							timeRemaining || "N/A"
+					  })`
+					: "Tham gia queue"
+			}
 		>
-			{/* Icon loading */}
-			<div className={getIconClass(isLoading, true)}>
-				<Loader2 size={18} />
-			</div>
-
 			{/* Icon đang trong queue */}
 			<div className={getIconClass(isInQueue && !isLoading)}>
 				<X size={18} />
 			</div>
 
-			{/* Icon ban đầu (chưa tham gia queue) */}
-			<div className={getIconClass(!isInQueue && !isLoading)}>
+			{/* Icon connect (idle + loading states) */}
+			<div className={getIconClass(!isInQueue || isLoading, isLoading)}>
 				<RotateCw size={18} />
 			</div>
+
+			{/* TTL indicator - small dot showing time remaining */}
+			{isInQueue && timeRemaining && (
+				<div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center font-bold">
+					{timeRemaining === "Hết hạn" ? "!" : timeRemaining}
+				</div>
+			)}
 		</button>
 	);
 }

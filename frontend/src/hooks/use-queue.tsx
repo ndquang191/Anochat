@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { queueAPI } from "@/lib/api";
 
+// Types
 interface QueueStatus {
 	isInQueue: boolean;
 	position: number;
@@ -24,112 +25,243 @@ interface MatchStats {
 	lastMatchTime: string;
 }
 
-export function useQueue() {
-	const [isInQueue, setIsInQueue] = useState(false);
-	const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
-	const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
-	const [matchStats, setMatchStats] = useState<MatchStats | null>(null);
-	const [isLoading, setIsLoading] = useState(false);
+interface UseQueueReturn {
+	isInQueue: boolean;
+	queueStatus: QueueStatus | null;
+	queueStats: QueueStats | null;
+	matchStats: MatchStats | null;
+	isLoading: boolean;
+	joinQueue: (category?: string) => Promise<any>;
+	leaveQueue: () => Promise<any>;
+	refreshQueueStatus: () => Promise<QueueStatus | null>;
+	refreshQueueStats: () => Promise<QueueStats | null>;
+	refreshMatchStats: () => Promise<MatchStats | null>;
+}
+
+// Constants
+const POLLING_INTERVAL = 5000; // 5 seconds
+const DEFAULT_CATEGORY = "polite";
+const QUEUE_EXPIRY_TIME = 5 * 60 * 1000; // 5 minutes
+
+// Custom hook for managing queue state
+export function useQueue(): UseQueueReturn {
+	// State management
+	const [state, setState] = useState({
+		isInQueue: false,
+		queueStatus: null as QueueStatus | null,
+		queueStats: null as QueueStats | null,
+		matchStats: null as MatchStats | null,
+		isLoading: false,
+	});
+
+	// Refs for cleanup and preventing memory leaks
+	const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+	const isMountedRef = useRef(true);
+
+	// Update state safely (only if component is mounted)
+	const safeSetState = useCallback(
+		(updates: Partial<typeof state>) => {
+			if (isMountedRef.current) {
+				console.log("🔧 safeSetState called with:", updates, "current state:", state);
+				setState((prev) => {
+					const newState = { ...prev, ...updates };
+					console.log("🔄 State updated from:", prev, "to:", newState);
+					return newState;
+				});
+			}
+		},
+		[state]
+	);
+
+	// Create optimistic queue status
+	const createOptimisticStatus = useCallback(
+		(category: string): QueueStatus => ({
+			isInQueue: true,
+			position: 0,
+			category,
+			joinedAt: new Date().toISOString(),
+			expiresAt: new Date(Date.now() + QUEUE_EXPIRY_TIME).toISOString(),
+		}),
+		[]
+	);
 
 	// Join queue
-	const joinQueue = useCallback(async (category: string = "polite") => {
-		setIsLoading(true);
+	const joinQueue = useCallback(
+		async (category: string = DEFAULT_CATEGORY) => {
+			// Prevent duplicate join requests
+			if (state.isInQueue || state.isLoading) {
+				console.warn("Already in queue or loading");
+				return;
+			}
 
-		try {
-			const data = await queueAPI.join(category);
-			setIsInQueue(true);
-			setQueueStatus(data.data);
-			return data;
-		} catch (error) {
-			// Error already handled by toast in API client
-			console.error("Queue join error:", error);
-		} finally {
-			setIsLoading(false);
-		}
-	}, []);
+			safeSetState({ isLoading: true });
+
+			// Optimistic update for better UX
+			const optimisticStatus = createOptimisticStatus(category);
+			safeSetState({
+				isInQueue: true,
+				queueStatus: optimisticStatus,
+			});
+
+			try {
+				const response = await queueAPI.join(category);
+
+				if (response?.data) {
+					safeSetState({
+						isInQueue: true,
+						queueStatus: response.data,
+						isLoading: false,
+					});
+				}
+
+				return response;
+			} catch (error) {
+				console.error("Failed to join queue:", error);
+
+				// Revert optimistic update on failure
+				safeSetState({
+					isInQueue: false,
+					queueStatus: null,
+					isLoading: false,
+				});
+
+				throw error;
+			}
+		},
+		[state.isInQueue, state.isLoading, safeSetState, createOptimisticStatus]
+	);
 
 	// Leave queue
 	const leaveQueue = useCallback(async () => {
-		setIsLoading(true);
+		if (!state.isInQueue || state.isLoading) {
+			return;
+		}
+
+		safeSetState({ isLoading: true });
 
 		try {
-			const data = await queueAPI.leave();
-			setIsInQueue(false);
-			setQueueStatus(null);
-			return data;
+			const response = await queueAPI.leave();
+
+			safeSetState({
+				isInQueue: false,
+				queueStatus: null,
+				isLoading: false,
+			});
+
+			return response;
 		} catch (error) {
-			// Error already handled by toast in API client
-			console.error("Queue leave error:", error);
-		} finally {
-			setIsLoading(false);
+			console.error("Failed to leave queue:", error);
+			safeSetState({ isLoading: false });
+			throw error;
 		}
-	}, []);
+	}, [state.isInQueue, state.isLoading, safeSetState]);
 
-	// Get queue status
-	const getQueueStatus = useCallback(async () => {
+	// Refresh queue status
+	const refreshQueueStatus = useCallback(async () => {
 		try {
-			const data = await queueAPI.getStatus();
-			const status = data.data;
+			const response = await queueAPI.getStatus();
+			if (response.success && response.data) {
+				safeSetState({
+					isInQueue: response.data.isInQueue,
+					queueStatus: response.data,
+				});
+			}
+		} catch (error) {
+			console.error("Failed to refresh queue status:", error);
+		}
+	}, [safeSetState]);
 
-			setIsInQueue(status.isInQueue);
-			setQueueStatus(status.isInQueue ? status : null);
-			return status;
-		} catch (err) {
-			console.error("Lỗi khi lấy queue status:", err);
+	// Refresh queue stats
+	const refreshQueueStats = useCallback(async () => {
+		try {
+			const response = await queueAPI.getStats();
+			const stats = response?.data;
+
+			if (stats) {
+				safeSetState({ queueStats: stats });
+			}
+
+			return stats;
+		} catch (error) {
+			console.error("Failed to refresh queue stats:", error);
 			return null;
 		}
-	}, []);
+	}, [safeSetState]);
 
-	// Get queue stats
-	const getQueueStats = useCallback(async () => {
+	// Refresh match stats
+	const refreshMatchStats = useCallback(async () => {
 		try {
-			const data = await queueAPI.getStats();
-			setQueueStats(data.data);
-			return data.data;
-		} catch (err) {
-			console.error("Lỗi khi lấy queue stats:", err);
+			const response = await queueAPI.getMatchStats();
+			const stats = response?.data;
+
+			if (stats) {
+				safeSetState({ matchStats: stats });
+			}
+
+			return stats;
+		} catch (error) {
+			console.error("Failed to refresh match stats:", error);
 			return null;
 		}
-	}, []);
+	}, [safeSetState]);
 
-	// Get match stats
-	const getMatchStats = useCallback(async () => {
-		try {
-			const data = await queueAPI.getMatchStats();
-			setMatchStats(data.data);
-			return data.data;
-		} catch (err) {
-			console.error("Lỗi khi lấy match stats:", err);
-			return null;
-		}
-	}, []);
-
-	// Auto-refresh queue status when in queue
+	// Setup polling when in queue
 	useEffect(() => {
-		if (isInQueue) {
-			const interval = setInterval(() => {
-				getQueueStatus();
-			}, 5000); // Refresh every 5 seconds
+		console.log("🔄 Polling useEffect triggered");
+		console.log("  - state.isInQueue =", state.isInQueue);
+		console.log("  - refreshQueueStatus function =", typeof refreshQueueStatus);
 
-			return () => clearInterval(interval);
+		// Clear any existing interval
+		if (pollingIntervalRef.current) {
+			console.log("🛑 Clearing existing polling interval");
+			clearInterval(pollingIntervalRef.current);
+			pollingIntervalRef.current = null;
 		}
-	}, [isInQueue, getQueueStatus]);
 
-	// Initial load
+		// Start polling if in queue
+		if (state.isInQueue) {
+			console.log("⏰ Starting polling interval every", POLLING_INTERVAL, "ms");
+			pollingIntervalRef.current = setInterval(() => {
+				console.log("📡 Polling: calling refreshQueueStatus...");
+				refreshQueueStatus();
+			}, POLLING_INTERVAL);
+		} else {
+			console.log("⏸️ Not in queue, no polling needed");
+		}
+
+		// Cleanup on unmount or when leaving queue
+		return () => {
+			if (pollingIntervalRef.current) {
+				console.log("🧹 Cleanup: clearing polling interval");
+				clearInterval(pollingIntervalRef.current);
+				pollingIntervalRef.current = null;
+			}
+		};
+	}, [state.isInQueue, refreshQueueStatus]);
+
+	// Cleanup on unmount
 	useEffect(() => {
-		getQueueStatus();
-	}, [getQueueStatus]);
+		return () => {
+			isMountedRef.current = false;
+			if (pollingIntervalRef.current) {
+				clearInterval(pollingIntervalRef.current);
+			}
+		};
+	}, []);
 
 	return {
-		isInQueue,
-		queueStatus,
-		queueStats,
-		matchStats,
-		isLoading,
+		isInQueue: state.isInQueue,
+		queueStatus: state.queueStatus,
+		queueStats: state.queueStats,
+		matchStats: state.matchStats,
+		isLoading: state.isLoading,
 		joinQueue,
 		leaveQueue,
-		getQueueStatus,
-		getQueueStats,
-		getMatchStats,
+		refreshQueueStatus,
+		refreshQueueStats,
+		refreshMatchStats,
 	};
 }
+
+// Optional: Export types for external use
+export type { QueueStatus, QueueStats, MatchStats, UseQueueReturn };

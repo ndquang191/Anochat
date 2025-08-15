@@ -22,7 +22,7 @@ http://localhost:8080
 
 ## Protected Endpoints
 
-### User State
+### User State 
 
 **GET** `/user/state`
 

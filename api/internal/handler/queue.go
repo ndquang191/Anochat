@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -39,6 +40,7 @@ type QueueStatusResponse struct {
 	Position  int    `json:"position"`
 	Category  string `json:"category"`
 	JoinedAt  string `json:"joined_at"`
+	ExpiresAt string `json:"expires_at"`
 }
 
 // QueueStatsResponse represents the queue statistics response
@@ -90,7 +92,7 @@ func (h *QueueHandler) JoinQueue(c *gin.Context) {
 	}
 
 	// Join queue
-	entry, err := h.queueService.JoinQueue(c.Request.Context(), userID, req.Category)
+	_, err := h.queueService.JoinQueue(c.Request.Context(), userID, req.Category)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -99,21 +101,32 @@ func (h *QueueHandler) JoinQueue(c *gin.Context) {
 		return
 	}
 
-	// Get position from entry
-	position := 0
-	if entry != nil {
-		// Find position in the appropriate queue
-		status, _ := h.queueService.GetQueueStatus(c.Request.Context(), userID)
-		if status != nil {
-			position = status.Position
-		}
-	}
+	// Return queue status in the same format as GetQueueStatus
+	status, _ := h.queueService.GetQueueStatus(c.Request.Context(), userID)
+	fmt.Printf("DEBUG: JoinQueue for user %s, GetQueueStatus returned: %+v\n", userID, status)
 
-	c.JSON(http.StatusOK, JoinQueueResponse{
-		Success:  true,
-		Message:  "Successfully joined queue",
-		Position: position,
-	})
+	if status != nil && status.IsInQueue {
+		response := QueueStatusResponse{
+			IsInQueue: status.IsInQueue,
+			Position:  status.Position,
+			Category:  status.Category,
+			JoinedAt:  status.JoinedAt.Format("2006-01-02T15:04:05Z07:00"),
+			ExpiresAt: status.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Successfully joined queue",
+			"data":    response,
+		})
+	} else {
+		fmt.Printf("DEBUG: User %s joined queue but GetQueueStatus returned IsInQueue: false\n", userID)
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Successfully joined queue",
+			"data":    nil,
+		})
+	}
 }
 
 // LeaveQueue handles the request to leave a queue
@@ -189,6 +202,7 @@ func (h *QueueHandler) GetQueueStatus(c *gin.Context) {
 		Position:  status.Position,
 		Category:  status.Category,
 		JoinedAt:  status.JoinedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ExpiresAt: status.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 
 	c.JSON(http.StatusOK, gin.H{

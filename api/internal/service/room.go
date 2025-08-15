@@ -180,9 +180,9 @@ func (s *RoomService) cleanupRoom(ctx context.Context, roomID uuid.UUID) {
 		// Mark room as sensitive
 		s.UpdateRoom(ctx, roomID, &[]bool{true}[0])
 	} else {
-		// Delete all messages and mark room as deleted
+		// Delete all messages and delete the room completely
 		s.db.WithContext(ctx).Where("room_id = ?", roomID).Delete(&model.Message{})
-		s.db.WithContext(ctx).Model(&model.Room{}).Where("id = ?", roomID).Update("is_deleted", true)
+		s.db.WithContext(ctx).Where("id = ?", roomID).Delete(&model.Room{})
 	}
 }
 

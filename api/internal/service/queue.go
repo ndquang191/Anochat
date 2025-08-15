@@ -94,6 +94,9 @@ func NewQueueService(db *gorm.DB, roomService *RoomService, userService *UserSer
 
 	slog.Info("QueueService initialized successfully")
 
+	// Start cleanup goroutine
+	go qs.startCleanupRoutine()
+
 	return qs
 }
 
@@ -140,7 +143,7 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID, categor
 		Profile:   profile,
 		Category:  category,
 		JoinedAt:  now,
-		ExpiresAt: time.Time{}, // No expiration
+		ExpiresAt: now.Add(qs.config.Chat.QueueHeartbeatTTL), // Set TTL expiration
 		IsMatched: false,
 		MatchChan: make(chan *MatchResult, 1),
 	}
@@ -387,12 +390,15 @@ func (qs *QueueService) GetQueueStatus(ctx context.Context, userID uuid.UUID) (*
 	for category, entries := range qs.queueMale {
 		for _, entry := range entries {
 			if entry.UserID == userID {
+				// Refresh TTL as heartbeat
+				entry.ExpiresAt = time.Now().Add(qs.config.Chat.QueueHeartbeatTTL)
+
 				return &QueueStatus{
 					IsInQueue: true,
 					Position:  position.Position,
 					Category:  category,
 					JoinedAt:  position.JoinedAt,
-					ExpiresAt: time.Time{},
+					ExpiresAt: entry.ExpiresAt,
 				}, nil
 			}
 		}
@@ -401,12 +407,15 @@ func (qs *QueueService) GetQueueStatus(ctx context.Context, userID uuid.UUID) (*
 	for category, entries := range qs.queueFemale {
 		for _, entry := range entries {
 			if entry.UserID == userID {
+				// Refresh TTL as heartbeat
+				entry.ExpiresAt = time.Now().Add(qs.config.Chat.QueueHeartbeatTTL)
+
 				return &QueueStatus{
 					IsInQueue: true,
 					Position:  position.Position,
 					Category:  category,
 					JoinedAt:  position.JoinedAt,
-					ExpiresAt: time.Time{},
+					ExpiresAt: entry.ExpiresAt,
 				}, nil
 			}
 		}
@@ -674,6 +683,75 @@ func (qs *QueueService) LeaveQueue(ctx context.Context, userID uuid.UUID) error 
 	}
 
 	return fmt.Errorf("user not found in queue")
+}
+
+// startCleanupRoutine runs periodically to remove expired queue entries
+func (qs *QueueService) startCleanupRoutine() {
+	ticker := time.NewTicker(qs.config.Chat.QueueCleanupInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		qs.cleanupExpiredEntries()
+	}
+}
+
+// cleanupExpiredEntries removes users who haven't sent heartbeat within TTL
+func (qs *QueueService) cleanupExpiredEntries() {
+	now := time.Now()
+	expiredUsers := make([]uuid.UUID, 0)
+
+	qs.queueMutex.Lock()
+	defer qs.queueMutex.Unlock()
+
+	// Check male queue
+	for category, entries := range qs.queueMale {
+		for i := len(entries) - 1; i >= 0; i-- {
+			entry := entries[i]
+			if now.After(entry.ExpiresAt) || !qs.isUserConnected(entry.UserID) {
+				expiredUsers = append(expiredUsers, entry.UserID)
+				// Remove from queue
+				qs.queueMale[category] = append(entries[:i], entries[i+1:]...)
+				close(entry.MatchChan)
+			}
+		}
+	}
+
+	// Check female queue
+	for category, entries := range qs.queueFemale {
+		for i := len(entries) - 1; i >= 0; i-- {
+			entry := entries[i]
+			if now.After(entry.ExpiresAt) || !qs.isUserConnected(entry.UserID) {
+				expiredUsers = append(expiredUsers, entry.UserID)
+				// Remove from queue
+				qs.queueFemale[category] = append(entries[:i], entries[i+1:]...)
+				close(entry.MatchChan)
+			}
+		}
+	}
+
+	// Clean up expired users from tracking maps
+	if len(expiredUsers) > 0 {
+		qs.posMutex.Lock()
+		qs.connMutex.Lock()
+
+		for _, userID := range expiredUsers {
+			delete(qs.userPositions, userID)
+			delete(qs.userConnections, userID)
+		}
+
+		qs.connMutex.Unlock()
+		qs.posMutex.Unlock()
+
+		// Update positions for remaining users
+		for category := range qs.queueMale {
+			qs.updatePositionsAfterRemoval(category, true, 0)
+		}
+		for category := range qs.queueFemale {
+			qs.updatePositionsAfterRemoval(category, false, 0)
+		}
+
+		slog.Info("Cleaned up expired queue entries", "count", len(expiredUsers), "users", expiredUsers)
+	}
 }
 
 // Stop stops the queue service
