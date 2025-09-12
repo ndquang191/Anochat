@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/service"
+	"github.com/ndquang191/Anochat/api/internal/util"
 )
 
 // UserHandler handles user-related endpoints
@@ -28,7 +29,7 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 	// Get user ID from context (set by auth middleware)
 	userIDInterface, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		util.SignOutAndRedirect(c, "http://localhost:3000/login")
 		return
 	}
 

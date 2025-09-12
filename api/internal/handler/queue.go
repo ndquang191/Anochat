@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/service"
+	"github.com/ndquang191/Anochat/api/internal/util"
 )
 
 // QueueHandler handles queue-related HTTP requests
@@ -65,10 +66,7 @@ func (h *QueueHandler) JoinQueue(c *gin.Context) {
 	// Get user ID from context (set by auth middleware)
 	userIDInterface, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"success": false,
-			"message": "User not authenticated",
-		})
+		util.SignOutAndRedirect(c, "http://localhost:3000/login")
 		return
 	}
 
@@ -134,10 +132,7 @@ func (h *QueueHandler) LeaveQueue(c *gin.Context) {
 	// Get user ID from context
 	userIDInterface, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"success": false,
-			"message": "User not authenticated",
-		})
+		util.SignOutAndRedirect(c, "http://localhost:3000/login")
 		return
 	}
 
@@ -171,10 +166,7 @@ func (h *QueueHandler) GetQueueStatus(c *gin.Context) {
 	// Get user ID from context
 	userIDInterface, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"success": false,
-			"message": "User not authenticated",
-		})
+		util.SignOutAndRedirect(c, "http://localhost:3000/login")
 		return
 	}
 

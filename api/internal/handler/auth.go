@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/ndquang191/Anochat/api/internal/service"
+	"github.com/ndquang191/Anochat/api/internal/util"
 	"golang.org/x/oauth2"
 )
 
@@ -67,11 +68,11 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 
 // Logout clears the JWT token cookie
 func (h *AuthHandler) Logout(c *gin.Context) {
-	// Clear JWT token cookie by setting it to expire immediately
-	c.SetCookie("jwt_token", "", -1, "/", "", false, true)
+	// Optional redirect target via query param, fallback to login page
+	redirectURL := c.Query("redirect")
+	if redirectURL == "" {
+		redirectURL = "http://localhost:3000/login"
+	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Logged out successfully",
-	})
+	util.SignOutAndRedirect(c, redirectURL)
 }
