@@ -31,7 +31,7 @@ func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 		// If still no token, sign out and redirect to login page
 		if tokenString == "" {
 			println("No token found")
-			util.SignOutAndRedirect(c, "http://localhost:3000/login")
+			util.SignOutAndRedirect(c)
 			c.Abort()
 			return
 		}
@@ -39,7 +39,7 @@ func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 		// Validate JWT token
 		claims, err := authService.ValidateJWT(tokenString)
 		if err != nil {
-			util.SignOutAndRedirect(c, "http://localhost:3000/login")
+			util.SignOutAndRedirect(c)
 			c.Abort()
 			return
 		}

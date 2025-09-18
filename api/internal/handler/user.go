@@ -29,7 +29,7 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 	// Get user ID from context (set by auth middleware)
 	userIDInterface, exists := c.Get("user_id")
 	if !exists {
-		util.SignOutAndRedirect(c, "http://localhost:3000/login")
+		util.SignOutAndRedirect(c)
 		return
 	}
 

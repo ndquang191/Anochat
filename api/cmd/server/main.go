@@ -57,7 +57,7 @@ func main() {
 
 	// Add CORS middleware
 	router.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "http://localhost:3000")
+		c.Header("Access-Control-Allow-Origin", cfg.ClientURL)
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
 		c.Header("Access-Control-Allow-Credentials", "true")
@@ -87,7 +87,7 @@ func main() {
 	queueService := service.NewQueueService(db, roomService, userService, cfg)
 
 	// Initialize handlers
-	authHandler := handler.NewAuthHandler(authService, oauthConfig)
+	authHandler := handler.NewAuthHandler(authService, oauthConfig, cfg)
 	userHandler := handler.NewUserHandler(authService, userService)
 	queueHandler := handler.NewQueueHandler(queueService)
 

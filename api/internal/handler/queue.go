@@ -66,7 +66,7 @@ func (h *QueueHandler) JoinQueue(c *gin.Context) {
 	// Get user ID from context (set by auth middleware)
 	userIDInterface, exists := c.Get("user_id")
 	if !exists {
-		util.SignOutAndRedirect(c, "http://localhost:3000/login")
+		util.SignOutAndRedirect(c)
 		return
 	}
 
@@ -132,7 +132,7 @@ func (h *QueueHandler) LeaveQueue(c *gin.Context) {
 	// Get user ID from context
 	userIDInterface, exists := c.Get("user_id")
 	if !exists {
-		util.SignOutAndRedirect(c, "http://localhost:3000/login")
+		util.SignOutAndRedirect(c)
 		return
 	}
 
@@ -166,7 +166,7 @@ func (h *QueueHandler) GetQueueStatus(c *gin.Context) {
 	// Get user ID from context
 	userIDInterface, exists := c.Get("user_id")
 	if !exists {
-		util.SignOutAndRedirect(c, "http://localhost:3000/login")
+		util.SignOutAndRedirect(c)
 		return
 	}
 

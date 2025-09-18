@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/ndquang191/Anochat/api/internal/service"
 	"github.com/ndquang191/Anochat/api/internal/util"
+	"github.com/ndquang191/Anochat/api/pkg/config"
 	"golang.org/x/oauth2"
 )
 
@@ -14,13 +15,15 @@ import (
 type AuthHandler struct {
 	authService *service.AuthService
 	oauthConfig *oauth2.Config
+	config      *config.Config
 }
 
 // NewAuthHandler creates a new auth handler
-func NewAuthHandler(authService *service.AuthService, oauthConfig *oauth2.Config) *AuthHandler {
+func NewAuthHandler(authService *service.AuthService, oauthConfig *oauth2.Config, config *config.Config) *AuthHandler {
 	return &AuthHandler{
 		authService: authService,
 		oauthConfig: oauthConfig,
+		config:      config,
 	}
 }
 
@@ -62,17 +65,17 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 	c.SetCookie("temp_user_data", string(userDataJSON), 60, "/", "", false, false) // 1 minute, not HTTP-only, no domain restriction
 
 	// Redirect to frontend callback page
-	frontendURL := "http://localhost:3000/callback"
+	frontendURL := h.config.ClientURL + "/callback"
 	c.Redirect(http.StatusTemporaryRedirect, frontendURL)
 }
 
 // Logout clears the JWT token cookie
 func (h *AuthHandler) Logout(c *gin.Context) {
-	// Optional redirect target via query param, fallback to login page
+	// Optional redirect target via query param, fallback to CLIENT_URL + /login
 	redirectURL := c.Query("redirect")
-	if redirectURL == "" {
-		redirectURL = "http://localhost:3000/login"
+	if redirectURL != "" {
+		util.SignOutAndRedirect(c, redirectURL)
+	} else {
+		util.SignOutAndRedirect(c)
 	}
-
-	util.SignOutAndRedirect(c, redirectURL)
 }
