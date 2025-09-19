@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { queueAPI } from "@/lib/api";
+import { ApiResponse } from "@/types";
 
 // Types
 interface QueueStatus {
@@ -31,8 +32,8 @@ interface UseQueueReturn {
 	queueStats: QueueStats | null;
 	matchStats: MatchStats | null;
 	isLoading: boolean;
-	joinQueue: (category?: string) => Promise<any>;
-	leaveQueue: () => Promise<any>;
+	joinQueue: (category?: string) => Promise<ApiResponse<QueueStatus> | undefined>;
+	leaveQueue: () => Promise<void>;
 	refreshQueueStatus: () => Promise<QueueStatus | null>;
 	refreshQueueStats: () => Promise<QueueStats | null>;
 	refreshMatchStats: () => Promise<MatchStats | null>;
@@ -209,7 +210,6 @@ export function useQueue(): UseQueueReturn {
 	useEffect(() => {
 		console.log("🔄 Polling useEffect triggered");
 		console.log("  - state.isInQueue =", state.isInQueue);
-		console.log("  - refreshQueueStatus function =", typeof refreshQueueStatus);
 
 		// Clear any existing interval
 		if (pollingIntervalRef.current) {
@@ -220,7 +220,6 @@ export function useQueue(): UseQueueReturn {
 
 		// Start polling if in queue
 		if (state.isInQueue) {
-			console.log("⏰ Starting polling interval every", POLLING_INTERVAL, "ms");
 			pollingIntervalRef.current = setInterval(() => {
 				console.log("📡 Polling: calling refreshQueueStatus...");
 				refreshQueueStatus();
@@ -232,7 +231,6 @@ export function useQueue(): UseQueueReturn {
 		// Cleanup on unmount or when leaving queue
 		return () => {
 			if (pollingIntervalRef.current) {
-				console.log("🧹 Cleanup: clearing polling interval");
 				clearInterval(pollingIntervalRef.current);
 				pollingIntervalRef.current = null;
 			}

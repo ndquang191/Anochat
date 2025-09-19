@@ -88,7 +88,7 @@ func main() {
 
 	// Initialize handlers
 	authHandler := handler.NewAuthHandler(authService, oauthConfig, cfg)
-	userHandler := handler.NewUserHandler(authService, userService)
+	userHandler := handler.NewUserHandler(authService, userService, roomService)
 	queueHandler := handler.NewQueueHandler(queueService)
 
 	// Initialize middleware
@@ -150,6 +150,8 @@ func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandl
 		protected.GET("/user/state", userHandler.GetUserState)
 		// Profile update endpoint
 		protected.PUT("/profile", userHandler.UpdateProfile)
+		// Leave current room endpoint
+		protected.POST("/room/leave", userHandler.LeaveCurrentRoom)
 
 		// Queue endpoints
 		protected.POST("/queue/join", queueHandler.JoinQueue)

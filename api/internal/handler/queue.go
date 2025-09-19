@@ -37,11 +37,11 @@ type JoinQueueResponse struct {
 
 // QueueStatusResponse represents the queue status response
 type QueueStatusResponse struct {
-	IsInQueue bool   `json:"is_in_queue"`
+	IsInQueue bool   `json:"isInQueue"`
 	Position  int    `json:"position"`
 	Category  string `json:"category"`
-	JoinedAt  string `json:"joined_at"`
-	ExpiresAt string `json:"expires_at"`
+	JoinedAt  string `json:"joinedAt"`
+	ExpiresAt string `json:"expiresAt"`
 }
 
 // QueueStatsResponse represents the queue statistics response

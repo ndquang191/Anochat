@@ -85,6 +85,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				is_deleted: response.data.is_deleted,
 				created_at: response.data.created_at,
 				profile: response.data.profile,
+				room: response.data.room,
+				messages: response.data.messages,
 			};
 			setAuthState({
 				isAuthenticated: true,

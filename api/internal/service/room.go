@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -96,6 +97,18 @@ func (s *RoomService) LeaveRoom(ctx context.Context, roomID, userID uuid.UUID) e
 	go s.cleanupRoom(context.Background(), roomID)
 
 	return nil
+}
+
+// LeaveCurrentRoom leaves the current active room for a user
+func (s *RoomService) LeaveCurrentRoom(ctx context.Context, userID uuid.UUID) error {
+	// Get user's active room
+	room, err := s.GetActiveRoomByUserID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("no active room found: %w", err)
+	}
+
+	// Leave the room
+	return s.LeaveRoom(ctx, room.ID, userID)
 }
 
 // UpdateRoom updates room status (e.g., mark as sensitive)

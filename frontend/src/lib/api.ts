@@ -46,6 +46,25 @@ interface UserState {
 		is_hidden: boolean;
 		updated_at: string;
 	};
+	room?: {
+		id: string;
+		user1_id: string;
+		user2_id: string;
+		category: string;
+		created_at: string;
+		ended_at?: string;
+		is_sensitive: boolean;
+		user1_last_read_message_id?: string;
+		user2_last_read_message_id?: string;
+		is_deleted: boolean;
+	};
+	messages?: Array<{
+		id: string;
+		room_id: string;
+		sender_id: string;
+		content: string;
+		created_at: string;
+	}>;
 }
 
 interface UserProfile {
@@ -78,9 +97,7 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 		},
 	};
 
-	console.log(`[API] Calling: ${API_BASE}${endpoint}`);
 	const response = await fetch(`${API_BASE}${endpoint}`, config);
-	console.log(`[API] Response status: ${response.status}`);
 
 	if (!response.ok) {
 		const errorData = await response.json().catch(() => ({}));
@@ -192,6 +209,23 @@ export const authAPI = {
 	// Get Google OAuth URL
 	getGoogleAuthUrl: () => {
 		return `${API_BASE}/auth/google`;
+	},
+};
+
+// Room API functions
+export const roomAPI = {
+	// Leave current room
+	leaveRoom: async () => {
+		try {
+			const result = await apiCall<{ success: boolean; message: string }>("/room/leave", {
+				method: "POST",
+			});
+			toast.success("Đã rời phòng chat!");
+			return result;
+		} catch (error) {
+			// Error already shown by apiCall
+			throw error;
+		}
 	},
 };
 
