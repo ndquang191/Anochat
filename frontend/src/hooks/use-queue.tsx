@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { queueAPI } from "@/lib/api";
+import { ApiResponse } from "@/types";
 
 // Types
 interface QueueStatus {
@@ -31,8 +32,8 @@ interface UseQueueReturn {
 	queueStats: QueueStats | null;
 	matchStats: MatchStats | null;
 	isLoading: boolean;
-	joinQueue: (category?: string) => Promise<any>;
-	leaveQueue: () => Promise<any>;
+	joinQueue: (category?: string) => Promise<ApiResponse<QueueStatus> | undefined>;
+	leaveQueue: () => Promise<void>;
 	refreshQueueStatus: () => Promise<QueueStatus | null>;
 	refreshQueueStats: () => Promise<QueueStats | null>;
 	refreshMatchStats: () => Promise<MatchStats | null>;

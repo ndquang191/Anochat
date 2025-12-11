@@ -125,6 +125,41 @@ function ConnectDisconnectButton() {
 	);
 }
 
+function LeaveRoomButton() {
+	const { user } = useAuth();
+	const [isLoading, setIsLoading] = React.useState(false);
+
+	// Only show if user has an active room
+	const hasActiveRoom = user?.room !== null;
+
+	const handleLeaveRoom = async () => {
+		if (!hasActiveRoom) return;
+
+		setIsLoading(true);
+		try {
+			await roomAPI.leaveRoom();
+			// The user state will be updated automatically via the auth context
+		} catch (error) {
+			console.error("❌ Leave room failed:", error);
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	if (!hasActiveRoom) return null;
+
+	return (
+		<button
+			onClick={handleLeaveRoom}
+			disabled={isLoading}
+			className={`w-10 h-10 rounded-full transition-all duration-300 ease-in-out transform hover:scale-110 bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center`}
+			title="Rời phòng chat"
+		>
+			<LogOut size={18} className="text-white" />
+		</button>
+	);
+}
+
 const Header = ({ trigger }: { trigger: React.ReactNode }) => {
 	const { user } = useAuth();
 
@@ -135,7 +170,8 @@ const Header = ({ trigger }: { trigger: React.ReactNode }) => {
 					{trigger}
 					<h1 className="text-xl font-semibold">Chat ẩn danh</h1>
 				</div>
-				<div className="flex items-center">
+				<div className="flex items-center gap-2">
+					<LeaveRoomButton />
 					<ConnectDisconnectButton />
 				</div>
 			</header>

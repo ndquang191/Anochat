@@ -13,6 +13,9 @@ type Config struct {
 	Port string
 	Env  string
 
+	// Client configuration
+	ClientURL string
+
 	// Database configuration
 	Database DatabaseConfig
 
@@ -63,8 +66,9 @@ type SecurityConfig struct {
 // Load loads configuration from environment variables
 func Load() *Config {
 	config := &Config{
-		Port: getEnv("PORT", "8080"),
-		Env:  getEnv("ENV", "development"),
+		Port:      getEnv("PORT", "8080"),
+		Env:       getEnv("ENV", "development"),
+		ClientURL: getEnv("CLIENT_URL", "http://localhost:3000"),
 
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", ""),

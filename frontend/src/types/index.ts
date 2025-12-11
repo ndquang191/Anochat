@@ -12,6 +12,7 @@ export interface User {
 	is_deleted: boolean;
 	created_at: string;
 	profile?: Profile;
+	room?: Room;
 	messages?: Message[];
 }
 

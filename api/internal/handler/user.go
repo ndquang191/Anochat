@@ -7,19 +7,22 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/service"
+	"github.com/ndquang191/Anochat/api/internal/util"
 )
 
 // UserHandler handles user-related endpoints
 type UserHandler struct {
 	authService *service.AuthService
 	userService *service.UserService
+	roomService *service.RoomService
 }
 
 // NewUserHandler creates a new user handler
-func NewUserHandler(authService *service.AuthService, userService *service.UserService) *UserHandler {
+func NewUserHandler(authService *service.AuthService, userService *service.UserService, roomService *service.RoomService) *UserHandler {
 	return &UserHandler{
 		authService: authService,
 		userService: userService,
+		roomService: roomService,
 	}
 }
 
@@ -28,7 +31,7 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 	// Get user ID from context (set by auth middleware)
 	userIDInterface, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		util.SignOutAndRedirect(c)
 		return
 	}
 
@@ -142,5 +145,36 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 			"is_male":   profile.IsMale,
 			"is_hidden": profile.IsHidden,
 		},
+	})
+}
+
+// LeaveCurrentRoom handles the request to leave the current active room
+func (h *UserHandler) LeaveCurrentRoom(c *gin.Context) {
+	// Get user ID from context (set by auth middleware)
+	userIDInterface, exists := c.Get("user_id")
+	if !exists {
+		util.SignOutAndRedirect(c)
+		return
+	}
+
+	userID, ok := userIDInterface.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	// Leave current room
+	err := h.roomService.LeaveCurrentRoom(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Successfully left room",
 	})
 }

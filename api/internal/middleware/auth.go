@@ -1,11 +1,11 @@
 package middleware
 
 import (
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ndquang191/Anochat/api/internal/service"
+	"github.com/ndquang191/Anochat/api/internal/util"
 )
 
 // AuthMiddleware validates JWT token and injects user into context
@@ -28,10 +28,10 @@ func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 			tokenString, _ = c.Cookie("jwt_token")
 		}
 
-		// If still no token, return unauthorized
+		// If still no token, sign out and redirect to login page
 		if tokenString == "" {
 			println("No token found")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization required"})
+			util.SignOutAndRedirect(c)
 			c.Abort()
 			return
 		}
@@ -39,7 +39,7 @@ func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 		// Validate JWT token
 		claims, err := authService.ValidateJWT(tokenString)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			util.SignOutAndRedirect(c)
 			c.Abort()
 			return
 		}

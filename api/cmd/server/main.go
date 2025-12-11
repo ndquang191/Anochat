@@ -57,7 +57,7 @@ func main() {
 
 	// Add CORS middleware
 	router.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "http://localhost:3000")
+		c.Header("Access-Control-Allow-Origin", cfg.ClientURL)
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
 		c.Header("Access-Control-Allow-Credentials", "true")
@@ -96,8 +96,8 @@ func main() {
 	queueService.SetMatchNotifier(wsHub)
 
 	// Initialize handlers
-	authHandler := handler.NewAuthHandler(authService, oauthConfig)
-	userHandler := handler.NewUserHandler(authService, userService)
+	authHandler := handler.NewAuthHandler(authService, oauthConfig, cfg)
+	userHandler := handler.NewUserHandler(authService, userService, roomService)
 	queueHandler := handler.NewQueueHandler(queueService)
 	wsHandler := handler.NewWebSocketHandler(wsHub, authService)
 
@@ -160,6 +160,8 @@ func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandl
 		protected.GET("/user/state", userHandler.GetUserState)
 		// Profile update endpoint
 		protected.PUT("/profile", userHandler.UpdateProfile)
+		// Leave current room endpoint
+		protected.POST("/room/leave", userHandler.LeaveCurrentRoom)
 
 		// Queue endpoints
 		protected.POST("/queue/join", queueHandler.JoinQueue)
