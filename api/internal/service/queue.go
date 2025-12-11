@@ -49,6 +49,11 @@ type QueuePosition struct {
 	JoinedAt time.Time
 }
 
+// MatchNotifier is an interface for notifying when matches are found
+type MatchNotifier interface {
+	NotifyMatch(user1ID, user2ID, roomID uuid.UUID, category string)
+}
+
 // QueueService with enhanced features
 type QueueService struct {
 	db          *gorm.DB
@@ -77,6 +82,9 @@ type QueueService struct {
 		femaleWaitTime time.Duration
 		lastMatchTime  time.Time
 	}
+
+	// Match notifier for WebSocket
+	matchNotifier MatchNotifier
 }
 
 // NewQueueService creates a new enhanced queue service
@@ -128,12 +136,8 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID, categor
 	// Check if user has active room
 	activeRoom, err := qs.userService.GetActiveRoom(ctx, userID)
 	if err == nil && activeRoom != nil {
+		slog.Warn("User cannot join queue - already has active room", "user_id", userID, "room_id", activeRoom.ID)
 		return nil, fmt.Errorf("user already has active room")
-	}
-
-	// Check if user is already in queue
-	if qs.isUserInQueue(userID) {
-		return nil, fmt.Errorf("user already in queue")
 	}
 
 	// Create queue entry
@@ -220,21 +224,49 @@ func (qs *QueueService) tryMatch(entry *QueueEntry) {
 
 	category := entry.Category
 	isMale := entry.Profile.IsMale != nil && *entry.Profile.IsMale
+	isUnknown := entry.Profile.IsMale == nil
 
-	// Get the same gender queue for testing (allow male-male, female-female matches)
-	var matchQueue []*QueueEntry
+	// Strategy: Try opposite gender first (preferred), then same gender (fallback)
+	var match *QueueEntry
+	var matchedFromOppositeGender bool
+
+	// 1. Priority: Try opposite gender first
+	var oppositeQueue []*QueueEntry
 	if isMale {
-		matchQueue = qs.queueMale[category]
+		oppositeQueue = qs.queueFemale[category]
+	} else if !isUnknown {
+		oppositeQueue = qs.queueMale[category]
 	} else {
-		matchQueue = qs.queueFemale[category]
+		// Unknown gender: try male queue first, then female
+		oppositeQueue = append(qs.queueMale[category], qs.queueFemale[category]...)
 	}
 
-	// Find the first available match (FIFO) - only consider connected users
-	var match *QueueEntry
-	for _, otherEntry := range matchQueue {
+	for _, otherEntry := range oppositeQueue {
 		if !otherEntry.IsMatched && qs.isUserConnected(otherEntry.UserID) && otherEntry.UserID != entry.UserID {
 			match = otherEntry
+			matchedFromOppositeGender = true
 			break
+		}
+	}
+
+	// 2. Fallback: Try same gender if no opposite gender match found
+	if match == nil {
+		var sameQueue []*QueueEntry
+		if isMale {
+			sameQueue = qs.queueMale[category]
+		} else if !isUnknown {
+			sameQueue = qs.queueFemale[category]
+		} else {
+			// Unknown already tried both queues above
+			sameQueue = []*QueueEntry{}
+		}
+
+		for _, otherEntry := range sameQueue {
+			if !otherEntry.IsMatched && qs.isUserConnected(otherEntry.UserID) && otherEntry.UserID != entry.UserID {
+				match = otherEntry
+				matchedFromOppositeGender = false
+				break
+			}
 		}
 	}
 
@@ -243,8 +275,9 @@ func (qs *QueueService) tryMatch(entry *QueueEntry) {
 		"user_id", entry.UserID,
 		"category", category,
 		"is_male", isMale,
-		"queue_size", len(matchQueue),
+		"is_unknown", isUnknown,
 		"found_match", match != nil,
+		"opposite_gender", matchedFromOppositeGender,
 		"match_user_id", func() string {
 			if match != nil {
 				return match.UserID.String()
@@ -261,9 +294,13 @@ func (qs *QueueService) tryMatch(entry *QueueEntry) {
 	entry.IsMatched = true
 	match.IsMatched = true
 
+	// Determine match's gender for queue removal
+	matchIsMale := match.Profile.IsMale != nil && *match.Profile.IsMale
+
 	// Remove both entries from their respective queues
+	// Unknown gender users are stored in female queue (isMale=false)
 	qs.removeEntryFromQueue(category, entry, isMale)
-	qs.removeEntryFromQueue(category, match, !isMale)
+	qs.removeEntryFromQueue(category, match, matchIsMale)
 
 	// Update match statistics
 	qs.updateMatchStats(entry, match)
@@ -296,8 +333,18 @@ func (qs *QueueService) tryMatch(entry *QueueEntry) {
 		"wait_time_1", time.Since(entry.JoinedAt),
 		"wait_time_2", time.Since(match.JoinedAt))
 
+	// Notify via WebSocket if notifier is set
+	if qs.matchNotifier != nil {
+		qs.matchNotifier.NotifyMatch(entry.UserID, match.UserID, room.ID, category)
+	}
+
 	// Log updated queue status after match
 	qs.logCurrentQueueStatus(category)
+}
+
+// SetMatchNotifier sets the match notifier for WebSocket notifications
+func (qs *QueueService) SetMatchNotifier(notifier MatchNotifier) {
+	qs.matchNotifier = notifier
 }
 
 // updateMatchStats updates match statistics
@@ -337,6 +384,15 @@ func (qs *QueueService) removeEntryFromQueue(category string, entry *QueueEntry,
 			} else {
 				qs.queueFemale[category] = append(queue[:i], queue[i+1:]...)
 			}
+
+			// Remove from tracking maps
+			qs.posMutex.Lock()
+			delete(qs.userPositions, entry.UserID)
+			qs.posMutex.Unlock()
+
+			qs.connMutex.Lock()
+			delete(qs.userConnections, entry.UserID)
+			qs.connMutex.Unlock()
 
 			// Update positions for remaining users
 			qs.updatePositionsAfterRemoval(category, isMale, i)

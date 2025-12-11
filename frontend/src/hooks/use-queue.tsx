@@ -5,11 +5,11 @@ import { queueAPI } from "@/lib/api";
 
 // Types
 interface QueueStatus {
-	isInQueue: boolean;
+	is_in_queue: boolean;
 	position: number;
 	category: string;
-	joinedAt: string;
-	expiresAt: string;
+	joined_at: string;
+	expires_at: string;
 }
 
 interface QueueStats {
@@ -41,7 +41,6 @@ interface UseQueueReturn {
 // Constants
 const POLLING_INTERVAL = 5000; // 5 seconds
 const DEFAULT_CATEGORY = "polite";
-const QUEUE_EXPIRY_TIME = 5 * 60 * 1000; // 5 minutes
 
 // Custom hook for managing queue state
 export function useQueue(): UseQueueReturn {
@@ -62,25 +61,20 @@ export function useQueue(): UseQueueReturn {
 	const safeSetState = useCallback(
 		(updates: Partial<typeof state>) => {
 			if (isMountedRef.current) {
-				console.log("🔧 safeSetState called with:", updates, "current state:", state);
-				setState((prev) => {
-					const newState = { ...prev, ...updates };
-					console.log("🔄 State updated from:", prev, "to:", newState);
-					return newState;
-				});
+				setState((prev) => ({ ...prev, ...updates }));
 			}
 		},
-		[state]
+		[] // No dependencies - uses functional setState
 	);
 
 	// Create optimistic queue status
 	const createOptimisticStatus = useCallback(
 		(category: string): QueueStatus => ({
-			isInQueue: true,
+			is_in_queue: true,
 			position: 0,
 			category,
-			joinedAt: new Date().toISOString(),
-			expiresAt: new Date(Date.now() + QUEUE_EXPIRY_TIME).toISOString(),
+			joined_at: new Date().toISOString(),
+			expires_at: "", // No expiry time - handled by backend WebSocket
 		}),
 		[]
 	);
@@ -88,12 +82,6 @@ export function useQueue(): UseQueueReturn {
 	// Join queue
 	const joinQueue = useCallback(
 		async (category: string = DEFAULT_CATEGORY) => {
-			// Prevent duplicate join requests
-			if (state.isInQueue || state.isLoading) {
-				console.warn("Already in queue or loading");
-				return;
-			}
-
 			safeSetState({ isLoading: true });
 
 			// Optimistic update for better UX
@@ -112,6 +100,9 @@ export function useQueue(): UseQueueReturn {
 						queueStatus: response.data,
 						isLoading: false,
 					});
+				} else {
+					// If no data, still set loading to false
+					safeSetState({ isLoading: false });
 				}
 
 				return response;
@@ -128,15 +119,11 @@ export function useQueue(): UseQueueReturn {
 				throw error;
 			}
 		},
-		[state.isInQueue, state.isLoading, safeSetState, createOptimisticStatus]
+		[safeSetState, createOptimisticStatus]
 	);
 
 	// Leave queue
 	const leaveQueue = useCallback(async () => {
-		if (!state.isInQueue || state.isLoading) {
-			return;
-		}
-
 		safeSetState({ isLoading: true });
 
 		try {
@@ -154,7 +141,7 @@ export function useQueue(): UseQueueReturn {
 			safeSetState({ isLoading: false });
 			throw error;
 		}
-	}, [state.isInQueue, state.isLoading, safeSetState]);
+	}, [safeSetState]);
 
 	// Refresh queue status
 	const refreshQueueStatus = useCallback(async () => {
@@ -162,7 +149,7 @@ export function useQueue(): UseQueueReturn {
 			const response = await queueAPI.getStatus();
 			if (response.success && response.data) {
 				safeSetState({
-					isInQueue: response.data.isInQueue,
+					isInQueue: response.data.is_in_queue,
 					queueStatus: response.data,
 				});
 			}
@@ -207,32 +194,22 @@ export function useQueue(): UseQueueReturn {
 
 	// Setup polling when in queue
 	useEffect(() => {
-		console.log("🔄 Polling useEffect triggered");
-		console.log("  - state.isInQueue =", state.isInQueue);
-		console.log("  - refreshQueueStatus function =", typeof refreshQueueStatus);
-
 		// Clear any existing interval
 		if (pollingIntervalRef.current) {
-			console.log("🛑 Clearing existing polling interval");
 			clearInterval(pollingIntervalRef.current);
 			pollingIntervalRef.current = null;
 		}
 
 		// Start polling if in queue
 		if (state.isInQueue) {
-			console.log("⏰ Starting polling interval every", POLLING_INTERVAL, "ms");
 			pollingIntervalRef.current = setInterval(() => {
-				console.log("📡 Polling: calling refreshQueueStatus...");
 				refreshQueueStatus();
 			}, POLLING_INTERVAL);
-		} else {
-			console.log("⏸️ Not in queue, no polling needed");
 		}
 
 		// Cleanup on unmount or when leaving queue
 		return () => {
 			if (pollingIntervalRef.current) {
-				console.log("🧹 Cleanup: clearing polling interval");
 				clearInterval(pollingIntervalRef.current);
 				pollingIntervalRef.current = null;
 			}

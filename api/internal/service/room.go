@@ -84,11 +84,20 @@ func (s *RoomService) LeaveRoom(ctx context.Context, roomID, userID uuid.UUID) e
 		return errors.New("user not part of this room")
 	}
 
+	// Check if room is already ended
+	if room.EndedAt != nil {
+		// Room already ended, return success
+		return nil
+	}
+
 	// Mark room as ended
 	now := time.Now()
 	room.EndedAt = &now
 
-	if err := s.db.WithContext(ctx).Save(room).Error; err != nil {
+	// Use Model().Update for immediate database update
+	if err := s.db.WithContext(ctx).Model(&model.Room{}).
+		Where("id = ?", roomID).
+		Update("ended_at", now).Error; err != nil {
 		return err
 	}
 

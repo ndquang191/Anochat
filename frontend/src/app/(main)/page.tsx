@@ -7,7 +7,6 @@ import { Loader2 } from "lucide-react";
 const Page = () => {
 	const { isInQueue, queueStatus } = useQueue();
 
-	console.log("IsInQueue", isInQueue);
 	// Handle page unload and visibility changes to leave queu
 
 	// Show loading indicator when in queue

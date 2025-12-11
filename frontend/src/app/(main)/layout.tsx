@@ -15,7 +15,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
 			<AppSidebar />
 			<SidebarInset className="h-screen flex flex-col overflow-hidden">
 				<Header trigger={<SidebarTrigger className="-ml-1" />} />
-				<main className="flex-1 mt-16 overflow-hidden">{children}</main>
+				<main className="flex-1 mt-[88px] overflow-hidden">{children}</main>
 			</SidebarInset>
 		</SidebarProvider>
 	);

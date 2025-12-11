@@ -10,11 +10,11 @@ interface ApiResponse<T> {
 }
 
 interface QueueStatus {
-	isInQueue: boolean;
+	is_in_queue: boolean;
 	position: number;
 	category: string;
-	joinedAt: string;
-	expiresAt: string;
+	joined_at: string;
+	expires_at: string;
 }
 
 interface QueueStats {

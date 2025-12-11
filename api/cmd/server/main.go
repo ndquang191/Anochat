@@ -83,19 +83,29 @@ func main() {
 	db := database.GetDB()
 	userService := service.NewUserService(db)
 	roomService := service.NewRoomService(db)
+	messageService := service.NewMessageService(db)
 	authService := service.NewAuthService(userService, oauthConfig, cfg.OAuth.JWTSecret)
 	queueService := service.NewQueueService(db, roomService, userService, cfg)
+
+	// Initialize WebSocket hub
+	wsHub := handler.NewHub(queueService, messageService, roomService)
+	go wsHub.Run()
+	slog.Info("WebSocket hub started")
+
+	// Connect queue service to WebSocket hub for match notifications
+	queueService.SetMatchNotifier(wsHub)
 
 	// Initialize handlers
 	authHandler := handler.NewAuthHandler(authService, oauthConfig)
 	userHandler := handler.NewUserHandler(authService, userService)
 	queueHandler := handler.NewQueueHandler(queueService)
+	wsHandler := handler.NewWebSocketHandler(wsHub, authService)
 
 	// Initialize middleware
 	authMiddleware := middleware.AuthMiddleware(authService)
 
 	// Setup routes
-	setupRoutes(router, authHandler, userHandler, queueHandler, authMiddleware)
+	setupRoutes(router, authHandler, userHandler, queueHandler, wsHandler, authMiddleware)
 
 	// Health check endpoint
 	router.GET("/healthz", func(c *gin.Context) {
@@ -136,7 +146,7 @@ func main() {
 }
 
 // setupRoutes configures all API routes
-func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandler *handler.UserHandler, queueHandler *handler.QueueHandler, authMiddleware gin.HandlerFunc) {
+func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandler *handler.UserHandler, queueHandler *handler.QueueHandler, wsHandler *handler.WebSocketHandler, authMiddleware gin.HandlerFunc) {
 	// Auth routes (no middleware required)
 	router.GET("/auth/google", authHandler.GoogleLogin)
 	router.GET("/auth/callback", authHandler.GoogleCallback)
@@ -157,5 +167,8 @@ func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandl
 		protected.GET("/queue/status", queueHandler.GetQueueStatus)
 		protected.GET("/queue/stats", queueHandler.GetQueueStats)
 		protected.GET("/queue/match-stats", queueHandler.GetMatchStats)
+
+		// WebSocket endpoint
+		protected.GET("/ws", wsHandler.HandleWebSocket)
 	}
 }

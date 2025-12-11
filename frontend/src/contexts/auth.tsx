@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import { User, AuthState, AuthContextType } from "@/types";
 import { setCookie, getCookie, deleteCookie } from "@/lib/cookies";
 import { userAPI, authAPI } from "@/lib/api";
+import { resetWebSocketClient } from "@/lib/websocket";
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
@@ -56,6 +57,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			// Error already handled by toast in API client
 			console.error("Logout error:", error);
 		}
+
+		// Disconnect and reset WebSocket singleton
+		resetWebSocketClient();
 
 		// Clear frontend cookies (JWT token is cleared by backend)
 		deleteCookie("user_info");
