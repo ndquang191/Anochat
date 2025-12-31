@@ -1,9 +1,9 @@
 package model
 
 import (
-	"time"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"time"
 )
 
 // User represents the users table
@@ -36,16 +36,16 @@ type Profile struct {
 
 // Room represents the rooms table
 type Room struct {
-	ID                       uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	User1ID                  uuid.UUID  `gorm:"type:uuid;not null" json:"user1_id"`
-	User2ID                  uuid.UUID  `gorm:"type:uuid;not null" json:"user2_id"`
-	Category                 string     `gorm:"type:text;default:polite" json:"category"`
-	CreatedAt               time.Time  `gorm:"autoCreateTime" json:"created_at"`
-	EndedAt                 *time.Time `gorm:"type:timestamp" json:"ended_at"`
-	IsSensitive             bool       `gorm:"default:false" json:"is_sensitive"`
-	User1LastReadMessageID  *uuid.UUID `gorm:"type:uuid" json:"user1_last_read_message_id"`
-	User2LastReadMessageID  *uuid.UUID `gorm:"type:uuid" json:"user2_last_read_message_id"`
-	IsDeleted               bool       `gorm:"default:false" json:"is_deleted"`
+	ID                     uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	User1ID                uuid.UUID  `gorm:"type:uuid;not null" json:"user1_id"`
+	User2ID                uuid.UUID  `gorm:"type:uuid;not null" json:"user2_id"`
+	Category               string     `gorm:"type:text;default:polite" json:"category"`
+	CreatedAt              time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	EndedAt                *time.Time `gorm:"type:timestamp" json:"ended_at"`
+	IsSensitive            bool       `gorm:"default:false" json:"is_sensitive"`
+	User1LastReadMessageID *uuid.UUID `gorm:"type:uuid" json:"user1_last_read_message_id"`
+	User2LastReadMessageID *uuid.UUID `gorm:"type:uuid" json:"user2_last_read_message_id"`
+	IsDeleted              bool       `gorm:"default:false" json:"is_deleted"`
 
 	// Relationships
 	User1    *User     `gorm:"foreignKey:User1ID;constraint:OnDelete:CASCADE" json:"user1,omitempty"`

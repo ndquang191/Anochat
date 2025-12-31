@@ -58,7 +58,7 @@ export default function CallbackPage() {
 
 		// Run when component mounts or retry count changes
 		handleCallback();
-	}, [retryCount]); // Add retryCount as dependency
+	}, [retryCount, login, router]); // Dependencies for effect
 
 
 	if (error) {

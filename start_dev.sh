@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to start development environment with tmux
-# Frontend: npm run dev in frontend folder
+# Frontend: bun run dev in frontend folder
 # Backend: air command in api folder
 
 # Check if tmux is installed
@@ -33,7 +33,7 @@ tmux new-session -d -s anochat-dev
 # Create window for frontend
 tmux new-window -t anochat-dev -n frontend
 tmux send-keys -t anochat-dev:frontend "cd frontend" Enter
-tmux send-keys -t anochat-dev:frontend "npm run dev" Enter
+tmux send-keys -t anochat-dev:frontend "bun run dev" Enter
 
 # Create window for backend
 tmux new-window -t anochat-dev -n backend
@@ -45,7 +45,7 @@ tmux select-window -t anochat-dev:frontend
 
 # Attach to the session
 echo "Starting development environment..."
-echo "Frontend: npm run dev"
+echo "Frontend: bun run dev"
 echo "Backend: air"
 echo ""
 echo "Use Ctrl+B then D to detach from tmux"

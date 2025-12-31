@@ -37,11 +37,11 @@ type JoinQueueResponse struct {
 
 // QueueStatusResponse represents the queue status response
 type QueueStatusResponse struct {
-	IsInQueue bool   `json:"isInQueue"`
+	IsInQueue bool   `json:"is_in_queue"`
 	Position  int    `json:"position"`
 	Category  string `json:"category"`
-	JoinedAt  string `json:"joinedAt"`
-	ExpiresAt string `json:"expiresAt"`
+	JoinedAt  string `json:"joined_at"`
+	ExpiresAt string `json:"expires_at"`
 }
 
 // QueueStatsResponse represents the queue statistics response
@@ -82,6 +82,7 @@ func (h *QueueHandler) JoinQueue(c *gin.Context) {
 	// Parse request body
 	var req JoinQueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		fmt.Printf("❌ JoinQueue: Failed to parse request body: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"message": "Invalid request body: " + err.Error(),
@@ -89,15 +90,20 @@ func (h *QueueHandler) JoinQueue(c *gin.Context) {
 		return
 	}
 
+	fmt.Printf("✅ JoinQueue: User %s requesting to join category %s\n", userID, req.Category)
+
 	// Join queue
 	_, err := h.queueService.JoinQueue(c.Request.Context(), userID, req.Category)
 	if err != nil {
+		fmt.Printf("❌ JoinQueue: Failed for user %s: %v\n", userID, err)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"message": err.Error(),
 		})
 		return
 	}
+
+	fmt.Printf("✅ JoinQueue: User %s successfully joined queue\n", userID)
 
 	// Return queue status in the same format as GetQueueStatus
 	status, _ := h.queueService.GetQueueStatus(c.Request.Context(), userID)

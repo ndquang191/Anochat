@@ -2,29 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { queueAPI } from "@/lib/api";
-import { ApiResponse } from "@/types";
-
-// Types
-interface QueueStatus {
-	is_in_queue: boolean;
-	position: number;
-	category: string;
-	joined_at: string;
-	expires_at: string;
-}
-
-interface QueueStats {
-	totalMale: number;
-	totalFemale: number;
-	estimatedWaitTime: string;
-}
-
-interface MatchStats {
-	totalMatches: number;
-	maleWaitTime: string;
-	femaleWaitTime: string;
-	lastMatchTime: string;
-}
+import type { ApiResponse, QueueStatus, QueueStats, MatchStats } from "@/types";
 
 interface UseQueueReturn {
 	isInQueue: boolean;
@@ -148,14 +126,25 @@ export function useQueue(): UseQueueReturn {
 	const refreshQueueStatus = useCallback(async () => {
 		try {
 			const response = await queueAPI.getStatus();
+			console.log("[useQueue] refreshQueueStatus response:", response);
 			if (response.success && response.data) {
+				console.log("[useQueue] Setting isInQueue:", response.data.is_in_queue);
 				safeSetState({
 					isInQueue: response.data.is_in_queue,
 					queueStatus: response.data,
 				});
+				return response.data;
+			} else {
+				console.log("[useQueue] No data in response, setting isInQueue to false");
+				safeSetState({
+					isInQueue: false,
+					queueStatus: null,
+				});
 			}
+			return null;
 		} catch (error) {
-			console.error("Failed to refresh queue status:", error);
+			console.error("[useQueue] Failed to refresh queue status:", error);
+			return null;
 		}
 	}, [safeSetState]);
 
@@ -192,6 +181,12 @@ export function useQueue(): UseQueueReturn {
 			return null;
 		}
 	}, [safeSetState]);
+
+	// Initialize queue status on mount (for F5 refresh scenarios)
+	useEffect(() => {
+		refreshQueueStatus();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []); // Only run once on mount
 
 	// Setup polling when in queue
 	useEffect(() => {
@@ -241,5 +236,5 @@ export function useQueue(): UseQueueReturn {
 	};
 }
 
-// Optional: Export types for external use
-export type { QueueStatus, QueueStats, MatchStats, UseQueueReturn };
+// Export hook return type for external use
+export type { UseQueueReturn };

@@ -1,9 +1,8 @@
 // lib/websocket.ts - Native WebSocket client for backend integration
-import { getCookie } from "@/lib/cookies";
 
 export interface WebSocketMessage {
 	type: string;
-	payload: Record<string, any>;
+	payload: Record<string, unknown>;
 }
 
 export interface ChatMessage {
@@ -103,7 +102,7 @@ export class WebSocketClient {
 		}
 	}
 
-	send(type: string, payload: Record<string, any>) {
+	send(type: string, payload: Record<string, unknown>) {
 		if (this.ws && this.ws.readyState === WebSocket.OPEN) {
 			const message: WebSocketMessage = { type, payload };
 			this.ws.send(JSON.stringify(message));

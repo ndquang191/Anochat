@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -41,28 +40,37 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 		return
 	}
 
-	// Get JWT token from context (set by middleware)
-	tokenString := ""
-	if authHeader := c.GetHeader("Authorization"); authHeader != "" {
-		tokenParts := strings.Split(authHeader, " ")
-		if len(tokenParts) == 2 && tokenParts[0] == "Bearer" {
-			tokenString = tokenParts[1]
-		}
-	}
-	if tokenString == "" {
-		tokenString, _ = c.Cookie("jwt_token")
-	}
-
-	// Get user state using AuthService
-	user, room, messages, err := h.authService.GetUserFromToken(c.Request.Context(), tokenString)
+	// Get user from database
+	user, err := h.userService.GetUserByID(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
 		return
 	}
 
-	// Check if user is new (no profile)
+	// Get user profile
 	profile, err := h.userService.GetProfile(c.Request.Context(), userID)
 	isNewUser := err != nil || profile == nil
+
+	// Get active room
+	room, err := h.userService.GetActiveRoom(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get active room"})
+		return
+	}
+
+	// Get room messages if room exists
+	var messages []interface{}
+	if room != nil {
+		roomMessages, err := h.userService.GetRoomMessages(c.Request.Context(), room.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get messages"})
+			return
+		}
+		// Convert to interface slice for JSON response
+		for _, msg := range roomMessages {
+			messages = append(messages, msg)
+		}
+	}
 
 	// Build response
 	response := gin.H{

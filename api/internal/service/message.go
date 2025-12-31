@@ -5,8 +5,8 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 	"github.com/ndquang191/Anochat/api/internal/model"
+	"gorm.io/gorm"
 )
 
 // MessageService handles message operations
@@ -96,7 +96,7 @@ func (s *MessageService) GetUnreadMessagesCount(ctx context.Context, roomID, use
 
 	var count int64
 	query := s.db.WithContext(ctx).Model(&model.Message{}).Where("room_id = ? AND sender_id != ?", roomID, userID)
-	
+
 	if lastReadMessageID != nil {
 		query = query.Where("created_at > (SELECT created_at FROM messages WHERE id = ?)", lastReadMessageID)
 	}
@@ -185,4 +185,4 @@ func (s *MessageService) GetMessageStats(ctx context.Context, roomID uuid.UUID) 
 		"first_message":  firstMessage,
 		"last_message":   lastMessage,
 	}, nil
-} 
+}

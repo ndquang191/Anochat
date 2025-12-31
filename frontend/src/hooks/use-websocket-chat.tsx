@@ -91,7 +91,7 @@ export function useWebSocketChat({ userId, onMatchFound, onPartnerLeft }: UseWeb
 		};
 
 		// Handle partner left
-		const handlePartnerLeft = (message: WebSocketMessage) => {
+		const handlePartnerLeft = () => {
 			console.log("Partner left the room");
 			setRoomId(null);
 			setMessages([]);
@@ -117,7 +117,7 @@ export function useWebSocketChat({ userId, onMatchFound, onPartnerLeft }: UseWeb
 		};
 
 		// Handle room left confirmation
-		const handleRoomLeft = (message: WebSocketMessage) => {
+		const handleRoomLeft = () => {
 			console.log("Left room successfully");
 			setRoomId(null);
 			setMessages([]);
@@ -147,7 +147,7 @@ export function useWebSocketChat({ userId, onMatchFound, onPartnerLeft }: UseWeb
 			client.off("partner_typing", handlePartnerTyping);
 			client.off("room_left", handleRoomLeft);
 		};
-	}, [userId]);
+	}, [userId, checkAuth]);
 
 	const sendMessage = useCallback(
 		(content: string) => {

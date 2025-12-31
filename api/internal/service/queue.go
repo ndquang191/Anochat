@@ -44,9 +44,11 @@ type QueueStatus struct {
 
 // QueuePosition tracks user position in queue
 type QueuePosition struct {
-	UserID   uuid.UUID
-	Position int
-	JoinedAt time.Time
+	UserID    uuid.UUID
+	Position  int
+	Category  string
+	JoinedAt  time.Time
+	ExpiresAt time.Time
 }
 
 // MatchNotifier is an interface for notifying when matches are found
@@ -118,26 +120,37 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID, categor
 	// Get user profile
 	profile, err := qs.userService.GetProfile(ctx, userID)
 	if err != nil {
+		slog.Error("Failed to get user profile", "user_id", userID, "error", err)
 		return nil, fmt.Errorf("failed to get user profile: %w", err)
 	}
 
 	if profile == nil {
-		return nil, fmt.Errorf("user profile not found")
+		slog.Warn("User profile not found - user needs to complete profile first", "user_id", userID)
+		return nil, fmt.Errorf("vui lòng hoàn thành thông tin cá nhân trước khi tham gia hàng chờ")
 	}
 
-	// Check if user is already in queue
-	if qs.isUserInQueue(userID) {
-		slog.Warn("User cannot join queue - already in queue", "user_id", userID, "category", category)
-		// Log current queue status even when user cannot join
-		qs.logCurrentQueueStatus(category)
-		return nil, fmt.Errorf("user already in queue")
-	}
-
-	// Check if user has active room
+	// Check if user has active room FIRST (more important check)
 	activeRoom, err := qs.userService.GetActiveRoom(ctx, userID)
 	if err == nil && activeRoom != nil {
 		slog.Warn("User cannot join queue - already has active room", "user_id", userID, "room_id", activeRoom.ID)
-		return nil, fmt.Errorf("user already has active room")
+		return nil, fmt.Errorf("bạn đang có phòng chat đang hoạt động, vui lòng rời phòng trước khi tham gia hàng chờ")
+	}
+
+	// Check if user is already in queue
+	inQueue := qs.isUserInQueue(userID)
+	slog.Info("JoinQueue - checking if user in queue", "user_id", userID, "in_queue", inQueue)
+
+	if inQueue {
+		// Double check by getting queue status
+		status, _ := qs.GetQueueStatus(ctx, userID)
+		slog.Warn("User cannot join queue - already in queue",
+			"user_id", userID,
+			"category", category,
+			"status_is_in_queue", status.IsInQueue,
+			"status_position", status.Position)
+		// Log current queue status even when user cannot join
+		qs.logCurrentQueueStatus(category)
+		return nil, fmt.Errorf("bạn đã ở trong hàng chờ")
 	}
 
 	// Create queue entry
@@ -167,9 +180,11 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID, categor
 		// Track position
 		qs.posMutex.Lock()
 		qs.userPositions[userID] = &QueuePosition{
-			UserID:   userID,
-			Position: position,
-			JoinedAt: now,
+			UserID:    userID,
+			Position:  position,
+			Category:  category,
+			JoinedAt:  now,
+			ExpiresAt: entry.ExpiresAt,
 		}
 		qs.posMutex.Unlock()
 	} else {
@@ -183,9 +198,11 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID, categor
 		// Track position
 		qs.posMutex.Lock()
 		qs.userPositions[userID] = &QueuePosition{
-			UserID:   userID,
-			Position: position,
-			JoinedAt: now,
+			UserID:    userID,
+			Position:  position,
+			Category:  category,
+			JoinedAt:  now,
+			ExpiresAt: entry.ExpiresAt,
 		}
 		qs.posMutex.Unlock()
 	}
@@ -424,12 +441,18 @@ func (qs *QueueService) updatePositionsAfterRemoval(category string, isMale bool
 }
 
 // GetQueueStatus returns the current queue status for a user (O(1))
+// This is a READ-ONLY operation and does NOT refresh TTL
 func (qs *QueueService) GetQueueStatus(ctx context.Context, userID uuid.UUID) (*QueueStatus, error) {
+	// Use userPositions as source of truth - it's O(1) and always accurate
 	qs.posMutex.RLock()
 	position, exists := qs.userPositions[userID]
 	qs.posMutex.RUnlock()
 
+	slog.Info("GetQueueStatus called", "user_id", userID, "exists_in_positions", exists)
+
 	if !exists {
+		// User not in queue
+		slog.Info("GetQueueStatus - user NOT in queue", "user_id", userID)
 		return &QueueStatus{
 			IsInQueue: false,
 			Position:  0,
@@ -439,45 +462,21 @@ func (qs *QueueService) GetQueueStatus(ctx context.Context, userID uuid.UUID) (*
 		}, nil
 	}
 
-	// Find category by scanning queues (could be optimized further)
-	qs.queueMutex.RLock()
-	defer qs.queueMutex.RUnlock()
+	// User is in queue - return status from userPositions
+	// Note: ExpiresAt is managed by cleanup routine, not by this read operation
+	slog.Info("GetQueueStatus - user IN queue",
+		"user_id", userID,
+		"position", position.Position,
+		"category", position.Category,
+		"expires_at", position.ExpiresAt)
 
-	for category, entries := range qs.queueMale {
-		for _, entry := range entries {
-			if entry.UserID == userID {
-				// Refresh TTL as heartbeat
-				entry.ExpiresAt = time.Now().Add(qs.config.Chat.QueueHeartbeatTTL)
-
-				return &QueueStatus{
-					IsInQueue: true,
-					Position:  position.Position,
-					Category:  category,
-					JoinedAt:  position.JoinedAt,
-					ExpiresAt: entry.ExpiresAt,
-				}, nil
-			}
-		}
-	}
-
-	for category, entries := range qs.queueFemale {
-		for _, entry := range entries {
-			if entry.UserID == userID {
-				// Refresh TTL as heartbeat
-				entry.ExpiresAt = time.Now().Add(qs.config.Chat.QueueHeartbeatTTL)
-
-				return &QueueStatus{
-					IsInQueue: true,
-					Position:  position.Position,
-					Category:  category,
-					JoinedAt:  position.JoinedAt,
-					ExpiresAt: entry.ExpiresAt,
-				}, nil
-			}
-		}
-	}
-
-	return &QueueStatus{IsInQueue: false}, nil
+	return &QueueStatus{
+		IsInQueue: true,
+		Position:  position.Position,
+		Category:  position.Category,
+		JoinedAt:  position.JoinedAt,
+		ExpiresAt: position.ExpiresAt,
+	}, nil
 }
 
 // GetMatchStatistics returns match statistics

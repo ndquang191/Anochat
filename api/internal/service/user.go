@@ -164,7 +164,8 @@ func (s *UserService) GetActiveRoom(ctx context.Context, userID uuid.UUID) (*mod
 		Where("(user1_id = ? OR user2_id = ?) AND ended_at IS NULL AND is_deleted = false", userID, userID).
 		First(&room).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("no active room found")
+			// Not an error - user simply has no active room
+			return nil, nil
 		}
 		return nil, err
 	}

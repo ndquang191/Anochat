@@ -1,89 +1,7 @@
 import { toast } from "sonner";
+import type { ApiResponse, User, QueueStatus, QueueStats, MatchStats } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-
-// Type definitions for API responses
-interface ApiResponse<T> {
-	success: boolean;
-	message: string;
-	data: T;
-}
-
-interface QueueStatus {
-	is_in_queue: boolean;
-	position: number;
-	category: string;
-	joined_at: string;
-	expires_at: string;
-}
-
-interface QueueStats {
-	totalMale: number;
-	totalFemale: number;
-	estimatedWaitTime: string;
-}
-
-interface MatchStats {
-	totalMatches: number;
-	maleWaitTime: string;
-	femaleWaitTime: string;
-	lastMatchTime: string;
-}
-
-interface UserState {
-	id: string;
-	email?: string;
-	name?: string;
-	avatar_url?: string;
-	is_active: boolean;
-	is_deleted: boolean;
-	created_at: string;
-	profile?: {
-		user_id: string;
-		is_male?: boolean;
-		age?: number;
-		city?: string;
-		is_hidden: boolean;
-		updated_at: string;
-	};
-	room?: {
-		id: string;
-		user1_id: string;
-		user2_id: string;
-		category: string;
-		created_at: string;
-		ended_at?: string;
-		is_sensitive: boolean;
-		user1_last_read_message_id?: string;
-		user2_last_read_message_id?: string;
-		is_deleted: boolean;
-	};
-	messages?: Array<{
-		id: string;
-		room_id: string;
-		sender_id: string;
-		content: string;
-		created_at: string;
-	}>;
-}
-
-interface UserProfile {
-	id: string;
-	email?: string;
-	name?: string;
-	avatar_url?: string;
-	is_active: boolean;
-	is_deleted: boolean;
-	created_at: string;
-	profile?: {
-		user_id: string;
-		is_male?: boolean;
-		age?: number;
-		city?: string;
-		is_hidden: boolean;
-		updated_at: string;
-	};
-}
 
 // Generic API call function
 async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
@@ -161,12 +79,12 @@ export const queueAPI = {
 export const userAPI = {
 	// Get user state
 	getState: async () => {
-		return apiCall<UserState>("/user/state");
+		return apiCall<User>("/user/state");
 	},
 
 	// Get user profile
 	getProfile: async () => {
-		return apiCall<UserProfile>("/profile");
+		return apiCall<User>("/profile");
 	},
 
 	// Update user profile
@@ -177,7 +95,7 @@ export const userAPI = {
 		is_hidden?: boolean;
 	}) => {
 		try {
-			const result = await apiCall<UserProfile>("/profile", {
+			const result = await apiCall<User>("/profile", {
 				method: "PUT",
 				body: JSON.stringify(data),
 			});

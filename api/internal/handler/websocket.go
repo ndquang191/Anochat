@@ -35,16 +35,16 @@ type Client struct {
 
 // Hub manages all WebSocket connections
 type Hub struct {
-	clients          map[uuid.UUID]*Client // userID -> client
-	roomClients      map[uuid.UUID]map[uuid.UUID]*Client // roomID -> userID -> client
-	register         chan *Client
-	unregister       chan *Client
-	broadcast        chan *BroadcastMessage
-	queueService     *service.QueueService
-	messageService   *service.MessageService
-	roomService      *service.RoomService
-	mutex            sync.RWMutex
-	roomMutex        sync.RWMutex
+	clients        map[uuid.UUID]*Client               // userID -> client
+	roomClients    map[uuid.UUID]map[uuid.UUID]*Client // roomID -> userID -> client
+	register       chan *Client
+	unregister     chan *Client
+	broadcast      chan *BroadcastMessage
+	queueService   *service.QueueService
+	messageService *service.MessageService
+	roomService    *service.RoomService
+	mutex          sync.RWMutex
+	roomMutex      sync.RWMutex
 }
 
 // BroadcastMessage represents a message to broadcast
@@ -102,9 +102,9 @@ func (h *Hub) registerClient(client *Client) {
 	successMsg := WebSocketMessage{
 		Type: "connected",
 		Payload: map[string]interface{}{
-			"user_id":    client.UserID.String(),
-			"message":    "Connected to WebSocket",
-			"timestamp":  time.Now().Unix(),
+			"user_id":   client.UserID.String(),
+			"message":   "Connected to WebSocket",
+			"timestamp": time.Now().Unix(),
 		},
 	}
 	client.SendJSON(successMsg)
