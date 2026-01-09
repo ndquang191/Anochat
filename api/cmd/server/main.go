@@ -70,6 +70,10 @@ func main() {
 		c.Next()
 	})
 
+	// Add global rate limiting (100 requests per second per IP with burst of 200)
+	router.Use(middleware.RateLimitMiddleware(cfg.Security.RateLimit, cfg.Security.RateLimit*2))
+	slog.Info("Rate limiting enabled", "rate", cfg.Security.RateLimit, "burst", cfg.Security.RateLimit*2)
+
 	// Setup OAuth configuration
 	oauthConfig := &oauth2.Config{
 		ClientID:     cfg.OAuth.GoogleClientID,

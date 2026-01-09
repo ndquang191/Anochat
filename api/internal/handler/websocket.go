@@ -35,16 +35,26 @@ type Client struct {
 
 // Hub manages all WebSocket connections
 type Hub struct {
-	clients        map[uuid.UUID]*Client               // userID -> client
-	roomClients    map[uuid.UUID]map[uuid.UUID]*Client // roomID -> userID -> client
-	register       chan *Client
-	unregister     chan *Client
-	broadcast      chan *BroadcastMessage
-	queueService   *service.QueueService
-	messageService *service.MessageService
-	roomService    *service.RoomService
-	mutex          sync.RWMutex
-	roomMutex      sync.RWMutex
+	clients          map[uuid.UUID]*Client               // userID -> client
+	roomClients      map[uuid.UUID]map[uuid.UUID]*Client // roomID -> userID -> client
+	register         chan *Client
+	unregister       chan *Client
+	broadcast        chan *BroadcastMessage
+	queueService     *service.QueueService
+	messageService   *service.MessageService
+	roomService      *service.RoomService
+	messageRateLimits map[uuid.UUID]*MessageRateLimiter  // userID -> rate limiter
+	mutex            sync.RWMutex
+	roomMutex        sync.RWMutex
+	rateMutex        sync.RWMutex
+}
+
+// MessageRateLimiter tracks message rate for a user
+type MessageRateLimiter struct {
+	tokens     int
+	lastRefill time.Time
+	maxTokens  int
+	refillRate time.Duration
 }
 
 // BroadcastMessage represents a message to broadcast
@@ -63,14 +73,15 @@ type WebSocketMessage struct {
 // NewHub creates a new WebSocket hub
 func NewHub(queueService *service.QueueService, messageService *service.MessageService, roomService *service.RoomService) *Hub {
 	return &Hub{
-		clients:        make(map[uuid.UUID]*Client),
-		roomClients:    make(map[uuid.UUID]map[uuid.UUID]*Client),
-		register:       make(chan *Client),
-		unregister:     make(chan *Client),
-		broadcast:      make(chan *BroadcastMessage, 256),
-		queueService:   queueService,
-		messageService: messageService,
-		roomService:    roomService,
+		clients:           make(map[uuid.UUID]*Client),
+		roomClients:       make(map[uuid.UUID]map[uuid.UUID]*Client),
+		register:          make(chan *Client),
+		unregister:        make(chan *Client),
+		broadcast:         make(chan *BroadcastMessage, 256),
+		queueService:      queueService,
+		messageService:    messageService,
+		roomService:       roomService,
+		messageRateLimits: make(map[uuid.UUID]*MessageRateLimiter),
 	}
 }
 
@@ -337,6 +348,45 @@ func (c *Client) handleMessage(message []byte) {
 	}
 }
 
+// checkMessageRateLimit checks if user can send a message
+func (h *Hub) checkMessageRateLimit(userID uuid.UUID) bool {
+	h.rateMutex.Lock()
+	defer h.rateMutex.Unlock()
+
+	limiter, exists := h.messageRateLimits[userID]
+	if !exists {
+		// Create new rate limiter for user: 10 messages per second
+		limiter = &MessageRateLimiter{
+			tokens:     10,
+			maxTokens:  10,
+			lastRefill: time.Now(),
+			refillRate: time.Second / 10, // Refill 1 token every 100ms
+		}
+		h.messageRateLimits[userID] = limiter
+	}
+
+	// Refill tokens based on time elapsed
+	now := time.Now()
+	elapsed := now.Sub(limiter.lastRefill)
+	tokensToAdd := int(elapsed / limiter.refillRate)
+
+	if tokensToAdd > 0 {
+		limiter.tokens += tokensToAdd
+		if limiter.tokens > limiter.maxTokens {
+			limiter.tokens = limiter.maxTokens
+		}
+		limiter.lastRefill = now
+	}
+
+	// Check if we have tokens available
+	if limiter.tokens > 0 {
+		limiter.tokens--
+		return true
+	}
+
+	return false
+}
+
 // handleSendMessage handles sending a chat message
 func (c *Client) handleSendMessage(payload map[string]interface{}) {
 	if c.RoomID == nil {
@@ -346,6 +396,21 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 
 	content, ok := payload["content"].(string)
 	if !ok || content == "" {
+		return
+	}
+
+	// Check message rate limit
+	if !c.Hub.checkMessageRateLimit(c.UserID) {
+		slog.Warn("Message rate limit exceeded", "user_id", c.UserID)
+		errorMsg := WebSocketMessage{
+			Type: "error",
+			Payload: map[string]interface{}{
+				"message": "You are sending messages too quickly. Please slow down.",
+				"code":    "RATE_LIMIT_EXCEEDED",
+			},
+		}
+		msgBytes, _ := json.Marshal(errorMsg)
+		c.Send <- msgBytes
 		return
 	}
 

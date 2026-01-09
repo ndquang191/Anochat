@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -182,13 +183,18 @@ func (s *RoomService) GetRoomHistory(ctx context.Context, roomID uuid.UUID) ([]m
 
 // cleanupRoom performs post-chat cleanup logic
 func (s *RoomService) cleanupRoom(ctx context.Context, roomID uuid.UUID) {
+	slog.Info("Starting room cleanup", "room_id", roomID)
+
 	// Get all messages in the room
 	var messages []model.Message
 	if err := s.db.WithContext(ctx).
 		Where("room_id = ?", roomID).
 		Find(&messages).Error; err != nil {
+		slog.Error("Failed to fetch messages for cleanup", "room_id", roomID, "error", err)
 		return
 	}
+
+	slog.Info("Analyzing messages for sensitive content", "room_id", roomID, "message_count", len(messages))
 
 	// Analyze messages for sensitive content
 	var analyses []*config.MessageAnalysis
@@ -200,11 +206,25 @@ func (s *RoomService) cleanupRoom(ctx context.Context, roomID uuid.UUID) {
 	// Check if room should be retained
 	if s.messageAnalyzer.ShouldRetainRoom(analyses) {
 		// Mark room as sensitive
-		s.UpdateRoom(ctx, roomID, &[]bool{true}[0])
+		slog.Info("Sensitive content detected, marking room as sensitive", "room_id", roomID)
+		isSensitive := true
+		if _, err := s.UpdateRoom(ctx, roomID, &isSensitive); err != nil {
+			slog.Error("Failed to mark room as sensitive", "room_id", roomID, "error", err)
+			return
+		}
+		slog.Info("Room marked as sensitive successfully", "room_id", roomID)
 	} else {
 		// Delete all messages and delete the room completely
-		s.db.WithContext(ctx).Where("room_id = ?", roomID).Delete(&model.Message{})
-		s.db.WithContext(ctx).Where("id = ?", roomID).Delete(&model.Room{})
+		slog.Info("No sensitive content found, deleting room and messages", "room_id", roomID)
+		if err := s.db.WithContext(ctx).Where("room_id = ?", roomID).Delete(&model.Message{}).Error; err != nil {
+			slog.Error("Failed to delete messages", "room_id", roomID, "error", err)
+			return
+		}
+		if err := s.db.WithContext(ctx).Where("id = ?", roomID).Delete(&model.Room{}).Error; err != nil {
+			slog.Error("Failed to delete room", "room_id", roomID, "error", err)
+			return
+		}
+		slog.Info("Room and messages deleted successfully", "room_id", roomID)
 	}
 }
 
