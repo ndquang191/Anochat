@@ -22,96 +22,88 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth";
 import { userAPI } from "@/lib/api";
+import { useUserState, useInvalidateUserState } from "@/hooks/queries/use-user-state";
 
-// Mock user data
-const mockUser = {
-	id: "mock-user-id",
-	email: "user@example.com",
-	name: "John Doe",
-	age: 25 as number | null,
-	gender: "male",
-	city: "Ho Chi Minh City",
+interface UserData {
+	id: string;
+	email: string;
+	name: string;
+	age: number | null;
+	gender: string;
+	city: string;
+	isVisible: boolean;
+}
+
+const defaultUserData: UserData = {
+	id: "",
+	email: "",
+	name: "...",
+	age: null,
+	gender: "other",
+	city: "---",
 	isVisible: true,
 };
+
+function deriveUserData(data: ReturnType<typeof useUserState>["data"]): UserData {
+	if (!data) return defaultUserData;
+	const { user } = data;
+	return {
+		id: user.id,
+		email: user.email || "",
+		name: user.name || "Unknown",
+		age: user.profile?.age ?? null,
+		gender:
+			user.profile?.is_male === true
+				? "male"
+				: user.profile?.is_male === false
+				? "female"
+				: "other",
+		city: user.profile?.city || "---",
+		isVisible: !(user.profile?.is_hidden ?? false),
+	};
+}
 
 export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
 	const { state } = useSidebar();
 	const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
-	const [userData, setUserData] = React.useState(mockUser);
+	const [localOverrides, setLocalOverrides] = React.useState<Partial<UserData>>({});
 	const router = useRouter();
 	const { logout } = useAuth();
+	const { data } = useUserState();
+	const invalidateUserState = useInvalidateUserState();
 
-	// Load user data from backend if available
-	React.useEffect(() => {
-		const loadUserData = async () => {
-			try {
-				// Try to load from backend first
-				const response = await userAPI.getState();
-
-				if (response.data) {
-					setUserData({
-						id: response.data.id,
-						email: response.data.email || "unknown@example.com",
-						name: response.data.name || "Unknown",
-						age: response.data.profile?.age || null,
-						gender:
-							response.data.profile?.is_male === true
-								? "male"
-								: response.data.profile?.is_male === false
-								? "female"
-								: "other",
-						city: response.data.profile?.city || "---",
-						isVisible: !response.data.profile?.is_hidden,
-					});
-					return;
-				}
-			} catch (error) {
-				// Backend not available, use mock data
-				console.log("Backend not available, using mock data:", error);
-			}
-		};
-
-		loadUserData();
-	}, []);
+	const derived = deriveUserData(data);
+	const userData = { ...derived, ...localOverrides };
 
 	const handleLogout = async () => {
 		await logout();
 		router.push("/login");
 	};
 
-	// Helper function to display gender in Vietnamese
 	const getGenderDisplay = (genderValue: string) => {
 		switch (genderValue) {
 			case "male":
 				return "Nam";
 			case "female":
 				return "Nữ";
-			case "other":
-				return "Khác";
 			default:
 				return "Khác";
 		}
 	};
 
-	// Handle visibility toggle in sidebar
 	const handleVisibilityToggle = async (isVisible: boolean) => {
 		try {
-			// Update visibility in backend
 			await userAPI.updateProfile({
 				is_hidden: !isVisible,
 			});
-			// Update local state
-			setUserData((prev) => ({ ...prev, isVisible }));
-		} catch (error) {
-			// Error already handled by toast in API client
-			console.error("Visibility toggle error:", error);
+			setLocalOverrides((prev) => ({ ...prev, isVisible }));
+			invalidateUserState();
+		} catch {
 		}
 	};
 
-	// Handle settings dialog save (age, gender, city)
 	const handleSaveSettings = async (newSettings: { age: number | null; gender: string; city: string }) => {
 		try {
-			// Try to save to backend first
 			await userAPI.updateProfile({
 				age: newSettings.age,
 				city: newSettings.city,
@@ -122,18 +114,16 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 						? false
 						: undefined,
 			});
-		} catch (error) {
-			// Error already handled by toast in API client
-			console.error("Settings save error:", error);
+		} catch {
 		}
 
-		// Update local state with new settings
-		setUserData((prev) => ({
+		setLocalOverrides((prev) => ({
 			...prev,
 			age: newSettings.age,
 			gender: newSettings.gender,
 			city: newSettings.city,
 		}));
+		invalidateUserState();
 		setIsSettingsOpen(false);
 	};
 
@@ -170,7 +160,7 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 						</SidebarGroupContent>
 					</SidebarGroup>
 				</SidebarHeader>
-				<SidebarContent>{/* You can add more navigation items here if needed */}</SidebarContent>
+				<SidebarContent />
 				<SidebarFooter>
 					<SidebarMenu>
 						<SidebarMenuItem>

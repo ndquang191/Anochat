@@ -14,34 +14,23 @@ export default function CallbackPage() {
 	useEffect(() => {
 		const handleCallback = async () => {
 			try {
-				// Get user data from temporary cookie set by backend
 				const userDataStr = getCookie("temp_user_data");
 
 				if (userDataStr) {
 					try {
-						// Decode URL encoded cookie
 						const decodedUserDataStr = decodeURIComponent(userDataStr);
-
 						const userData = JSON.parse(decodedUserDataStr);
 
-						// Token is already set in HTTP-only cookie by backend
-						// Just update auth context with user data
-						login("", userData); // Empty token since it's in cookie
-
-						// Clear temporary cookie
+						login(userData);
 						deleteCookie("temp_user_data");
 
-						// Add small delay to ensure state is updated
 						setTimeout(() => {
 							router.push("/");
 						}, 100);
-					} catch (parseError) {
-						console.error("DEBUG: Parse error:", parseError);
-						console.error("DEBUG: Raw userDataStr:", userDataStr);
+					} catch {
 						setError("Invalid user data received");
 					}
 				} else {
-					// Retry mechanism - wait a bit and try again
 					if (retryCount < 3) {
 						setTimeout(() => {
 							setRetryCount((prev) => prev + 1);
@@ -50,15 +39,13 @@ export default function CallbackPage() {
 						setError("No user data received from authentication. Please try logging in again.");
 					}
 				}
-			} catch (error) {
-				console.error("DEBUG: Error stack:", error instanceof Error ? error.stack : "No stack trace");
+			} catch {
 				setError("Authentication failed");
 			}
 		};
 
-		// Run when component mounts or retry count changes
 		handleCallback();
-	}, [retryCount, login, router]); // Dependencies for effect
+	}, [retryCount, login, router]);
 
 
 	if (error) {
@@ -78,7 +65,6 @@ export default function CallbackPage() {
 		);
 	}
 
-	// Show loading while retrying
 	if (retryCount > 0) {
 		return (
 			<div className="flex min-h-svh w-full items-center justify-center p-6">
@@ -91,6 +77,5 @@ export default function CallbackPage() {
 		);
 	}
 
-	// Return null to let loading.tsx handle the loading state
 	return null;
 }

@@ -1,7 +1,7 @@
-import { User } from "@/types";
+import { UserDTO } from "@/types";
 
 interface UserInfoBarProps {
-	user: User;
+	user: UserDTO;
 }
 
 export function UserInfoBar({ user }: UserInfoBarProps) {
@@ -12,7 +12,7 @@ export function UserInfoBar({ user }: UserInfoBarProps) {
 	return (
 		<div className="absolute top-16 left-0 right-0 bg-muted/30 px-4 py-2 text-sm text-muted-foreground border-b">
 			<div className="flex items-center gap-2">
-				<span className="font-medium">{profile.user?.name || "Người dùng"}</span>
+				<span className="font-medium">{user.name || "Người dùng"}</span>
 				{profile.age && (
 					<>
 						<span>•</span>

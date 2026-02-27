@@ -14,7 +14,6 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
 		setIsLoading(true);
 
 		try {
-			// Redirect to backend OAuth endpoint
 			window.location.href = authAPI.getGoogleAuthUrl();
 		} catch (error) {
 			console.error("Login error:", error);

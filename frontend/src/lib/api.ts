@@ -1,11 +1,9 @@
 import { toast } from "sonner";
-import type { ApiResponse, User, QueueStatus, QueueStats, MatchStats } from "@/types";
+import type { ApiResponse, UserStateResponse, ProfileDTO, QueueStatus, QueueStats, MatchStats } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
-// Generic API call function
 async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-	// Token is handled via HTTP-only cookies, so we don't need to manually add it
 	const config: RequestInit = {
 		...options,
 		credentials: "include",
@@ -20,7 +18,6 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 	if (!response.ok) {
 		const errorData = await response.json().catch(() => ({}));
 		const errorMessage = errorData.message || `HTTP error! status: ${response.status}`;
-		console.error(`[API] Error: ${errorMessage}`);
 		toast.error(errorMessage);
 		throw new Error(errorMessage);
 	}
@@ -28,9 +25,7 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 	return response.json();
 }
 
-// Queue API functions
 export const queueAPI = {
-	// Join queue
 	join: async (category: string = "polite") => {
 		try {
 			const result = await apiCall<QueueStatus>("/queue/join", {
@@ -40,12 +35,10 @@ export const queueAPI = {
 			toast.success("Đã tham gia hàng chờ thành công!");
 			return result;
 		} catch (error) {
-			// Error already shown by apiCall
 			throw error;
 		}
 	},
 
-	// Leave queue
 	leave: async () => {
 		try {
 			const result = await apiCall<{ message: string }>("/queue/leave", {
@@ -54,40 +47,28 @@ export const queueAPI = {
 			toast.success("Đã rời khỏi hàng chờ!");
 			return result;
 		} catch (error) {
-			// Error already shown by apiCall
 			throw error;
 		}
 	},
 
-	// Get queue status
 	getStatus: async () => {
 		return apiCall<QueueStatus>("/queue/status");
 	},
 
-	// Get queue stats
 	getStats: async () => {
 		return apiCall<QueueStats>("/queue/stats");
 	},
 
-	// Get match stats
 	getMatchStats: async () => {
 		return apiCall<MatchStats>("/queue/match-stats");
 	},
 };
 
-// User API functions
 export const userAPI = {
-	// Get user state
 	getState: async () => {
-		return apiCall<User>("/user/state");
+		return apiCall<UserStateResponse>("/user/state");
 	},
 
-	// Get user profile
-	getProfile: async () => {
-		return apiCall<User>("/profile");
-	},
-
-	// Update user profile
 	updateProfile: async (data: {
 		age?: number | null;
 		city?: string;
@@ -95,22 +76,19 @@ export const userAPI = {
 		is_hidden?: boolean;
 	}) => {
 		try {
-			const result = await apiCall<User>("/profile", {
+			const result = await apiCall<ProfileDTO>("/profile", {
 				method: "PUT",
 				body: JSON.stringify(data),
 			});
 			toast.success("Cập nhật thông tin thành công!");
 			return result;
 		} catch (error) {
-			// Error already shown by apiCall
 			throw error;
 		}
 	},
 };
 
-// Auth API functions
 export const authAPI = {
-	// Logout
 	logout: async () => {
 		try {
 			const result = await apiCall<{ message: string }>("/auth/logout", {
@@ -119,20 +97,16 @@ export const authAPI = {
 			toast.success("Đăng xuất thành công!");
 			return result;
 		} catch (error) {
-			// Error already shown by apiCall
 			throw error;
 		}
 	},
 
-	// Get Google OAuth URL
 	getGoogleAuthUrl: () => {
 		return `${API_BASE}/auth/google`;
 	},
 };
 
-// Room API functions
 export const roomAPI = {
-	// Leave current room
 	leaveRoom: async () => {
 		try {
 			const result = await apiCall<{ success: boolean; message: string }>("/room/leave", {
@@ -141,15 +115,7 @@ export const roomAPI = {
 			toast.success("Đã rời phòng chat!");
 			return result;
 		} catch (error) {
-			// Error already shown by apiCall
 			throw error;
 		}
-	},
-};
-
-// Health check
-export const healthAPI = {
-	check: async () => {
-		return apiCall<{ status: string }>("/healthz");
 	},
 };

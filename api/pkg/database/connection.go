@@ -13,30 +13,22 @@ import (
 
 var DB *gorm.DB
 
-// InitDatabase initializes the database connection using GORM
-func InitDatabase() error {
-	// Load configuration
-	cfg := config.Load()
-
-	// Check if required database configuration is set
+func InitDatabase(cfg *config.Config) error {
 	if cfg.Database.Host == "" || cfg.Database.Port == "" || cfg.Database.User == "" || cfg.Database.Password == "" || cfg.Database.Name == "" {
 		slog.Error("Required database environment variables are not set")
 		return ErrDatabaseConfigMissing
 	}
 
-	// Build PostgreSQL DSN (Data Source Name)
 	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=UTC",
 		cfg.Database.Host, cfg.Database.Port, cfg.Database.User, cfg.Database.Password, cfg.Database.Name, cfg.Database.SSLMode)
 
-	// Configure GORM logger
 	var gormLogger logger.Interface
 	if cfg.IsProduction() {
 		gormLogger = logger.Default.LogMode(logger.Silent)
 	} else {
-		gormLogger = logger.Default.LogMode(logger.Warn) // Giảm log level
+		gormLogger = logger.Default.LogMode(logger.Warn)
 	}
 
-	// Open database connection
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: gormLogger,
 		NowFunc: func() time.Time {
@@ -48,20 +40,17 @@ func InitDatabase() error {
 		return err
 	}
 
-	// Get underlying sql.DB to configure connection pool
 	sqlDB, err := db.DB()
 	if err != nil {
 		slog.Error("Failed to get underlying sql.DB", "error", err)
 		return err
 	}
 
-	// Configure connection pool
-	sqlDB.SetMaxOpenConns(30)                  // Maximum number of open connections
-	sqlDB.SetMaxIdleConns(5)                   // Maximum number of idle connections
-	sqlDB.SetConnMaxLifetime(time.Hour)        // Maximum connection lifetime
-	sqlDB.SetConnMaxIdleTime(30 * time.Minute) // Maximum connection idle time
+	sqlDB.SetMaxOpenConns(30)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetConnMaxIdleTime(30 * time.Minute)
 
-	// Test the connection
 	if err := sqlDB.Ping(); err != nil {
 		slog.Error("Failed to ping database", "error", err)
 		return err
@@ -75,7 +64,6 @@ func InitDatabase() error {
 	return nil
 }
 
-// CloseDatabase closes the database connection
 func CloseDatabase() {
 	if DB != nil {
 		sqlDB, err := DB.DB()
@@ -86,21 +74,17 @@ func CloseDatabase() {
 	}
 }
 
-// GetDB returns the GORM database instance
 func GetDB() *gorm.DB {
 	return DB
 }
 
-// HealthCheck checks if database is accessible
 func HealthCheck() error {
 	if DB == nil {
 		return ErrDatabaseNotInitialized
 	}
-
 	sqlDB, err := DB.DB()
 	if err != nil {
 		return err
 	}
-
 	return sqlDB.Ping()
 }

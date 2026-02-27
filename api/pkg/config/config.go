@@ -7,29 +7,17 @@ import (
 	"time"
 )
 
-// Config holds all application configuration
 type Config struct {
-	// Server configuration
-	Port string
-	Env  string
-
-	// Client configuration
+	Port      string
+	Env       string
 	ClientURL string
-
-	// Database configuration
-	Database DatabaseConfig
-
-	// OAuth configuration
-	OAuth OAuthConfig
-
-	// Chat configuration
-	Chat ChatConfig
-
-	// Security configuration
-	Security SecurityConfig
+	Database  DatabaseConfig
+	OAuth     OAuthConfig
+	Chat      ChatConfig
+	Security  SecurityConfig
+	Redis     RedisConfig
 }
 
-// DatabaseConfig holds database connection settings
 type DatabaseConfig struct {
 	Host     string
 	Port     string
@@ -39,7 +27,6 @@ type DatabaseConfig struct {
 	SSLMode  string
 }
 
-// OAuthConfig holds OAuth2 settings
 type OAuthConfig struct {
 	GoogleClientID     string
 	GoogleClientSecret string
@@ -48,7 +35,6 @@ type OAuthConfig struct {
 	JWTExpiration      time.Duration
 }
 
-// ChatConfig holds chat-related settings
 type ChatConfig struct {
 	QueueTimeout         time.Duration
 	QueueHeartbeatTTL    time.Duration
@@ -57,13 +43,17 @@ type ChatConfig struct {
 	MaxMessageLength     int
 }
 
-// SecurityConfig holds security-related settings
 type SecurityConfig struct {
 	CORSOrigins []string
 	RateLimit   int
 }
 
-// Load loads configuration from environment variables
+type RedisConfig struct {
+	URL      string
+	Password string
+	DB       int
+}
+
 func Load() *Config {
 	config := &Config{
 		Port:      getEnv("PORT", "8080"),
@@ -99,15 +89,19 @@ func Load() *Config {
 			CORSOrigins: getEnvAsSlice("CORS_ORIGINS", []string{"http://localhost:3000"}),
 			RateLimit:   getEnvAsInt("RATE_LIMIT", 100),
 		},
+
+		Redis: RedisConfig{
+			URL:      getEnv("REDIS_URL", "localhost:6379"),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       getEnvAsInt("REDIS_DB", 0),
+		},
 	}
 
-	// Validate required configuration
 	config.validate()
 
 	return config
 }
 
-// validate checks if required configuration is present
 func (c *Config) validate() {
 	if c.Database.Host == "" {
 		slog.Error("DB_HOST is required")
@@ -139,17 +133,13 @@ func (c *Config) validate() {
 	}
 }
 
-// IsProduction returns true if running in production mode
 func (c *Config) IsProduction() bool {
 	return c.Env == "production"
 }
 
-// IsDevelopment returns true if running in development mode
 func (c *Config) IsDevelopment() bool {
 	return c.Env == "development"
 }
-
-// Helper functions for environment variable parsing
 
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
@@ -180,9 +170,7 @@ func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
 
 func getEnvAsSlice(key string, defaultValue []string) []string {
 	if value := os.Getenv(key); value != "" {
-		// Simple comma-separated values parsing
-		// For more complex cases, consider using a proper CSV parser
-		return []string{value} // For now, just return as single item
+		return []string{value}
 	}
 	return defaultValue
 }

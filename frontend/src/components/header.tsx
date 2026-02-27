@@ -23,7 +23,7 @@ export default function Header({ trigger }: HeaderProps) {
 					<ActionButton />
 				</div>
 			</header>
-			{user && user.profile && <UserInfoBar user={user} />}
+			{user?.profile && <UserInfoBar user={user} />}
 		</div>
 	);
 }

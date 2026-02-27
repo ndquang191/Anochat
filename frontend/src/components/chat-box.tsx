@@ -16,8 +16,7 @@ export default function ChatBox() {
 	const { messages, sendMessage, isConnected, roomId, leaveRoom, isPartnerTyping, sendTypingIndicator } =
 		useWebSocketChat({
 			userId: user?.id || "",
-			onMatchFound: (roomId) => {
-				console.log("🔄 onMatchFound called with:", roomId);
+			onMatchFound: () => {
 				toast.success("Đã tìm thấy đối tác chat!", {
 					description: `Bạn đã được kết nối với người dùng khác`,
 				});
@@ -36,17 +35,14 @@ export default function ChatBox() {
 		}
 	}, [roomId, leaveRoom]);
 
-	// Loading state
 	if (!user) {
 		return <ChatLoadingState message="Đang tải thông tin người dùng..." />;
 	}
 
-	// Connection state
 	if (!isConnected) {
 		return <ChatLoadingState message="Đang kết nối WebSocket..." />;
 	}
 
-	// No room state
 	if (!roomId) {
 		return (
 			<ChatEmptyState
@@ -56,7 +52,6 @@ export default function ChatBox() {
 		);
 	}
 
-	// Main chat interface
 	return (
 		<div className="flex flex-col bg-card text-card-foreground shadow-sm h-full relative">
 			<ChatHeader isPartnerTyping={isPartnerTyping} onLeave={handleLeaveRoom} />

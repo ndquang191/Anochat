@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
 	try {
-		// Get token from HTTP-only cookie
 		const token = request.cookies.get("jwt_token")?.value;
 
 		if (!token) {

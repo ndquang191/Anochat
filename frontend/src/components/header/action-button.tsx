@@ -4,6 +4,7 @@ import React from "react";
 import { RotateCw, LogOut } from "lucide-react";
 import { useQueue } from "@/hooks/use-queue";
 import { useAuth } from "@/contexts/auth";
+import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
 import { toast } from "sonner";
 import { roomAPI } from "@/lib/api";
 
@@ -15,33 +16,31 @@ interface ButtonConfig {
 }
 
 export function ActionButton() {
-	const { user, checkAuth } = useAuth();
+	const { room } = useAuth();
+	const invalidateUserState = useInvalidateUserState();
 	const { isInQueue, isLoading: isQueueLoading, joinQueue, leaveQueue } = useQueue();
 	const [isRoomLoading, setIsRoomLoading] = React.useState(false);
 
-	const inRoom = !!user?.room;
+	const inRoom = !!room;
 	const isLoading = isQueueLoading || isRoomLoading;
 
 	const handleClick = async () => {
 		if (isLoading) return;
 
 		try {
-			// Priority 1: Leave room if in room
 			if (inRoom) {
 				setIsRoomLoading(true);
 				await roomAPI.leaveRoom();
-				await checkAuth();
+				invalidateUserState();
 				toast.success("Đã rời phòng chat");
 				setIsRoomLoading(false);
 				return;
 			}
 
-			// Priority 2: Leave queue if in queue
 			if (isInQueue) {
 				await leaveQueue();
 				toast.success("Đã rời khỏi hàng chờ");
 			} else {
-				// Priority 3: Join queue
 				const result = await joinQueue("polite");
 				if (result) {
 					toast.success("Đã tham gia hàng chờ", {

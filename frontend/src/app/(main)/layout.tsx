@@ -7,7 +7,6 @@ import Header from "@/components/header";
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
 	const cookieStore = await cookies();
 	const sidebarState = cookieStore.get("sidebar_state");
-	// Set defaultOpen to true if no cookie exists or if the cookie value is "true"
 	const defaultOpen = !sidebarState || sidebarState.value === "true";
 
 	return (

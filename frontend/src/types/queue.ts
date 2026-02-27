@@ -1,4 +1,3 @@
-// Queue-related types
 export interface QueueStatus {
 	is_in_queue: boolean;
 	position: number;

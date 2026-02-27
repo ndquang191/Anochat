@@ -8,75 +8,30 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/ndquang191/Anochat/api/internal/model"
+	"github.com/ndquang191/Anochat/api/internal/domain/matching"
+	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/pkg/config"
-	"gorm.io/gorm"
 )
 
-// QueueEntry represents a user waiting in the queue
-type QueueEntry struct {
-	UserID    uuid.UUID
-	Profile   *model.Profile
-	Category  string
-	JoinedAt  time.Time
-	ExpiresAt time.Time
-	IsMatched bool
-	MatchChan chan *MatchResult
+type genderQueue struct {
+	entries []*matching.QueueEntry
 }
 
-// MatchResult represents the result of a successful match
-type MatchResult struct {
-	RoomID   uuid.UUID
-	User1ID  uuid.UUID
-	User2ID  uuid.UUID
-	Category string
-	Error    error
-}
-
-// QueueStatus represents the status of a user in the queue
-type QueueStatus struct {
-	IsInQueue bool      `json:"is_in_queue"`
-	Position  int       `json:"position"`
-	Category  string    `json:"category"`
-	JoinedAt  time.Time `json:"joined_at"`
-	ExpiresAt time.Time `json:"expires_at"`
-}
-
-// QueuePosition tracks user position in queue
-type QueuePosition struct {
-	UserID    uuid.UUID
-	Position  int
-	Category  string
-	JoinedAt  time.Time
-	ExpiresAt time.Time
-}
-
-// MatchNotifier is an interface for notifying when matches are found
-type MatchNotifier interface {
-	NotifyMatch(user1ID, user2ID, roomID uuid.UUID, category string)
-}
-
-// QueueService with enhanced features
 type QueueService struct {
-	db          *gorm.DB
 	roomService *RoomService
 	userService *UserService
+	roomRepo    repository.RoomRepository
 	config      *config.Config
 
-	// Separate queues for male and female
-	queueMale   map[string][]*QueueEntry // category -> male entries
-	queueFemale map[string][]*QueueEntry // category -> female entries
-	queueMutex  sync.RWMutex
+	queues     map[string]map[matching.Gender]*genderQueue
+	queueMutex sync.RWMutex
 
-	// User connection tracking
-	userConnections map[uuid.UUID]bool // userID -> isConnected
+	userConnections map[uuid.UUID]bool
 	connMutex       sync.RWMutex
 
-	// Position tracking for quick lookup
-	userPositions map[uuid.UUID]*QueuePosition // userID -> position info
+	userPositions map[uuid.UUID]*matching.QueuePosition
 	posMutex      sync.RWMutex
 
-	// Match statistics
 	matchStats struct {
 		sync.RWMutex
 		totalMatches   int64
@@ -85,130 +40,95 @@ type QueueService struct {
 		lastMatchTime  time.Time
 	}
 
-	// Match notifier for WebSocket
-	matchNotifier MatchNotifier
+	matchNotifier matching.MatchNotifier
 }
 
-// NewQueueService creates a new enhanced queue service
-func NewQueueService(db *gorm.DB, roomService *RoomService, userService *UserService, config *config.Config) *QueueService {
+func NewQueueService(roomService *RoomService, userService *UserService, roomRepo repository.RoomRepository, cfg *config.Config) *QueueService {
 	qs := &QueueService{
-		db:              db,
 		roomService:     roomService,
 		userService:     userService,
-		config:          config,
-		queueMale:       make(map[string][]*QueueEntry),
-		queueFemale:     make(map[string][]*QueueEntry),
+		roomRepo:        roomRepo,
+		config:          cfg,
+		queues:          make(map[string]map[matching.Gender]*genderQueue),
 		userConnections: make(map[uuid.UUID]bool),
-		userPositions:   make(map[uuid.UUID]*QueuePosition),
+		userPositions:   make(map[uuid.UUID]*matching.QueuePosition),
 	}
 
 	slog.Info("QueueService initialized successfully")
-
-	// Start cleanup goroutine
 	go qs.startCleanupRoutine()
-
 	return qs
 }
 
-// JoinQueue adds a user to the appropriate queue based on gender
-func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID, category string) (*QueueEntry, error) {
-	// Validate category
+func (qs *QueueService) SetMatchNotifier(notifier matching.MatchNotifier) {
+	qs.matchNotifier = notifier
+}
+
+func (qs *QueueService) getOrCreateQueue(category string, gender matching.Gender) *genderQueue {
+	if qs.queues[category] == nil {
+		qs.queues[category] = make(map[matching.Gender]*genderQueue)
+	}
+	if qs.queues[category][gender] == nil {
+		qs.queues[category][gender] = &genderQueue{}
+	}
+	return qs.queues[category][gender]
+}
+
+func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID, category string) (*matching.QueueEntry, error) {
 	if !config.IsValidCategory(category) {
 		return nil, fmt.Errorf("invalid category: %s", category)
 	}
 
-	// Get user profile
 	profile, err := qs.userService.GetProfile(ctx, userID)
 	if err != nil {
 		slog.Error("Failed to get user profile", "user_id", userID, "error", err)
 		return nil, fmt.Errorf("failed to get user profile: %w", err)
 	}
-
 	if profile == nil {
-		slog.Warn("User profile not found - user needs to complete profile first", "user_id", userID)
 		return nil, fmt.Errorf("vui lòng hoàn thành thông tin cá nhân trước khi tham gia hàng chờ")
 	}
 
-	// Check if user has active room FIRST (more important check)
-	activeRoom, err := qs.userService.GetActiveRoom(ctx, userID)
-	if err == nil && activeRoom != nil {
-		slog.Warn("User cannot join queue - already has active room", "user_id", userID, "room_id", activeRoom.ID)
+	_, err = qs.roomRepo.FindActiveByUserID(ctx, userID)
+	if err == nil {
 		return nil, fmt.Errorf("bạn đang có phòng chat đang hoạt động, vui lòng rời phòng trước khi tham gia hàng chờ")
+	} else if err != repository.ErrNotFound {
+		return nil, fmt.Errorf("failed to check active room: %w", err)
 	}
 
-	// Check if user is already in queue
-	inQueue := qs.isUserInQueue(userID)
-	slog.Info("JoinQueue - checking if user in queue", "user_id", userID, "in_queue", inQueue)
-
-	if inQueue {
-		// Double check by getting queue status
-		status, _ := qs.GetQueueStatus(ctx, userID)
-		slog.Warn("User cannot join queue - already in queue",
-			"user_id", userID,
-			"category", category,
-			"status_is_in_queue", status.IsInQueue,
-			"status_position", status.Position)
-		// Log current queue status even when user cannot join
-		qs.logCurrentQueueStatus(category)
+	if qs.isUserInQueue(userID) {
 		return nil, fmt.Errorf("bạn đã ở trong hàng chờ")
 	}
 
-	// Create queue entry
+	gender := matching.GenderFromProfile(profile)
+
 	now := time.Now()
-	entry := &QueueEntry{
+	entry := &matching.QueueEntry{
 		UserID:    userID,
 		Profile:   profile,
+		Gender:    gender,
 		Category:  category,
 		JoinedAt:  now,
-		ExpiresAt: now.Add(qs.config.Chat.QueueHeartbeatTTL), // Set TTL expiration
+		ExpiresAt: now.Add(qs.config.Chat.QueueHeartbeatTTL),
 		IsMatched: false,
-		MatchChan: make(chan *MatchResult, 1),
+		MatchChan: make(chan *matching.MatchResult, 1),
 	}
 
-	// Add to appropriate queue and track position
 	qs.queueMutex.Lock()
-	isMale := profile.IsMale != nil && *profile.IsMale
-
-	if isMale {
-		// Initialize map if not exists
-		if qs.queueMale[category] == nil {
-			qs.queueMale[category] = make([]*QueueEntry, 0)
-		}
-		position := len(qs.queueMale[category]) + 1
-		qs.queueMale[category] = append(qs.queueMale[category], entry)
-
-		// Track position
-		qs.posMutex.Lock()
-		qs.userPositions[userID] = &QueuePosition{
-			UserID:    userID,
-			Position:  position,
-			Category:  category,
-			JoinedAt:  now,
-			ExpiresAt: entry.ExpiresAt,
-		}
-		qs.posMutex.Unlock()
-	} else {
-		// Initialize map if not exists
-		if qs.queueFemale[category] == nil {
-			qs.queueFemale[category] = make([]*QueueEntry, 0)
-		}
-		position := len(qs.queueFemale[category]) + 1
-		qs.queueFemale[category] = append(qs.queueFemale[category], entry)
-
-		// Track position
-		qs.posMutex.Lock()
-		qs.userPositions[userID] = &QueuePosition{
-			UserID:    userID,
-			Position:  position,
-			Category:  category,
-			JoinedAt:  now,
-			ExpiresAt: entry.ExpiresAt,
-		}
-		qs.posMutex.Unlock()
-	}
+	q := qs.getOrCreateQueue(category, gender)
+	position := len(q.entries) + 1
+	q.entries = append(q.entries, entry)
 	qs.queueMutex.Unlock()
 
-	// Mark user as connected
+	qs.posMutex.Lock()
+	qs.userPositions[userID] = &matching.QueuePosition{
+		UserID:    userID,
+		Position:  position,
+		Category:  category,
+		Gender:    gender,
+		JoinedAt:  now,
+		ExpiresAt: entry.ExpiresAt,
+	}
+	qs.posMutex.Unlock()
+
 	qs.connMutex.Lock()
 	qs.userConnections[userID] = true
 	qs.connMutex.Unlock()
@@ -216,129 +136,56 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID, categor
 	slog.Info("User joined queue",
 		"user_id", userID,
 		"category", category,
-		"gender", qs.getGenderString(profile),
-		"position", qs.userPositions[userID].Position,
-		"joined_at", entry.JoinedAt)
+		"gender", gender.String(),
+		"position", position)
 
-	// Try to find a match immediately
 	go qs.tryMatch(entry)
-
-	// Log current queue status
 	qs.logCurrentQueueStatus(category)
 
 	return entry, nil
 }
 
-// tryMatch attempts to find a match using separate queues
-func (qs *QueueService) tryMatch(entry *QueueEntry) {
+func (qs *QueueService) tryMatch(entry *matching.QueueEntry) {
 	qs.queueMutex.Lock()
 	defer qs.queueMutex.Unlock()
 
-	// Check if entry is still valid and user is still connected
 	if entry.IsMatched || !qs.isUserConnected(entry.UserID) {
 		return
 	}
 
 	category := entry.Category
-	isMale := entry.Profile.IsMale != nil && *entry.Profile.IsMale
-	isUnknown := entry.Profile.IsMale == nil
+	match := qs.findMatch(category, entry)
 
-	// Strategy: Try opposite gender first (preferred), then same gender (fallback)
-	var match *QueueEntry
-	var matchedFromOppositeGender bool
-
-	// 1. Priority: Try opposite gender first
-	var oppositeQueue []*QueueEntry
-	if isMale {
-		oppositeQueue = qs.queueFemale[category]
-	} else if !isUnknown {
-		oppositeQueue = qs.queueMale[category]
-	} else {
-		// Unknown gender: try male queue first, then female
-		oppositeQueue = append(qs.queueMale[category], qs.queueFemale[category]...)
-	}
-
-	for _, otherEntry := range oppositeQueue {
-		if !otherEntry.IsMatched && qs.isUserConnected(otherEntry.UserID) && otherEntry.UserID != entry.UserID {
-			match = otherEntry
-			matchedFromOppositeGender = true
-			break
-		}
-	}
-
-	// 2. Fallback: Try same gender if no opposite gender match found
-	if match == nil {
-		var sameQueue []*QueueEntry
-		if isMale {
-			sameQueue = qs.queueMale[category]
-		} else if !isUnknown {
-			sameQueue = qs.queueFemale[category]
-		} else {
-			// Unknown already tried both queues above
-			sameQueue = []*QueueEntry{}
-		}
-
-		for _, otherEntry := range sameQueue {
-			if !otherEntry.IsMatched && qs.isUserConnected(otherEntry.UserID) && otherEntry.UserID != entry.UserID {
-				match = otherEntry
-				matchedFromOppositeGender = false
-				break
-			}
-		}
-	}
-
-	// Debug: Log match attempt
 	slog.Info("Match attempt",
 		"user_id", entry.UserID,
 		"category", category,
-		"is_male", isMale,
-		"is_unknown", isUnknown,
-		"found_match", match != nil,
-		"opposite_gender", matchedFromOppositeGender,
-		"match_user_id", func() string {
-			if match != nil {
-				return match.UserID.String()
-			}
-			return "none"
-		}())
+		"gender", entry.Gender.String(),
+		"found_match", match != nil)
 
-	// If no match found, return
 	if match == nil {
 		return
 	}
 
-	// Mark both entries as matched
 	entry.IsMatched = true
 	match.IsMatched = true
 
-	// Determine match's gender for queue removal
-	matchIsMale := match.Profile.IsMale != nil && *match.Profile.IsMale
-
-	// Remove both entries from their respective queues
-	// Unknown gender users are stored in female queue (isMale=false)
-	qs.removeEntryFromQueue(category, entry, isMale)
-	qs.removeEntryFromQueue(category, match, matchIsMale)
-
-	// Update match statistics
+	qs.removeEntryFromQueue(category, entry)
+	qs.removeEntryFromQueue(category, match)
 	qs.updateMatchStats(entry, match)
 
-	// Create room
 	room, err := qs.roomService.CreateRoom(context.Background(), entry.UserID, match.UserID, category)
 	if err != nil {
-		// Send error to both users
-		entry.MatchChan <- &MatchResult{Error: err}
-		match.MatchChan <- &MatchResult{Error: err}
+		entry.MatchChan <- &matching.MatchResult{Error: err}
+		match.MatchChan <- &matching.MatchResult{Error: err}
 		return
 	}
 
-	// Send success to both users
-	result := &MatchResult{
+	result := &matching.MatchResult{
 		RoomID:   room.ID,
 		User1ID:  entry.UserID,
 		User2ID:  match.UserID,
 		Category: category,
 	}
-
 	entry.MatchChan <- result
 	match.MatchChan <- result
 
@@ -346,63 +193,57 @@ func (qs *QueueService) tryMatch(entry *QueueEntry) {
 		"room_id", room.ID,
 		"user1_id", entry.UserID,
 		"user2_id", match.UserID,
-		"category", category,
-		"wait_time_1", time.Since(entry.JoinedAt),
-		"wait_time_2", time.Since(match.JoinedAt))
+		"category", category)
 
-	// Notify via WebSocket if notifier is set
 	if qs.matchNotifier != nil {
 		qs.matchNotifier.NotifyMatch(entry.UserID, match.UserID, room.ID, category)
 	}
 
-	// Log updated queue status after match
 	qs.logCurrentQueueStatus(category)
 }
 
-// SetMatchNotifier sets the match notifier for WebSocket notifications
-func (qs *QueueService) SetMatchNotifier(notifier MatchNotifier) {
-	qs.matchNotifier = notifier
-}
-
-// updateMatchStats updates match statistics
-func (qs *QueueService) updateMatchStats(entry1, entry2 *QueueEntry) {
-	qs.matchStats.Lock()
-	defer qs.matchStats.Unlock()
-
-	qs.matchStats.totalMatches++
-	qs.matchStats.lastMatchTime = time.Now()
-
-	// Calculate wait times
-	waitTime1 := time.Since(entry1.JoinedAt)
-	waitTime2 := time.Since(entry2.JoinedAt)
-
-	if entry1.Profile.IsMale != nil && *entry1.Profile.IsMale {
-		qs.matchStats.maleWaitTime = (qs.matchStats.maleWaitTime + waitTime1) / 2
-		qs.matchStats.femaleWaitTime = (qs.matchStats.femaleWaitTime + waitTime2) / 2
-	} else {
-		qs.matchStats.maleWaitTime = (qs.matchStats.maleWaitTime + waitTime2) / 2
-		qs.matchStats.femaleWaitTime = (qs.matchStats.femaleWaitTime + waitTime1) / 2
-	}
-}
-
-// removeEntryFromQueue removes an entry and updates positions
-func (qs *QueueService) removeEntryFromQueue(category string, entry *QueueEntry, isMale bool) {
-	var queue []*QueueEntry
-	if isMale {
-		queue = qs.queueMale[category]
-	} else {
-		queue = qs.queueFemale[category]
+func (qs *QueueService) findMatch(category string, entry *matching.QueueEntry) *matching.QueueEntry {
+	catQueues := qs.queues[category]
+	if catQueues == nil {
+		return nil
 	}
 
-	for i, e := range queue {
-		if e.UserID == entry.UserID {
-			if isMale {
-				qs.queueMale[category] = append(queue[:i], queue[i+1:]...)
-			} else {
-				qs.queueFemale[category] = append(queue[:i], queue[i+1:]...)
+	var searchOrder []matching.Gender
+	switch entry.Gender {
+	case matching.GenderMale:
+		searchOrder = []matching.Gender{matching.GenderFemale, matching.GenderMale}
+	case matching.GenderFemale:
+		searchOrder = []matching.Gender{matching.GenderMale, matching.GenderFemale}
+	default:
+		searchOrder = []matching.Gender{matching.GenderMale, matching.GenderFemale, matching.GenderUnknown}
+	}
+
+	for _, g := range searchOrder {
+		if q := catQueues[g]; q != nil {
+			for _, other := range q.entries {
+				if !other.IsMatched && other.UserID != entry.UserID && qs.isUserConnected(other.UserID) {
+					return other
+				}
 			}
+		}
+	}
+	return nil
+}
 
-			// Remove from tracking maps
+func (qs *QueueService) removeEntryFromQueue(category string, entry *matching.QueueEntry) {
+	catQueues := qs.queues[category]
+	if catQueues == nil {
+		return
+	}
+	q := catQueues[entry.Gender]
+	if q == nil {
+		return
+	}
+
+	for i, e := range q.entries {
+		if e.UserID == entry.UserID {
+			q.entries = append(q.entries[:i], q.entries[i+1:]...)
+
 			qs.posMutex.Lock()
 			delete(qs.userPositions, entry.UserID)
 			qs.posMutex.Unlock()
@@ -411,66 +252,42 @@ func (qs *QueueService) removeEntryFromQueue(category string, entry *QueueEntry,
 			delete(qs.userConnections, entry.UserID)
 			qs.connMutex.Unlock()
 
-			// Update positions for remaining users
-			qs.updatePositionsAfterRemoval(category, isMale, i)
+			qs.updatePositionsForQueue(category, entry.Gender, i)
 			break
 		}
 	}
 }
 
-// updatePositionsAfterRemoval updates positions after a user is removed
-func (qs *QueueService) updatePositionsAfterRemoval(category string, isMale bool, removedIndex int) {
-	var queue []*QueueEntry
-	if isMale {
-		queue = qs.queueMale[category]
-	} else {
-		queue = qs.queueFemale[category]
+func (qs *QueueService) updatePositionsForQueue(category string, gender matching.Gender, fromIndex int) {
+	catQueues := qs.queues[category]
+	if catQueues == nil {
+		return
+	}
+	q := catQueues[gender]
+	if q == nil {
+		return
 	}
 
 	qs.posMutex.Lock()
 	defer qs.posMutex.Unlock()
 
-	// Update positions for users after the removed one
-	for i, entry := range queue {
-		if i >= removedIndex {
-			if pos, exists := qs.userPositions[entry.UserID]; exists {
-				pos.Position = i + 1
-			}
+	for i := fromIndex; i < len(q.entries); i++ {
+		if pos, exists := qs.userPositions[q.entries[i].UserID]; exists {
+			pos.Position = i + 1
 		}
 	}
 }
 
-// GetQueueStatus returns the current queue status for a user (O(1))
-// This is a READ-ONLY operation and does NOT refresh TTL
-func (qs *QueueService) GetQueueStatus(ctx context.Context, userID uuid.UUID) (*QueueStatus, error) {
-	// Use userPositions as source of truth - it's O(1) and always accurate
+func (qs *QueueService) GetQueueStatus(ctx context.Context, userID uuid.UUID) (*matching.QueueStatus, error) {
 	qs.posMutex.RLock()
 	position, exists := qs.userPositions[userID]
 	qs.posMutex.RUnlock()
 
-	slog.Info("GetQueueStatus called", "user_id", userID, "exists_in_positions", exists)
-
 	if !exists {
-		// User not in queue
-		slog.Info("GetQueueStatus - user NOT in queue", "user_id", userID)
-		return &QueueStatus{
-			IsInQueue: false,
-			Position:  0,
-			Category:  "",
-			JoinedAt:  time.Time{},
-			ExpiresAt: time.Time{},
-		}, nil
+		return &matching.QueueStatus{IsInQueue: false}, nil
 	}
 
-	// User is in queue - return status from userPositions
-	// Note: ExpiresAt is managed by cleanup routine, not by this read operation
-	slog.Info("GetQueueStatus - user IN queue",
-		"user_id", userID,
-		"position", position.Position,
-		"category", position.Category,
-		"expires_at", position.ExpiresAt)
-
-	return &QueueStatus{
+	return &matching.QueueStatus{
 		IsInQueue: true,
 		Position:  position.Position,
 		Category:  position.Category,
@@ -479,7 +296,6 @@ func (qs *QueueService) GetQueueStatus(ctx context.Context, userID uuid.UUID) (*
 	}, nil
 }
 
-// GetMatchStatistics returns match statistics
 func (qs *QueueService) GetMatchStatistics() map[string]interface{} {
 	qs.matchStats.RLock()
 	defer qs.matchStats.RUnlock()
@@ -492,124 +308,113 @@ func (qs *QueueService) GetMatchStatistics() map[string]interface{} {
 	}
 }
 
-// GetQueueStats returns detailed queue statistics
 func (qs *QueueService) GetQueueStats() map[string]map[string]interface{} {
 	qs.queueMutex.RLock()
 	defer qs.queueMutex.RUnlock()
 
 	stats := make(map[string]map[string]interface{})
-
-	for category := range qs.queueMale {
-		maleCount := len(qs.queueMale[category])
-		femaleCount := len(qs.queueFemale[category])
-
+	for category, genderQueues := range qs.queues {
+		maleCount, femaleCount := 0, 0
+		if q := genderQueues[matching.GenderMale]; q != nil {
+			maleCount = len(q.entries)
+		}
+		if q := genderQueues[matching.GenderFemale]; q != nil {
+			femaleCount = len(q.entries)
+		}
 		stats[category] = map[string]interface{}{
 			"male_count":          maleCount,
 			"female_count":        femaleCount,
 			"total_count":         maleCount + femaleCount,
-			"estimated_wait_time": qs.calculateEstimatedWaitTime(category, maleCount, femaleCount),
+			"estimated_wait_time": qs.calculateEstimatedWaitTime(maleCount, femaleCount),
 		}
 	}
-
 	return stats
 }
 
-// calculateEstimatedWaitTime estimates wait time based on queue balance
-func (qs *QueueService) calculateEstimatedWaitTime(category string, maleCount, femaleCount int) time.Duration {
-	// Simple estimation: if more people of opposite gender, faster match
+func (qs *QueueService) calculateEstimatedWaitTime(maleCount, femaleCount int) time.Duration {
 	if maleCount == 0 || femaleCount == 0 {
-		return 5 * time.Minute // No matches possible
+		return 5 * time.Minute
 	}
-
-	// If balanced, estimate 1-2 minutes
-	if abs(maleCount-femaleCount) <= 2 {
+	diff := maleCount - femaleCount
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff <= 2 {
 		return 90 * time.Second
 	}
-
-	// If unbalanced, longer wait
-	return time.Duration(max(maleCount, femaleCount)) * 30 * time.Second
-}
-
-// Helper functions
-func abs(x int) int {
-	if x < 0 {
-		return -x
+	larger := maleCount
+	if femaleCount > larger {
+		larger = femaleCount
 	}
-	return x
+	return time.Duration(larger) * 30 * time.Second
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
+func (qs *QueueService) LeaveQueue(ctx context.Context, userID uuid.UUID) error {
+	qs.queueMutex.Lock()
+	defer qs.queueMutex.Unlock()
+
+	for category, genderQueues := range qs.queues {
+		for gender, q := range genderQueues {
+			for i, entry := range q.entries {
+				if entry.UserID == userID {
+					q.entries = append(q.entries[:i], q.entries[i+1:]...)
+					close(entry.MatchChan)
+
+					qs.updatePositionsForQueue(category, gender, i)
+
+					qs.connMutex.Lock()
+					qs.userConnections[userID] = false
+					qs.connMutex.Unlock()
+
+					qs.posMutex.Lock()
+					delete(qs.userPositions, userID)
+					qs.posMutex.Unlock()
+
+					slog.Info("User manually left queue", "user_id", userID, "category", category, "gender", gender.String())
+					qs.logCurrentQueueStatus(category)
+					return nil
+				}
+			}
+		}
 	}
-	return b
+	return fmt.Errorf("user not found in queue")
 }
 
-// UserDisconnected marks a user as disconnected and removes them from queue
 func (qs *QueueService) UserDisconnected(userID uuid.UUID) {
 	qs.connMutex.Lock()
 	qs.userConnections[userID] = false
 	qs.connMutex.Unlock()
 
-	// Remove from queue
 	qs.queueMutex.Lock()
 	defer qs.queueMutex.Unlock()
 
-	// Remove from male queue
-	for category, entries := range qs.queueMale {
-		for i, entry := range entries {
-			if entry.UserID == userID {
-				qs.queueMale[category] = append(entries[:i], entries[i+1:]...)
-				close(entry.MatchChan)
+	for category, genderQueues := range qs.queues {
+		for gender, q := range genderQueues {
+			for i, entry := range q.entries {
+				if entry.UserID == userID {
+					q.entries = append(q.entries[:i], q.entries[i+1:]...)
+					close(entry.MatchChan)
+					qs.updatePositionsForQueue(category, gender, i)
 
-				// Update positions
-				qs.updatePositionsAfterRemoval(category, true, i)
+					qs.posMutex.Lock()
+					delete(qs.userPositions, userID)
+					qs.posMutex.Unlock()
 
-				// Remove from position tracking
-				qs.posMutex.Lock()
-				delete(qs.userPositions, userID)
-				qs.posMutex.Unlock()
-
-				slog.Info("User disconnected from male queue", "user_id", userID, "category", category)
-				// Log updated queue status
-				qs.logCurrentQueueStatus(category)
-				return
-			}
-		}
-	}
-
-	// Remove from female queue
-	for category, entries := range qs.queueFemale {
-		for i, entry := range entries {
-			if entry.UserID == userID {
-				qs.queueFemale[category] = append(entries[:i], entries[i+1:]...)
-				close(entry.MatchChan)
-
-				// Update positions
-				qs.updatePositionsAfterRemoval(category, false, i)
-
-				// Remove from position tracking
-				qs.posMutex.Lock()
-				delete(qs.userPositions, userID)
-				qs.posMutex.Unlock()
-
-				slog.Info("User disconnected from female queue", "user_id", userID, "category", category)
-				// Log updated queue status
-				qs.logCurrentQueueStatus(category)
-				return
+					slog.Info("User disconnected from queue", "user_id", userID, "category", category, "gender", gender.String())
+					qs.logCurrentQueueStatus(category)
+					return
+				}
 			}
 		}
 	}
 }
 
-// isUserConnected checks if a user is still connected
 func (qs *QueueService) isUserConnected(userID uuid.UUID) bool {
 	qs.connMutex.RLock()
 	defer qs.connMutex.RUnlock()
 	return qs.userConnections[userID]
 }
 
-// isUserInQueue checks if a user is already in any queue
 func (qs *QueueService) isUserInQueue(userID uuid.UUID) bool {
 	qs.posMutex.RLock()
 	defer qs.posMutex.RUnlock()
@@ -617,214 +422,102 @@ func (qs *QueueService) isUserInQueue(userID uuid.UUID) bool {
 	return exists
 }
 
-// getGenderString helper function
-func (qs *QueueService) getGenderString(profile *model.Profile) string {
-	if profile.IsMale == nil {
-		return "unknown"
+func (qs *QueueService) updateMatchStats(entry1, entry2 *matching.QueueEntry) {
+	qs.matchStats.Lock()
+	defer qs.matchStats.Unlock()
+
+	qs.matchStats.totalMatches++
+	qs.matchStats.lastMatchTime = time.Now()
+
+	waitTime1 := time.Since(entry1.JoinedAt)
+	waitTime2 := time.Since(entry2.JoinedAt)
+
+	if entry1.Gender == matching.GenderMale {
+		qs.matchStats.maleWaitTime = (qs.matchStats.maleWaitTime + waitTime1) / 2
+		qs.matchStats.femaleWaitTime = (qs.matchStats.femaleWaitTime + waitTime2) / 2
+	} else {
+		qs.matchStats.maleWaitTime = (qs.matchStats.maleWaitTime + waitTime2) / 2
+		qs.matchStats.femaleWaitTime = (qs.matchStats.femaleWaitTime + waitTime1) / 2
 	}
-	if *profile.IsMale {
-		return "male"
-	}
-	return "female"
 }
 
-// logCurrentQueueStatus logs detailed information about who is currently in the queue
 func (qs *QueueService) logCurrentQueueStatus(category string) {
 	qs.queueMutex.RLock()
 	defer qs.queueMutex.RUnlock()
 
-	maleEntries := qs.queueMale[category]
-	femaleEntries := qs.queueFemale[category]
-
-	// Log male users in queue
-	if len(maleEntries) > 0 {
-		slog.Info("Male users in queue",
-			"category", category,
-			"count", len(maleEntries),
-			"users", func() []string {
-				users := make([]string, len(maleEntries))
-				for i, entry := range maleEntries {
-					users[i] = entry.UserID.String()
-				}
-				return users
-			}())
-	} else {
-		slog.Info("No male users in queue", "category", category)
+	catQueues := qs.queues[category]
+	if catQueues == nil {
+		slog.Info("Queue empty", "category", category)
+		return
 	}
 
-	// Log female users in queue
-	if len(femaleEntries) > 0 {
-		slog.Info("Female users in queue",
-			"category", category,
-			"count", len(femaleEntries),
-			"users", func() []string {
-				users := make([]string, len(femaleEntries))
-				for i, entry := range femaleEntries {
-					users[i] = entry.UserID.String()
-				}
-				return users
-			}())
-	} else {
-		slog.Info("No female users in queue", "category", category)
+	maleCount, femaleCount := 0, 0
+	if q := catQueues[matching.GenderMale]; q != nil {
+		maleCount = len(q.entries)
+	}
+	if q := catQueues[matching.GenderFemale]; q != nil {
+		femaleCount = len(q.entries)
 	}
 
-	// Log summary
 	slog.Info("Queue summary",
 		"category", category,
-		"male_count", len(maleEntries),
-		"female_count", len(femaleEntries),
-		"total_count", len(maleEntries)+len(femaleEntries))
+		"male_count", maleCount,
+		"female_count", femaleCount,
+		"total_count", maleCount+femaleCount)
 }
 
-// LeaveQueue removes a user from the queue (manual leave)
-func (qs *QueueService) LeaveQueue(ctx context.Context, userID uuid.UUID) error {
-	qs.queueMutex.Lock()
-	defer qs.queueMutex.Unlock()
-
-	// Remove from male queue
-	for category, entries := range qs.queueMale {
-		for i, entry := range entries {
-			if entry.UserID == userID {
-				qs.queueMale[category] = append(entries[:i], entries[i+1:]...)
-				close(entry.MatchChan)
-
-				// Update positions
-				qs.updatePositionsAfterRemoval(category, true, i)
-
-				// Mark as disconnected
-				qs.connMutex.Lock()
-				qs.userConnections[userID] = false
-				qs.connMutex.Unlock()
-
-				// Remove from position tracking
-				qs.posMutex.Lock()
-				delete(qs.userPositions, userID)
-				qs.posMutex.Unlock()
-
-				slog.Info("User manually left male queue", "user_id", userID, "category", category)
-				// Log updated queue status
-				qs.logCurrentQueueStatus(category)
-				return nil
-			}
-		}
-	}
-
-	// Remove from female queue
-	for category, entries := range qs.queueFemale {
-		for i, entry := range entries {
-			if entry.UserID == userID {
-				qs.queueFemale[category] = append(entries[:i], entries[i+1:]...)
-				close(entry.MatchChan)
-
-				// Update positions
-				qs.updatePositionsAfterRemoval(category, false, i)
-
-				// Mark as disconnected
-				qs.connMutex.Lock()
-				qs.userConnections[userID] = false
-				qs.connMutex.Unlock()
-
-				// Remove from position tracking
-				qs.posMutex.Lock()
-				delete(qs.userPositions, userID)
-				qs.posMutex.Unlock()
-
-				slog.Info("User manually left female queue", "user_id", userID, "category", category)
-				// Log updated queue status
-				qs.logCurrentQueueStatus(category)
-				return nil
-			}
-		}
-	}
-
-	return fmt.Errorf("user not found in queue")
-}
-
-// startCleanupRoutine runs periodically to remove expired queue entries
 func (qs *QueueService) startCleanupRoutine() {
 	ticker := time.NewTicker(qs.config.Chat.QueueCleanupInterval)
 	defer ticker.Stop()
-
 	for range ticker.C {
 		qs.cleanupExpiredEntries()
 	}
 }
 
-// cleanupExpiredEntries removes users who haven't sent heartbeat within TTL
 func (qs *QueueService) cleanupExpiredEntries() {
 	now := time.Now()
-	expiredUsers := make([]uuid.UUID, 0)
+	var expiredUsers []uuid.UUID
 
 	qs.queueMutex.Lock()
 	defer qs.queueMutex.Unlock()
 
-	// Check male queue
-	for category, entries := range qs.queueMale {
-		for i := len(entries) - 1; i >= 0; i-- {
-			entry := entries[i]
-			if now.After(entry.ExpiresAt) || !qs.isUserConnected(entry.UserID) {
-				expiredUsers = append(expiredUsers, entry.UserID)
-				// Remove from queue
-				qs.queueMale[category] = append(entries[:i], entries[i+1:]...)
-				close(entry.MatchChan)
+	for category, genderQueues := range qs.queues {
+		for gender, q := range genderQueues {
+			for i := len(q.entries) - 1; i >= 0; i-- {
+				entry := q.entries[i]
+				if now.After(entry.ExpiresAt) || !qs.isUserConnected(entry.UserID) {
+					expiredUsers = append(expiredUsers, entry.UserID)
+					q.entries = append(q.entries[:i], q.entries[i+1:]...)
+					close(entry.MatchChan)
+				}
 			}
+			qs.updatePositionsForQueue(category, gender, 0)
 		}
 	}
 
-	// Check female queue
-	for category, entries := range qs.queueFemale {
-		for i := len(entries) - 1; i >= 0; i-- {
-			entry := entries[i]
-			if now.After(entry.ExpiresAt) || !qs.isUserConnected(entry.UserID) {
-				expiredUsers = append(expiredUsers, entry.UserID)
-				// Remove from queue
-				qs.queueFemale[category] = append(entries[:i], entries[i+1:]...)
-				close(entry.MatchChan)
-			}
-		}
-	}
-
-	// Clean up expired users from tracking maps
 	if len(expiredUsers) > 0 {
 		qs.posMutex.Lock()
 		qs.connMutex.Lock()
-
 		for _, userID := range expiredUsers {
 			delete(qs.userPositions, userID)
 			delete(qs.userConnections, userID)
 		}
-
 		qs.connMutex.Unlock()
 		qs.posMutex.Unlock()
 
-		// Update positions for remaining users
-		for category := range qs.queueMale {
-			qs.updatePositionsAfterRemoval(category, true, 0)
-		}
-		for category := range qs.queueFemale {
-			qs.updatePositionsAfterRemoval(category, false, 0)
-		}
-
-		slog.Info("Cleaned up expired queue entries", "count", len(expiredUsers), "users", expiredUsers)
+		slog.Info("Cleaned up expired queue entries", "count", len(expiredUsers))
 	}
 }
 
-// Stop stops the queue service
 func (qs *QueueService) Stop() {
 	qs.queueMutex.Lock()
 	defer qs.queueMutex.Unlock()
 
-	// Close all match channels in male queue
-	for _, entries := range qs.queueMale {
-		for _, entry := range entries {
-			close(entry.MatchChan)
-		}
-	}
-
-	// Close all match channels in female queue
-	for _, entries := range qs.queueFemale {
-		for _, entry := range entries {
-			close(entry.MatchChan)
+	for _, genderQueues := range qs.queues {
+		for _, q := range genderQueues {
+			for _, entry := range q.entries {
+				close(entry.MatchChan)
+			}
 		}
 	}
 }

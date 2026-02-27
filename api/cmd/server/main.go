@@ -9,72 +9,64 @@ import (
 
 	"github.com/ndquang191/Anochat/api/internal/handler"
 	"github.com/ndquang191/Anochat/api/internal/middleware"
+	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/internal/service"
+	"github.com/ndquang191/Anochat/api/internal/ws"
+	"github.com/ndquang191/Anochat/api/pkg/cache"
 	"github.com/ndquang191/Anochat/api/pkg/config"
 	"github.com/ndquang191/Anochat/api/pkg/database"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
 
 func main() {
-	// Load environment variables
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using system environment variables")
 	}
 
-	// Load configuration
 	cfg := config.Load()
+
+	var zapLogger *zap.Logger
+	if cfg.IsProduction() {
+		zapLogger, _ = zap.NewProduction()
+	} else {
+		zapLogger, _ = zap.NewDevelopment()
+	}
+	defer zapLogger.Sync()
+	slog.SetDefault(slog.New(zapslog.NewHandler(zapLogger.Core(), nil)))
 	slog.Info("Configuration loaded successfully")
 
-	// Setup structured logging
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-	slog.SetDefault(logger)
-
-	// Initialize database
-	if err := database.InitDatabase(); err != nil {
+	if err := database.InitDatabase(cfg); err != nil {
 		slog.Error("Failed to initialize database", "error", err)
 		os.Exit(1)
 	}
 	defer database.CloseDatabase()
 
-	// Run database migrations
+	if err := cache.InitRedis(cfg); err != nil {
+		slog.Error("Failed to initialize Redis", "error", err)
+		os.Exit(1)
+	}
+	defer cache.CloseRedis()
+
 	if err := database.RunMigrations(); err != nil {
 		slog.Error("Failed to run migrations", "error", err)
 		os.Exit(1)
 	}
 
-	// Setup Gin
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
-
 	router := gin.Default()
 
-	// Add CORS middleware
-	router.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", cfg.ClientURL)
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
-		c.Header("Access-Control-Allow-Credentials", "true")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-
-		c.Next()
-	})
-
-	// Add global rate limiting (100 requests per second per IP with burst of 200)
-	router.Use(middleware.RateLimitMiddleware(cfg.Security.RateLimit, cfg.Security.RateLimit*2))
+	router.Use(middleware.CORSMiddleware(cfg.ClientURL))
+	router.Use(middleware.RateLimitMiddleware(cache.Client, cfg.Security.RateLimit, cfg.Security.RateLimit*2))
 	slog.Info("Rate limiting enabled", "rate", cfg.Security.RateLimit, "burst", cfg.Security.RateLimit*2)
 
-	// Setup OAuth configuration
 	oauthConfig := &oauth2.Config{
 		ClientID:     cfg.OAuth.GoogleClientID,
 		ClientSecret: cfg.OAuth.GoogleClientSecret,
@@ -83,37 +75,35 @@ func main() {
 		Endpoint:     google.Endpoint,
 	}
 
-	// Initialize services
 	db := database.GetDB()
-	userService := service.NewUserService(db)
-	roomService := service.NewRoomService(db)
-	messageService := service.NewMessageService(db)
-	authService := service.NewAuthService(userService, oauthConfig, cfg.OAuth.JWTSecret)
-	queueService := service.NewQueueService(db, roomService, userService, cfg)
 
-	// Initialize WebSocket hub
-	wsHub := handler.NewHub(queueService, messageService, roomService)
+	userRepo := repository.NewUserRepository(db)
+	profileRepo := repository.NewProfileRepository(db)
+	roomRepo := repository.NewRoomRepository(db)
+	messageRepo := repository.NewMessageRepository(db)
+
+	userService := service.NewUserService(userRepo, profileRepo)
+	roomService := service.NewRoomService(roomRepo, messageRepo)
+	messageService := service.NewMessageService(messageRepo, roomRepo)
+	authService := service.NewAuthService(userService, oauthConfig, cfg.OAuth.JWTSecret, roomRepo, messageRepo)
+	queueService := service.NewQueueService(roomService, userService, roomRepo, cfg)
+
+	wsHub := ws.NewHub(queueService, messageService, roomService, cache.Client)
 	go wsHub.Run()
 	slog.Info("WebSocket hub started")
 
-	// Connect queue service to WebSocket hub for match notifications
 	queueService.SetMatchNotifier(wsHub)
 
-	// Initialize handlers
 	authHandler := handler.NewAuthHandler(authService, oauthConfig, cfg)
-	userHandler := handler.NewUserHandler(authService, userService, roomService)
-	queueHandler := handler.NewQueueHandler(queueService)
-	wsHandler := handler.NewWebSocketHandler(wsHub, authService)
+	userHandler := handler.NewUserHandler(userService, roomService, roomRepo, messageRepo, cfg)
+	queueHandler := handler.NewQueueHandler(queueService, cfg)
+	wsHandler := handler.NewWebSocketHandler(wsHub, authService, cfg)
 
-	// Initialize middleware
-	authMiddleware := middleware.AuthMiddleware(authService)
+	authMiddleware := middleware.AuthMiddleware(authService, cfg)
 
-	// Setup routes
 	setupRoutes(router, authHandler, userHandler, queueHandler, wsHandler, authMiddleware)
 
-	// Health check endpoint
 	router.GET("/healthz", func(c *gin.Context) {
-		// Check database health
 		if err := database.HealthCheck(); err != nil {
 			c.JSON(503, gin.H{
 				"status":  "error",
@@ -122,15 +112,18 @@ func main() {
 			})
 			return
 		}
-
+		redisStatus := "connected"
+		if err := cache.HealthCheck(); err != nil {
+			redisStatus = "error: " + err.Error()
+		}
 		c.JSON(200, gin.H{
 			"status":   "ok",
 			"message":  "Anonymous Chat API is running",
 			"database": "connected",
+			"redis":    redisStatus,
 		})
 	})
 
-	// Graceful shutdown
 	go func() {
 		slog.Info("Starting server", "port", cfg.Port)
 		if err := router.Run(":" + cfg.Port); err != nil {
@@ -138,43 +131,33 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal to gracefully shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	slog.Info("Shutting down server...")
 
-	// Stop queue service gracefully
 	queueService.Stop()
 	slog.Info("Queue service stopped")
 }
 
-// setupRoutes configures all API routes
 func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandler *handler.UserHandler, queueHandler *handler.QueueHandler, wsHandler *handler.WebSocketHandler, authMiddleware gin.HandlerFunc) {
-	// Auth routes (no middleware required)
 	router.GET("/auth/google", authHandler.GoogleLogin)
 	router.GET("/auth/callback", authHandler.GoogleCallback)
-	router.POST("/auth/logout", authHandler.Logout) // New logout endpoint
+	router.POST("/auth/logout", authHandler.Logout)
 
-	// Protected routes (require JWT)
 	protected := router.Group("/")
 	protected.Use(authMiddleware)
 	{
-		// User state endpoint (main endpoint)
 		protected.GET("/user/state", userHandler.GetUserState)
-		// Profile update endpoint
 		protected.PUT("/profile", userHandler.UpdateProfile)
-		// Leave current room endpoint
 		protected.POST("/room/leave", userHandler.LeaveCurrentRoom)
 
-		// Queue endpoints
 		protected.POST("/queue/join", queueHandler.JoinQueue)
 		protected.POST("/queue/leave", queueHandler.LeaveQueue)
 		protected.GET("/queue/status", queueHandler.GetQueueStatus)
 		protected.GET("/queue/stats", queueHandler.GetQueueStats)
 		protected.GET("/queue/match-stats", queueHandler.GetMatchStats)
 
-		// WebSocket endpoint
 		protected.GET("/ws", wsHandler.HandleWebSocket)
 	}
 }

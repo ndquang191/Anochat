@@ -1,5 +1,3 @@
-// lib/websocket.ts - Native WebSocket client for backend integration
-
 export interface WebSocketMessage {
 	type: string;
 	payload: Record<string, unknown>;
@@ -30,15 +28,11 @@ export class WebSocketClient {
 	}
 
 	connect(): Promise<void> {
-		// Prevent multiple simultaneous connection attempts
 		if (this.isConnecting || (this.ws && this.ws.readyState === WebSocket.CONNECTING)) {
-			// Silently skip duplicate connection attempts
 			return Promise.resolve();
 		}
 
-		// If already connected, resolve immediately
 		if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-			// Already connected, return silently
 			return Promise.resolve();
 		}
 
@@ -46,9 +40,6 @@ export class WebSocketClient {
 			try {
 				this.isConnecting = true;
 
-				// Create WebSocket connection
-				// Note: HTTP-only cookies are automatically sent with the WebSocket upgrade request
-				// No need to manually check token here, backend will validate
 				this.ws = new WebSocket(this.url);
 
 				this.ws.onopen = () => {
@@ -79,7 +70,6 @@ export class WebSocketClient {
 					this.ws = null;
 					this.isConnecting = false;
 
-					// Attempt to reconnect if not intentionally closed
 					if (!this.isIntentionallyClosed && this.reconnectAttempts < this.maxReconnectAttempts) {
 						this.reconnectAttempts++;
 						console.log(`Reconnecting... Attempt ${this.reconnectAttempts}`);
@@ -131,7 +121,6 @@ export class WebSocketClient {
 			handlers.forEach((handler) => handler(message));
 		}
 
-		// Also call wildcard handlers
 		const wildcardHandlers = this.handlers.get("*");
 		if (wildcardHandlers) {
 			wildcardHandlers.forEach((handler) => handler(message));
@@ -143,7 +132,6 @@ export class WebSocketClient {
 	}
 }
 
-// Create singleton instance
 let wsClient: WebSocketClient | null = null;
 
 export function getWebSocketClient(): WebSocketClient {
@@ -155,7 +143,6 @@ export function getWebSocketClient(): WebSocketClient {
 	return wsClient;
 }
 
-// Reset WebSocket singleton (call on logout)
 export function resetWebSocketClient(): void {
 	if (wsClient) {
 		wsClient.disconnect();

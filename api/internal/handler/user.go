@@ -5,184 +5,138 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/ndquang191/Anochat/api/internal/dto"
+	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/internal/service"
-	"github.com/ndquang191/Anochat/api/internal/util"
+	"github.com/ndquang191/Anochat/api/pkg/config"
 )
 
-// UserHandler handles user-related endpoints
 type UserHandler struct {
-	authService *service.AuthService
 	userService *service.UserService
 	roomService *service.RoomService
+	roomRepo    repository.RoomRepository
+	messageRepo repository.MessageRepository
+	config      *config.Config
 }
 
-// NewUserHandler creates a new user handler
-func NewUserHandler(authService *service.AuthService, userService *service.UserService, roomService *service.RoomService) *UserHandler {
+func NewUserHandler(
+	userService *service.UserService,
+	roomService *service.RoomService,
+	roomRepo repository.RoomRepository,
+	messageRepo repository.MessageRepository,
+	cfg *config.Config,
+) *UserHandler {
 	return &UserHandler{
-		authService: authService,
 		userService: userService,
 		roomService: roomService,
+		roomRepo:    roomRepo,
+		messageRepo: messageRepo,
+		config:      cfg,
 	}
 }
 
-// GetUserState gets user state including active room and messages
 func (h *UserHandler) GetUserState(c *gin.Context) {
-	// Get user ID from context (set by auth middleware)
-	userIDInterface, exists := c.Get("user_id")
-	if !exists {
-		util.SignOutAndRedirect(c)
+	userID := getUserID(c)
+	if userID == uuid.Nil {
+		signOutAndRedirect(c, h.config)
 		return
 	}
 
-	userID, ok := userIDInterface.(uuid.UUID)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
-		return
-	}
-
-	// Get user from database
 	user, err := h.userService.GetUserByID(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
+		dto.Fail(c, http.StatusInternalServerError, "Failed to get user")
 		return
 	}
 
-	// Get user profile
 	profile, err := h.userService.GetProfile(c.Request.Context(), userID)
 	isNewUser := err != nil || profile == nil
 
-	// Get active room
-	room, err := h.userService.GetActiveRoom(c.Request.Context(), userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get active room"})
-		return
+	userDTO := dto.UserDTO{
+		ID:        user.ID.String(),
+		Email:     user.Email,
+		Name:      user.Name,
+		AvatarURL: user.AvatarURL,
 	}
-
-	// Get room messages if room exists
-	var messages []interface{}
-	if room != nil {
-		roomMessages, err := h.userService.GetRoomMessages(c.Request.Context(), room.ID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get messages"})
-			return
-		}
-		// Convert to interface slice for JSON response
-		for _, msg := range roomMessages {
-			messages = append(messages, msg)
-		}
-	}
-
-	// Build response
-	response := gin.H{
-		"user": gin.H{
-			"id":         user.ID,
-			"email":      user.Email,
-			"name":       user.Name,
-			"avatar_url": user.AvatarURL,
-		},
-		"room":        nil,
-		"messages":    nil,
-		"is_new_user": isNewUser,
-	}
-
-	// Add profile if exists
 	if profile != nil {
-		response["user"].(gin.H)["profile"] = gin.H{
-			"age":       profile.Age,
-			"city":      profile.City,
-			"is_male":   profile.IsMale,
-			"is_hidden": profile.IsHidden,
+		userDTO.Profile = &dto.ProfileDTO{
+			Age:      profile.Age,
+			City:     profile.City,
+			IsMale:   profile.IsMale,
+			IsHidden: profile.IsHidden,
 		}
 	}
 
-	// Add room and messages if exists
-	if room != nil {
-		response["room"] = gin.H{
-			"id":       room.ID,
-			"user1_id": room.User1ID,
-			"user2_id": room.User2ID,
-			"category": room.Category,
-		}
-		response["messages"] = messages
+	resp := dto.UserStateResponse{
+		User:      userDTO,
+		IsNewUser: isNewUser,
 	}
 
-	c.JSON(http.StatusOK, response)
+	room, err := h.roomRepo.FindActiveByUserID(c.Request.Context(), userID)
+	if err == nil && room != nil {
+		resp.Room = &dto.RoomDTO{
+			ID:       room.ID.String(),
+			User1ID:  room.User1ID.String(),
+			User2ID:  room.User2ID.String(),
+			Category: room.Category,
+		}
+
+		messages, err := h.messageRepo.FindByRoomID(c.Request.Context(), room.ID)
+		if err == nil {
+			resp.Messages = make([]dto.MessageDTO, len(messages))
+			for i, msg := range messages {
+				resp.Messages[i] = dto.MessageDTO{
+					ID:        msg.ID.String(),
+					RoomID:    msg.RoomID.String(),
+					SenderID:  msg.SenderID.String(),
+					Content:   msg.Content,
+					CreatedAt: msg.CreatedAt.Unix(),
+				}
+			}
+		}
+	}
+
+	dto.OK(c, resp)
 }
 
-// UpdateProfile updates a user's profile
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
-	// Get user ID from context (set by auth middleware)
-	userIDInterface, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+	userID := getUserID(c)
+	if userID == uuid.Nil {
+		dto.Fail(c, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
-	userID, ok := userIDInterface.(uuid.UUID)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
+	var req dto.UpdateProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		dto.Fail(c, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	// Parse request body
-	var request struct {
-		Age      *int    `json:"age"`
-		City     *string `json:"city"`
-		IsMale   *bool   `json:"is_male"`
-		IsHidden *bool   `json:"is_hidden"`
-	}
-
-	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
-		return
-	}
-
-	// Update profile
-	profile, err := h.userService.UpdateProfile(c.Request.Context(), userID, request.IsMale, request.Age, request.City, request.IsHidden)
+	profile, err := h.userService.UpdateProfile(c.Request.Context(), userID, req.IsMale, req.Age, req.City, req.IsHidden)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		dto.Fail(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	// Return updated profile
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Profile updated successfully",
-		"profile": gin.H{
-			"age":       profile.Age,
-			"city":      profile.City,
-			"is_male":   profile.IsMale,
-			"is_hidden": profile.IsHidden,
-		},
+	dto.OKWithMessage(c, "Profile updated successfully", dto.ProfileDTO{
+		Age:      profile.Age,
+		City:     profile.City,
+		IsMale:   profile.IsMale,
+		IsHidden: profile.IsHidden,
 	})
 }
 
-// LeaveCurrentRoom handles the request to leave the current active room
 func (h *UserHandler) LeaveCurrentRoom(c *gin.Context) {
-	// Get user ID from context (set by auth middleware)
-	userIDInterface, exists := c.Get("user_id")
-	if !exists {
-		util.SignOutAndRedirect(c)
+	userID := getUserID(c)
+	if userID == uuid.Nil {
+		signOutAndRedirect(c, h.config)
 		return
 	}
 
-	userID, ok := userIDInterface.(uuid.UUID)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
-		return
-	}
-
-	// Leave current room
 	err := h.roomService.LeaveCurrentRoom(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		dto.Fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Successfully left room",
-	})
+	dto.OKWithMessage(c, "Successfully left room", nil)
 }

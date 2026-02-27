@@ -39,7 +39,6 @@ export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: 
 	React.useEffect(() => {
 		if (open) {
 			setAge(initialData.age);
-			// Ensure gender is always valid
 			const validGenders = ["male", "female"];
 			const validGender = validGenders.includes(initialData.gender) ? initialData.gender : "male";
 			setGender(validGender);
@@ -51,7 +50,6 @@ export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: 
 		setIsLoading(true);
 
 		try {
-			// Call the onSave function which will handle the API call
 			onSave({
 				age,
 				gender,
