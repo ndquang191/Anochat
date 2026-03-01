@@ -125,3 +125,8 @@ jspm_packages/
 
 # TernJS port file
 .tern-port
+*.md
+
+.claude
+*.log
+/documents
