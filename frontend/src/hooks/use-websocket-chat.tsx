@@ -66,7 +66,13 @@ export function useWebSocketChat({ userId, onMatchFound, onPartnerLeft }: UseWeb
 		}
 
 		const handleConnected = () => {
+			// Reset join tracking so join_room is re-sent after reconnection
+			hasJoinedRoomRef.current = null;
 			setIsConnected(true);
+		};
+
+		const handleDisconnected = () => {
+			setIsConnected(false);
 		};
 
 		const handleMatchFound = (message: WebSocketMessage) => {
@@ -119,6 +125,7 @@ export function useWebSocketChat({ userId, onMatchFound, onPartnerLeft }: UseWeb
 		};
 
 		client.on("connected", handleConnected);
+		client.on("disconnected", handleDisconnected);
 		client.on("match_found", handleMatchFound);
 		client.on("room_joined", handleRoomJoined);
 		client.on("receive_message", handleReceiveMessage);
@@ -128,6 +135,7 @@ export function useWebSocketChat({ userId, onMatchFound, onPartnerLeft }: UseWeb
 
 		return () => {
 			client.off("connected", handleConnected);
+			client.off("disconnected", handleDisconnected);
 			client.off("match_found", handleMatchFound);
 			client.off("room_joined", handleRoomJoined);
 			client.off("receive_message", handleReceiveMessage);
@@ -147,8 +155,18 @@ export function useWebSocketChat({ userId, onMatchFound, onPartnerLeft }: UseWeb
 			client.send("send_message", {
 				content,
 			});
+
+			// Optimistic update - show message immediately for the sender
+			const optimisticMessage: ChatMessage = {
+				id: crypto.randomUUID(),
+				room_id: roomId,
+				sender_id: userId,
+				content,
+				created_at: Math.floor(Date.now() / 1000),
+			};
+			setMessages((prev) => [...prev, optimisticMessage]);
 		},
-		[roomId, isConnected]
+		[roomId, isConnected, userId]
 	);
 
 	const joinRoom = useCallback(

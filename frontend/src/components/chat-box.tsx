@@ -1,19 +1,17 @@
 "use client";
 
-import { useCallback } from "react";
 import { useWebSocketChat } from "@/hooks/use-websocket-chat";
 import { useAuth } from "@/contexts/auth";
 import { toast } from "sonner";
 import { ChatLoadingState } from "./chat/chat-loading-state";
 import { ChatEmptyState } from "./chat/chat-empty-state";
-import { ChatHeader } from "./chat/chat-header";
 import { ChatMessages } from "./chat/chat-messages";
 import { ChatInput } from "./chat/chat-input";
 
 export default function ChatBox() {
 	const { user } = useAuth();
 
-	const { messages, sendMessage, isConnected, roomId, leaveRoom, isPartnerTyping, sendTypingIndicator } =
+	const { messages, sendMessage, isConnected, roomId, sendTypingIndicator } =
 		useWebSocketChat({
 			userId: user?.id || "",
 			onMatchFound: () => {
@@ -27,13 +25,6 @@ export default function ChatBox() {
 				});
 			},
 		});
-
-	const handleLeaveRoom = useCallback(() => {
-		if (roomId) {
-			leaveRoom();
-			toast.info("Bạn đã rời khỏi phòng chat");
-		}
-	}, [roomId, leaveRoom]);
 
 	if (!user) {
 		return <ChatLoadingState message="Đang tải thông tin người dùng..." />;
@@ -54,7 +45,6 @@ export default function ChatBox() {
 
 	return (
 		<div className="flex flex-col bg-card text-card-foreground shadow-sm h-full relative">
-			<ChatHeader isPartnerTyping={isPartnerTyping} onLeave={handleLeaveRoom} />
 			<ChatMessages messages={messages} currentUserId={user.id} />
 			<ChatInput
 				onSendMessage={sendMessage}

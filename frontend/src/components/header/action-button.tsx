@@ -6,7 +6,7 @@ import { useQueue } from "@/hooks/use-queue";
 import { useAuth } from "@/contexts/auth";
 import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
 import { toast } from "sonner";
-import { roomAPI } from "@/lib/api";
+import { getWebSocketClient } from "@/lib/websocket";
 
 interface ButtonConfig {
 	bgColor: string;
@@ -16,57 +16,47 @@ interface ButtonConfig {
 }
 
 export function ActionButton() {
-	const { room } = useAuth();
+	const { room, inQueue } = useAuth();
 	const invalidateUserState = useInvalidateUserState();
-	const { isInQueue, isLoading: isQueueLoading, joinQueue, leaveQueue } = useQueue();
-	const [isRoomLoading, setIsRoomLoading] = React.useState(false);
+	const { isLoading, joinQueue, leaveQueue } = useQueue();
 
 	const inRoom = !!room;
-	const isLoading = isQueueLoading || isRoomLoading;
 
 	const handleClick = async () => {
 		if (isLoading) return;
 
 		try {
 			if (inRoom) {
-				setIsRoomLoading(true);
-				await roomAPI.leaveRoom();
+				const client = getWebSocketClient();
+				client.send("leave_room", { room_id: room.id });
 				invalidateUserState();
 				toast.success("Đã rời phòng chat");
-				setIsRoomLoading(false);
 				return;
 			}
 
-			if (isInQueue) {
+			if (inQueue) {
 				await leaveQueue();
-				toast.success("Đã rời khỏi hàng chờ");
 			} else {
-				const result = await joinQueue("polite");
-				if (result) {
-					toast.success("Đã tham gia hàng chờ", {
-						description: "Đang tìm kiếm đối tác chat...",
-					});
-				}
+				await joinQueue();
 			}
 		} catch (error) {
 			console.error("Operation failed:", error);
 			toast.error("Có lỗi xảy ra", {
 				description: error instanceof Error ? error.message : "Vui lòng thử lại",
 			});
-			setIsRoomLoading(false);
 		}
 	};
 
 	const getButtonConfig = (): ButtonConfig => {
 		if (inRoom) {
 			return {
-				bgColor: "bg-red-500 hover:bg-red-600",
+				bgColor: "bg-primary hover:bg-primary/90",
 				icon: <LogOut size={18} />,
 				title: "Rời phòng chat",
 				spinning: false,
 			};
 		}
-		if (isInQueue) {
+		if (inQueue) {
 			return {
 				bgColor: "bg-primary hover:bg-primary/90",
 				icon: <RotateCw size={18} />,

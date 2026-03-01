@@ -10,7 +10,7 @@ interface HeaderProps {
 }
 
 export default function Header({ trigger }: HeaderProps) {
-	const { user } = useAuth();
+	const { room } = useAuth();
 
 	return (
 		<div>
@@ -23,7 +23,7 @@ export default function Header({ trigger }: HeaderProps) {
 					<ActionButton />
 				</div>
 			</header>
-			{user?.profile && <UserInfoBar user={user} />}
+			{room?.partner && <UserInfoBar partner={room.partner} />}
 		</div>
 	);
 }

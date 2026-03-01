@@ -17,7 +17,7 @@ export interface RoomDTO {
 	id: string;
 	user1_id: string;
 	user2_id: string;
-	category: string;
+	partner?: UserDTO;
 }
 
 export interface MessageDTO {
@@ -33,6 +33,7 @@ export interface UserStateResponse {
 	room?: RoomDTO;
 	messages?: MessageDTO[];
 	is_new_user: boolean;
+	in_queue?: boolean;
 }
 
 export interface ApiResponse<T> {
@@ -41,8 +42,6 @@ export interface ApiResponse<T> {
 	error?: string;
 	message?: string;
 }
-
-export type { QueueStatus, QueueStats, MatchStats } from "./queue";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useCallback, ReactNode } from "react";
+import { createContext, useContext, useCallback, useState, useEffect, ReactNode } from "react";
 import { UserDTO, RoomDTO, MessageDTO } from "@/types";
 import { setCookie, getCookie, deleteCookie } from "@/lib/cookies";
 import { authAPI } from "@/lib/api";
@@ -13,6 +13,7 @@ interface AuthContextType {
 	user: UserDTO | null;
 	room: RoomDTO | null;
 	messages: MessageDTO[];
+	inQueue: boolean;
 	loading: boolean;
 	login: (user: UserDTO) => void;
 	logout: () => Promise<void>;
@@ -22,7 +23,10 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-	const hasCookie = !!getCookie("user_info");
+	const [mounted, setMounted] = useState(false);
+	useEffect(() => setMounted(true), []);
+
+	const hasCookie = mounted ? !!getCookie("user_info") : false;
 	const { data, isLoading, isError } = useUserState(hasCookie);
 
 	const login = useCallback((user: UserDTO) => {
@@ -58,7 +62,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		user: data?.user ?? null,
 		room: data?.room ?? null,
 		messages: data?.messages ?? [],
-		loading: hasCookie && isLoading,
+		inQueue: data?.in_queue ?? false,
+		loading: !mounted || (hasCookie && isLoading),
 		login,
 		logout,
 		checkAuth,

@@ -18,8 +18,9 @@ export class WebSocketClient {
 	private url: string;
 	private handlers: Map<string, Set<MessageHandler>> = new Map();
 	private reconnectAttempts = 0;
-	private maxReconnectAttempts = 5;
+	private maxReconnectAttempts = 20;
 	private reconnectDelay = 1000;
+	private maxReconnectDelay = 30000;
 	private isIntentionallyClosed = false;
 	private isConnecting = false;
 
@@ -70,12 +71,16 @@ export class WebSocketClient {
 					this.ws = null;
 					this.isConnecting = false;
 
+					// Notify listeners that connection was lost
+					this.handleMessage({ type: "disconnected", payload: {} });
+
 					if (!this.isIntentionallyClosed && this.reconnectAttempts < this.maxReconnectAttempts) {
 						this.reconnectAttempts++;
-						console.log(`Reconnecting... Attempt ${this.reconnectAttempts}`);
+						const delay = Math.min(this.reconnectDelay * this.reconnectAttempts, this.maxReconnectDelay);
+						console.log(`Reconnecting... Attempt ${this.reconnectAttempts} (delay: ${delay}ms)`);
 						setTimeout(() => {
 							this.connect().catch(console.error);
-						}, this.reconnectDelay * this.reconnectAttempts);
+						}, delay);
 					}
 				};
 			} catch (error) {

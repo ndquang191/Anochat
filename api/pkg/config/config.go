@@ -36,11 +36,8 @@ type OAuthConfig struct {
 }
 
 type ChatConfig struct {
-	QueueTimeout         time.Duration
-	QueueHeartbeatTTL    time.Duration
-	QueueCleanupInterval time.Duration
-	MessageRateLimit     int
-	MaxMessageLength     int
+	MessageRateLimit int
+	MaxMessageLength int
 }
 
 type SecurityConfig struct {
@@ -78,11 +75,8 @@ func Load() *Config {
 		},
 
 		Chat: ChatConfig{
-			QueueTimeout:         getEnvAsDuration("QUEUE_TIMEOUT", 30*time.Second),
-			QueueHeartbeatTTL:    getEnvAsDuration("QUEUE_HEARTBEAT_TTL", 10*time.Second),
-			QueueCleanupInterval: getEnvAsDuration("QUEUE_CLEANUP_INTERVAL", 30*time.Second),
-			MessageRateLimit:     getEnvAsInt("MESSAGE_RATE_LIMIT", 10),
-			MaxMessageLength:     getEnvAsInt("MAX_MESSAGE_LENGTH", 1000),
+			MessageRateLimit: getEnvAsInt("MESSAGE_RATE_LIMIT", 10),
+			MaxMessageLength: getEnvAsInt("MAX_MESSAGE_LENGTH", 1000),
 		},
 
 		Security: SecurityConfig{

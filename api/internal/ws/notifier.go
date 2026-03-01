@@ -25,12 +25,11 @@ func (h *Hub) notifyPartnerLeft(roomID uuid.UUID, leaverID uuid.UUID) {
 	}
 }
 
-func (h *Hub) NotifyMatch(user1ID, user2ID, roomID uuid.UUID, category string) {
+func (h *Hub) NotifyMatch(user1ID, user2ID, roomID uuid.UUID) {
 	matchMsg := WSMessage{
 		Type: "match_found",
 		Payload: map[string]interface{}{
 			"room_id":   roomID.String(),
-			"category":  category,
 			"timestamp": time.Now().Unix(),
 			"message":   "Match found! You are now connected.",
 		},

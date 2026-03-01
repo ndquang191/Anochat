@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import type { ApiResponse, UserStateResponse, ProfileDTO, QueueStatus, QueueStats, MatchStats } from "@/types";
+import type { ApiResponse, UserStateResponse, ProfileDTO } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -26,11 +26,10 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 }
 
 export const queueAPI = {
-	join: async (category: string = "polite") => {
+	join: async () => {
 		try {
-			const result = await apiCall<QueueStatus>("/queue/join", {
+			const result = await apiCall<{ message: string }>("/queue/join", {
 				method: "POST",
-				body: JSON.stringify({ category }),
 			});
 			toast.success("Đã tham gia hàng chờ thành công!");
 			return result;
@@ -49,18 +48,6 @@ export const queueAPI = {
 		} catch (error) {
 			throw error;
 		}
-	},
-
-	getStatus: async () => {
-		return apiCall<QueueStatus>("/queue/status");
-	},
-
-	getStats: async () => {
-		return apiCall<QueueStats>("/queue/stats");
-	},
-
-	getMatchStats: async () => {
-		return apiCall<MatchStats>("/queue/match-stats");
 	},
 };
 

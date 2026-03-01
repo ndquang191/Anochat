@@ -1,10 +1,5 @@
 package dto
 
-// JoinQueueRequest is the body for POST /queue/join.
-type JoinQueueRequest struct {
-	Category string `json:"category" binding:"required"`
-}
-
 // UpdateProfileRequest is the body for PUT /profile.
 type UpdateProfileRequest struct {
 	Age      *int    `json:"age"`
@@ -13,29 +8,13 @@ type UpdateProfileRequest struct {
 	IsHidden *bool   `json:"is_hidden"`
 }
 
-// QueueStatusResponse is returned by GET /queue/status and POST /queue/join.
-type QueueStatusResponse struct {
-	IsInQueue bool   `json:"is_in_queue"`
-	Position  int    `json:"position"`
-	Category  string `json:"category"`
-	JoinedAt  string `json:"joined_at,omitempty"`
-	ExpiresAt string `json:"expires_at,omitempty"`
-}
-
-// MatchStatsResponse is returned by GET /queue/match-stats.
-type MatchStatsResponse struct {
-	TotalMatches   int64  `json:"total_matches"`
-	MaleWaitTime   string `json:"male_wait_time"`
-	FemaleWaitTime string `json:"female_wait_time"`
-	LastMatchTime  string `json:"last_match_time"`
-}
-
 // UserStateResponse is returned by GET /user/state.
 type UserStateResponse struct {
-	User      UserDTO     `json:"user"`
-	Room      *RoomDTO    `json:"room"`
+	User      UserDTO      `json:"user"`
+	Room      *RoomDTO     `json:"room"`
 	Messages  []MessageDTO `json:"messages"`
-	IsNewUser bool        `json:"is_new_user"`
+	IsNewUser bool         `json:"is_new_user"`
+	InQueue   bool         `json:"in_queue"`
 }
 
 // UserDTO is the user data in API responses.
@@ -57,10 +36,10 @@ type ProfileDTO struct {
 
 // RoomDTO is the room data in API responses.
 type RoomDTO struct {
-	ID       string `json:"id"`
-	User1ID  string `json:"user1_id"`
-	User2ID  string `json:"user2_id"`
-	Category string `json:"category"`
+	ID      string   `json:"id"`
+	User1ID string   `json:"user1_id"`
+	User2ID string   `json:"user2_id"`
+	Partner *UserDTO `json:"partner,omitempty"`
 }
 
 // MessageDTO is the message data in API responses.

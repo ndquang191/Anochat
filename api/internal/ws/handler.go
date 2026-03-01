@@ -75,7 +75,7 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 	c.Hub.broadcast <- &BroadcastMessage{
 		RoomID:  *c.RoomID,
 		Message: msgBytes,
-		Exclude: uuid.Nil,
+		Exclude: c.UserID,
 	}
 
 	slog.Info("Message sent", "user_id", c.UserID, "room_id", c.RoomID, "message_id", msg.ID)
@@ -129,7 +129,7 @@ func (c *Client) handleLeaveRoom(payload map[string]interface{}) {
 		slog.Error("Failed to leave room in database", "error", err, "user_id", c.UserID, "room_id", roomID)
 	}
 
-	c.Hub.removeClientFromRoom(c.UserID, roomID)
+	c.Hub.removeClientFromRoom(c, roomID)
 	c.Hub.notifyPartnerLeft(roomID, c.UserID)
 	c.RoomID = nil
 

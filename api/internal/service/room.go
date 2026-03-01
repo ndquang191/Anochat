@@ -10,28 +10,24 @@ import (
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/chat"
 	"github.com/ndquang191/Anochat/api/internal/repository"
-	"github.com/ndquang191/Anochat/api/pkg/config"
 )
 
 type RoomService struct {
-	roomRepo        repository.RoomRepository
-	messageRepo     repository.MessageRepository
-	messageAnalyzer *config.MessageAnalyzer
+	roomRepo    repository.RoomRepository
+	messageRepo repository.MessageRepository
 }
 
 func NewRoomService(roomRepo repository.RoomRepository, messageRepo repository.MessageRepository) *RoomService {
 	return &RoomService{
-		roomRepo:        roomRepo,
-		messageRepo:     messageRepo,
-		messageAnalyzer: config.NewMessageAnalyzer(),
+		roomRepo:    roomRepo,
+		messageRepo: messageRepo,
 	}
 }
 
-func (s *RoomService) CreateRoom(ctx context.Context, user1ID, user2ID uuid.UUID, category string) (*chat.Room, error) {
+func (s *RoomService) CreateRoom(ctx context.Context, user1ID, user2ID uuid.UUID) (*chat.Room, error) {
 	room := &chat.Room{
-		User1ID:  user1ID,
-		User2ID:  user2ID,
-		Category: category,
+		User1ID: user1ID,
+		User2ID: user2ID,
 	}
 	if err := s.roomRepo.Create(ctx, room); err != nil {
 		return nil, err
@@ -88,33 +84,11 @@ func (s *RoomService) LeaveCurrentRoom(ctx context.Context, userID uuid.UUID) er
 func (s *RoomService) cleanupRoom(ctx context.Context, roomID uuid.UUID) {
 	slog.Info("Starting room cleanup", "room_id", roomID)
 
-	messages, err := s.messageRepo.FindByRoomID(ctx, roomID)
-	if err != nil {
-		slog.Error("Failed to fetch messages for cleanup", "room_id", roomID, "error", err)
+	if err := s.messageRepo.DeleteByRoomID(ctx, roomID); err != nil {
+		slog.Error("Failed to delete messages", "room_id", roomID, "error", err)
 		return
 	}
-
-	slog.Info("Analyzing messages for sensitive content", "room_id", roomID, "message_count", len(messages))
-
-	var analyses []*config.MessageAnalysis
-	for _, msg := range messages {
-		analysis := s.messageAnalyzer.AnalyzeMessage(msg.Content)
-		analyses = append(analyses, analysis)
-	}
-
-	if s.messageAnalyzer.ShouldRetainRoom(analyses) {
-		slog.Info("Sensitive content detected, marking room as sensitive", "room_id", roomID)
-		if err := s.roomRepo.UpdateIsSensitive(ctx, roomID, true); err != nil {
-			slog.Error("Failed to mark room as sensitive", "room_id", roomID, "error", err)
-		}
-	} else {
-		slog.Info("No sensitive content found, deleting room and messages", "room_id", roomID)
-		if err := s.messageRepo.DeleteByRoomID(ctx, roomID); err != nil {
-			slog.Error("Failed to delete messages", "room_id", roomID, "error", err)
-			return
-		}
-		if err := s.roomRepo.Delete(ctx, roomID); err != nil {
-			slog.Error("Failed to delete room", "room_id", roomID, "error", err)
-		}
+	if err := s.roomRepo.Delete(ctx, roomID); err != nil {
+		slog.Error("Failed to delete room", "room_id", roomID, "error", err)
 	}
 }

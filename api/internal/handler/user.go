@@ -12,26 +12,29 @@ import (
 )
 
 type UserHandler struct {
-	userService *service.UserService
-	roomService *service.RoomService
-	roomRepo    repository.RoomRepository
-	messageRepo repository.MessageRepository
-	config      *config.Config
+	userService  *service.UserService
+	roomService  *service.RoomService
+	queueService *service.QueueService
+	roomRepo     repository.RoomRepository
+	messageRepo  repository.MessageRepository
+	config       *config.Config
 }
 
 func NewUserHandler(
 	userService *service.UserService,
 	roomService *service.RoomService,
+	queueService *service.QueueService,
 	roomRepo repository.RoomRepository,
 	messageRepo repository.MessageRepository,
 	cfg *config.Config,
 ) *UserHandler {
 	return &UserHandler{
-		userService: userService,
-		roomService: roomService,
-		roomRepo:    roomRepo,
-		messageRepo: messageRepo,
-		config:      cfg,
+		userService:  userService,
+		roomService:  roomService,
+		queueService: queueService,
+		roomRepo:     roomRepo,
+		messageRepo:  messageRepo,
+		config:       cfg,
 	}
 }
 
@@ -69,16 +72,41 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 	resp := dto.UserStateResponse{
 		User:      userDTO,
 		IsNewUser: isNewUser,
+		InQueue:   h.queueService.IsInQueue(userID),
 	}
 
 	room, err := h.roomRepo.FindActiveByUserID(c.Request.Context(), userID)
 	if err == nil && room != nil {
-		resp.Room = &dto.RoomDTO{
-			ID:       room.ID.String(),
-			User1ID:  room.User1ID.String(),
-			User2ID:  room.User2ID.String(),
-			Category: room.Category,
+		roomDTO := &dto.RoomDTO{
+			ID:      room.ID.String(),
+			User1ID: room.User1ID.String(),
+			User2ID: room.User2ID.String(),
 		}
+
+		// Determine partner ID and fetch their profile
+		partnerID := room.User1ID
+		if room.User1ID == userID {
+			partnerID = room.User2ID
+		}
+		partnerUser, err := h.userService.GetUserByID(c.Request.Context(), partnerID)
+		if err == nil && partnerUser != nil {
+			partnerDTO := &dto.UserDTO{
+				ID:   partnerUser.ID.String(),
+				Name: partnerUser.Name,
+			}
+			partnerProfile, err := h.userService.GetProfile(c.Request.Context(), partnerID)
+			if err == nil && partnerProfile != nil {
+				partnerDTO.Profile = &dto.ProfileDTO{
+					Age:      partnerProfile.Age,
+					City:     partnerProfile.City,
+					IsMale:   partnerProfile.IsMale,
+					IsHidden: partnerProfile.IsHidden,
+				}
+			}
+			roomDTO.Partner = partnerDTO
+		}
+
+		resp.Room = roomDTO
 
 		messages, err := h.messageRepo.FindByRoomID(c.Request.Context(), room.ID)
 		if err == nil {

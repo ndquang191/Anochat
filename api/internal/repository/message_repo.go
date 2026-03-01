@@ -18,7 +18,6 @@ type MessageRepository interface {
 	Create(ctx context.Context, msg *chat.Message) error
 	DeleteByID(ctx context.Context, id uuid.UUID) error
 	DeleteByRoomID(ctx context.Context, roomID uuid.UUID) error
-	CountUnread(ctx context.Context, roomID, userID uuid.UUID, lastReadMessageID *uuid.UUID) (int64, error)
 }
 
 type messageRepo struct{ db *gorm.DB }
@@ -78,18 +77,6 @@ func (r *messageRepo) DeleteByID(ctx context.Context, id uuid.UUID) error {
 
 func (r *messageRepo) DeleteByRoomID(ctx context.Context, roomID uuid.UUID) error {
 	return r.db.WithContext(ctx).Where("room_id = ?", roomID).Delete(&model.Message{}).Error
-}
-
-func (r *messageRepo) CountUnread(ctx context.Context, roomID, userID uuid.UUID, lastReadMessageID *uuid.UUID) (int64, error) {
-	var count int64
-	query := r.db.WithContext(ctx).Model(&model.Message{}).Where("room_id = ? AND sender_id != ?", roomID, userID)
-	if lastReadMessageID != nil {
-		query = query.Where("created_at > (SELECT created_at FROM messages WHERE id = ?)", lastReadMessageID)
-	}
-	if err := query.Count(&count).Error; err != nil {
-		return 0, err
-	}
-	return count, nil
 }
 
 // --- mapping helpers ---

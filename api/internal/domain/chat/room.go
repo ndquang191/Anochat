@@ -8,21 +8,16 @@ import (
 
 // Room represents a 1-on-1 chat session.
 type Room struct {
-	ID                     uuid.UUID
-	User1ID                uuid.UUID
-	User2ID                uuid.UUID
-	Category               string
-	CreatedAt              time.Time
-	EndedAt                *time.Time
-	IsSensitive            bool
-	User1LastReadMessageID *uuid.UUID
-	User2LastReadMessageID *uuid.UUID
-	IsDeleted              bool
+	ID        uuid.UUID
+	User1ID   uuid.UUID
+	User2ID   uuid.UUID
+	CreatedAt time.Time
+	EndedAt   *time.Time
 }
 
-// IsActive returns true if the room has not ended and is not deleted.
+// IsActive returns true if the room has not ended.
 func (r *Room) IsActive() bool {
-	return r.EndedAt == nil && !r.IsDeleted
+	return r.EndedAt == nil
 }
 
 // HasUser returns true if the given user is a participant.

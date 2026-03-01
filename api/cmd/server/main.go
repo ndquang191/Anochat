@@ -38,7 +38,7 @@ func main() {
 		zapLogger, _ = zap.NewDevelopment()
 	}
 	defer zapLogger.Sync()
-	slog.SetDefault(slog.New(zapslog.NewHandler(zapLogger.Core(), nil)))
+	slog.SetDefault(slog.New(zapslog.NewHandler(zapLogger.Core())))
 	slog.Info("Configuration loaded successfully")
 
 	if err := database.InitDatabase(cfg); err != nil {
@@ -84,9 +84,9 @@ func main() {
 
 	userService := service.NewUserService(userRepo, profileRepo)
 	roomService := service.NewRoomService(roomRepo, messageRepo)
-	messageService := service.NewMessageService(messageRepo, roomRepo)
+	messageService := service.NewMessageService(messageRepo)
 	authService := service.NewAuthService(userService, oauthConfig, cfg.OAuth.JWTSecret, roomRepo, messageRepo)
-	queueService := service.NewQueueService(roomService, userService, roomRepo, cfg)
+	queueService := service.NewQueueService(roomService, roomRepo)
 
 	wsHub := ws.NewHub(queueService, messageService, roomService, cache.Client)
 	go wsHub.Run()
@@ -95,7 +95,7 @@ func main() {
 	queueService.SetMatchNotifier(wsHub)
 
 	authHandler := handler.NewAuthHandler(authService, oauthConfig, cfg)
-	userHandler := handler.NewUserHandler(userService, roomService, roomRepo, messageRepo, cfg)
+	userHandler := handler.NewUserHandler(userService, roomService, queueService, roomRepo, messageRepo, cfg)
 	queueHandler := handler.NewQueueHandler(queueService, cfg)
 	wsHandler := handler.NewWebSocketHandler(wsHub, authService, cfg)
 
@@ -154,9 +154,6 @@ func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandl
 
 		protected.POST("/queue/join", queueHandler.JoinQueue)
 		protected.POST("/queue/leave", queueHandler.LeaveQueue)
-		protected.GET("/queue/status", queueHandler.GetQueueStatus)
-		protected.GET("/queue/stats", queueHandler.GetQueueStats)
-		protected.GET("/queue/match-stats", queueHandler.GetMatchStats)
 
 		protected.GET("/ws", wsHandler.HandleWebSocket)
 	}
