@@ -16,39 +16,43 @@ interface ChatMessagesProps {
 }
 
 export function ChatMessages({ messages, currentUserId }: ChatMessagesProps) {
-	const messagesEndRef = useRef<HTMLDivElement>(null);
-
-	const scrollToBottom = () => {
-		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-	};
+	const scrollAreaRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
-		scrollToBottom();
+		const viewport = scrollAreaRef.current?.querySelector(
+			"[data-radix-scroll-area-viewport]"
+		);
+		if (viewport) {
+			viewport.scrollTop = viewport.scrollHeight;
+		}
 	}, [messages]);
 
 	if (messages.length === 0) {
 		return (
-			<ScrollArea className="flex-1 p-2 h-[calc(100vh-200px)]">
-				<div className="text-center text-muted-foreground py-8">
-					<p>Chưa có tin nhắn nào</p>
-					<p className="text-sm mt-2">Hãy bắt đầu cuộc trò chuyện!</p>
-				</div>
-			</ScrollArea>
+			<div ref={scrollAreaRef} className="flex-1 h-[calc(100vh-200px)]">
+				<ScrollArea className="h-full p-2">
+					<div className="text-center text-muted-foreground py-8">
+						<p>Chưa có tin nhắn nào</p>
+						<p className="text-sm mt-2">Hãy bắt đầu cuộc trò chuyện!</p>
+					</div>
+				</ScrollArea>
+			</div>
 		);
 	}
 
 	return (
-		<ScrollArea className="flex-1 p-2 h-[calc(100vh-200px)]">
-			<div className="flex flex-col gap-3">
-				{messages.map((message) => (
-					<ChatMessage
-						key={message.id}
-						content={message.content}
-						isCurrentUser={message.sender_id === currentUserId}
-					/>
-				))}
-				<div ref={messagesEndRef} />
-			</div>
-		</ScrollArea>
+		<div ref={scrollAreaRef} className="flex-1 h-[calc(100vh-200px)]">
+			<ScrollArea className="h-full p-2">
+				<div className="flex flex-col gap-3">
+					{messages.map((message) => (
+						<ChatMessage
+							key={message.id}
+							content={message.content}
+							isCurrentUser={message.sender_id === currentUserId}
+						/>
+					))}
+				</div>
+			</ScrollArea>
+		</div>
 	);
 }

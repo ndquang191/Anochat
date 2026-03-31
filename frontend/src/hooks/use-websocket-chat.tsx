@@ -7,12 +7,13 @@ import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
 
 export interface UseWebSocketChatProps {
 	userId: string;
+	initialMessages?: ChatMessage[];
 	onMatchFound?: (roomId: string) => void;
 	onPartnerLeft?: () => void;
 }
 
-export function useWebSocketChat({ userId, onMatchFound, onPartnerLeft }: UseWebSocketChatProps) {
-	const [messages, setMessages] = useState<ChatMessage[]>([]);
+export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPartnerLeft }: UseWebSocketChatProps) {
+	const [messages, setMessages] = useState<ChatMessage[]>(initialMessages ?? []);
 	const [isConnected, setIsConnected] = useState(false);
 	const [roomId, setRoomId] = useState<string | null>(null);
 	const [isPartnerTyping, setIsPartnerTyping] = useState(false);
@@ -35,6 +36,15 @@ export function useWebSocketChat({ userId, onMatchFound, onPartnerLeft }: UseWeb
 			hasRehydratedRef.current = true;
 		}
 	}, [room, roomId]);
+
+	useEffect(() => {
+		if (!initialMessages?.length) return;
+		setMessages((prev) => {
+			const existingIds = new Set(prev.map((m) => m.id));
+			const merged = [...prev, ...initialMessages.filter((m) => !existingIds.has(m.id))];
+			return merged.sort((a, b) => a.created_at - b.created_at);
+		});
+	}, [initialMessages]);
 
 	useEffect(() => {
 		if (isConnected && roomId && hasJoinedRoomRef.current !== roomId) {
@@ -78,6 +88,7 @@ export function useWebSocketChat({ userId, onMatchFound, onPartnerLeft }: UseWeb
 		const handleMatchFound = (message: WebSocketMessage) => {
 			const room_id = message.payload.room_id as string;
 			setRoomId(room_id);
+			setMessages([]);
 			invalidateUserState();
 
 			if (onMatchFoundRef.current) {
@@ -85,7 +96,10 @@ export function useWebSocketChat({ userId, onMatchFound, onPartnerLeft }: UseWeb
 			}
 		};
 
-		const handleRoomJoined = () => {
+		const handleRoomRejoined = (message: WebSocketMessage) => {
+			const room_id = message.payload.room_id as string;
+			setRoomId(room_id);
+			hasJoinedRoomRef.current = room_id;
 		};
 
 		const handleReceiveMessage = (message: WebSocketMessage) => {
@@ -127,7 +141,7 @@ export function useWebSocketChat({ userId, onMatchFound, onPartnerLeft }: UseWeb
 		client.on("connected", handleConnected);
 		client.on("disconnected", handleDisconnected);
 		client.on("match_found", handleMatchFound);
-		client.on("room_joined", handleRoomJoined);
+		client.on("room_rejoined", handleRoomRejoined);
 		client.on("receive_message", handleReceiveMessage);
 		client.on("partner_left", handlePartnerLeft);
 		client.on("partner_typing", handlePartnerTyping);
@@ -137,7 +151,7 @@ export function useWebSocketChat({ userId, onMatchFound, onPartnerLeft }: UseWeb
 			client.off("connected", handleConnected);
 			client.off("disconnected", handleDisconnected);
 			client.off("match_found", handleMatchFound);
-			client.off("room_joined", handleRoomJoined);
+			client.off("room_rejoined", handleRoomRejoined);
 			client.off("receive_message", handleReceiveMessage);
 			client.off("partner_left", handlePartnerLeft);
 			client.off("partner_typing", handlePartnerTyping);

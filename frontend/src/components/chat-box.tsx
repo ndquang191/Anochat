@@ -1,6 +1,7 @@
 "use client";
 
 import { useWebSocketChat } from "@/hooks/use-websocket-chat";
+import { type ChatMessage } from "@/lib/websocket";
 import { useAuth } from "@/contexts/auth";
 import { toast } from "sonner";
 import { ChatLoadingState } from "./chat/chat-loading-state";
@@ -9,11 +10,12 @@ import { ChatMessages } from "./chat/chat-messages";
 import { ChatInput } from "./chat/chat-input";
 
 export default function ChatBox() {
-	const { user } = useAuth();
+	const { user, messages: initialMessages } = useAuth();
 
 	const { messages, sendMessage, isConnected, roomId, sendTypingIndicator } =
 		useWebSocketChat({
 			userId: user?.id || "",
+			initialMessages: initialMessages as ChatMessage[],
 			onMatchFound: () => {
 				toast.success("Đã tìm thấy đối tác chat!", {
 					description: `Bạn đã được kết nối với người dùng khác`,

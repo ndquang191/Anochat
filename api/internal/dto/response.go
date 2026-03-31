@@ -39,11 +39,3 @@ func Fail(c *gin.Context, status int, message string) {
 	})
 }
 
-// FailWithMessage sends an error response with separate error and human message.
-func FailWithMessage(c *gin.Context, status int, errMsg, message string) {
-	c.JSON(status, ApiResponse{
-		Success: false,
-		Error:   errMsg,
-		Message: message,
-	})
-}

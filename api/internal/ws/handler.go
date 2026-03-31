@@ -54,31 +54,37 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 		return
 	}
 
-	msg, err := c.Hub.messageService.CreateMessage(context.Background(), *c.RoomID, c.UserID, content)
-	if err != nil {
-		slog.Error("Failed to save message", "error", err, "user_id", c.UserID)
-		return
-	}
+	msgID := uuid.New()
+	now := time.Now().UTC()
+	roomID := *c.RoomID
 
 	broadcastMsg := WSMessage{
 		Type: "receive_message",
 		Payload: map[string]interface{}{
-			"id":         msg.ID.String(),
-			"room_id":    msg.RoomID.String(),
-			"sender_id":  msg.SenderID.String(),
-			"content":    msg.Content,
-			"created_at": msg.CreatedAt.Unix(),
+			"id":         msgID.String(),
+			"room_id":    roomID.String(),
+			"sender_id":  c.UserID.String(),
+			"content":    content,
+			"created_at": now.Unix(),
 		},
 	}
 
 	msgBytes, _ := json.Marshal(broadcastMsg)
 	c.Hub.broadcast <- &BroadcastMessage{
-		RoomID:  *c.RoomID,
+		RoomID:  roomID,
 		Message: msgBytes,
 		Exclude: c.UserID,
 	}
 
-	slog.Info("Message sent", "user_id", c.UserID, "room_id", c.RoomID, "message_id", msg.ID)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := c.Hub.messageService.SaveMessage(ctx, msgID, roomID, c.UserID, content, now); err != nil {
+			slog.Error("Failed to save message", "error", err, "user_id", c.UserID, "message_id", msgID)
+		}
+	}()
+
+	slog.Info("Message sent", "user_id", c.UserID, "room_id", roomID, "message_id", msgID)
 }
 
 func (c *Client) handleJoinRoom(payload map[string]interface{}) {

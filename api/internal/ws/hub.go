@@ -77,6 +77,28 @@ func (h *Hub) registerClient(client *Client) {
 		},
 	}
 	client.SendJSON(successMsg)
+
+	// Auto-rejoin active room if exists
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		room, err := h.roomService.GetActiveRoomByUserID(ctx, client.UserID)
+		if err != nil || room == nil {
+			return
+		}
+
+		h.AddClientToRoom(client.UserID, room.ID)
+		slog.Info("Client auto-rejoined room", "user_id", client.UserID, "room_id", room.ID)
+
+		client.SendJSON(WSMessage{
+			Type: "room_rejoined",
+			Payload: map[string]interface{}{
+				"room_id":   room.ID.String(),
+				"timestamp": time.Now().Unix(),
+			},
+		})
+	}()
 }
 
 func (h *Hub) unregisterClient(client *Client) {

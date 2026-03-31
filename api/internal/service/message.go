@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/chat"
@@ -16,16 +17,15 @@ func NewMessageService(messageRepo repository.MessageRepository) *MessageService
 	return &MessageService{messageRepo: messageRepo}
 }
 
-func (s *MessageService) CreateMessage(ctx context.Context, roomID, senderID uuid.UUID, content string) (*chat.Message, error) {
+func (s *MessageService) SaveMessage(ctx context.Context, id, roomID, senderID uuid.UUID, content string, createdAt time.Time) error {
 	msg := &chat.Message{
-		RoomID:   roomID,
-		SenderID: senderID,
-		Content:  content,
+		ID:        id,
+		RoomID:    roomID,
+		SenderID:  senderID,
+		Content:   content,
+		CreatedAt: createdAt,
 	}
-	if err := s.messageRepo.Create(ctx, msg); err != nil {
-		return nil, err
-	}
-	return msg, nil
+	return s.messageRepo.Create(ctx, msg)
 }
 
 func (s *MessageService) GetMessagesByRoomID(ctx context.Context, roomID uuid.UUID) ([]*chat.Message, error) {

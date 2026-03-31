@@ -85,7 +85,7 @@ func main() {
 	userService := service.NewUserService(userRepo, profileRepo)
 	roomService := service.NewRoomService(roomRepo, messageRepo)
 	messageService := service.NewMessageService(messageRepo)
-	authService := service.NewAuthService(userService, oauthConfig, cfg.OAuth.JWTSecret, roomRepo, messageRepo)
+	authService := service.NewAuthService(userService, oauthConfig, cfg.OAuth.JWTSecret)
 	queueService := service.NewQueueService(roomService, roomRepo)
 
 	wsHub := ws.NewHub(queueService, messageService, roomService, cache.Client)
@@ -98,10 +98,16 @@ func main() {
 	userHandler := handler.NewUserHandler(userService, roomService, queueService, roomRepo, messageRepo, cfg)
 	queueHandler := handler.NewQueueHandler(queueService, cfg)
 	wsHandler := handler.NewWebSocketHandler(wsHub, authService, cfg)
+	devHandler := handler.NewDevHandler(db)
 
 	authMiddleware := middleware.AuthMiddleware(authService, cfg)
 
 	setupRoutes(router, authHandler, userHandler, queueHandler, wsHandler, authMiddleware)
+
+	if !cfg.IsProduction() {
+		router.POST("/dev/reset", devHandler.ResetDB)
+		slog.Info("Dev routes enabled: POST /dev/reset")
+	}
 
 	router.GET("/healthz", func(c *gin.Context) {
 		if err := database.HealthCheck(); err != nil {

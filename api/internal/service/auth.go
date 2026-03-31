@@ -10,9 +10,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/ndquang191/Anochat/api/internal/domain/chat"
 	"github.com/ndquang191/Anochat/api/internal/domain/identity"
-	"github.com/ndquang191/Anochat/api/internal/repository"
 	"golang.org/x/oauth2"
 )
 
@@ -20,23 +18,17 @@ type AuthService struct {
 	oauthConfig *oauth2.Config
 	jwtSecret   []byte
 	userService *UserService
-	roomRepo    repository.RoomRepository
-	messageRepo repository.MessageRepository
 }
 
 func NewAuthService(
 	userService *UserService,
 	oauthConfig *oauth2.Config,
 	jwtSecret string,
-	roomRepo repository.RoomRepository,
-	messageRepo repository.MessageRepository,
 ) *AuthService {
 	return &AuthService{
 		oauthConfig: oauthConfig,
 		jwtSecret:   []byte(jwtSecret),
 		userService: userService,
-		roomRepo:    roomRepo,
-		messageRepo: messageRepo,
 	}
 }
 
@@ -67,30 +59,6 @@ func (s *AuthService) ProcessOAuthCallback(ctx context.Context, code string) (*i
 	}
 
 	return user, jwtToken, nil
-}
-
-func (s *AuthService) GetUserFromToken(ctx context.Context, tokenString string) (*identity.User, *chat.Room, []*chat.Message, error) {
-	claims, err := s.ValidateJWT(tokenString)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	user, err := s.userService.GetUserByID(ctx, claims.UserID)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	room, err := s.roomRepo.FindActiveByUserID(ctx, claims.UserID)
-	if err != nil {
-		return user, nil, nil, nil
-	}
-
-	messages, err := s.messageRepo.FindByRoomID(ctx, room.ID)
-	if err != nil {
-		return user, room, nil, err
-	}
-
-	return user, room, messages, nil
 }
 
 func (s *AuthService) getUserInfoFromToken(ctx context.Context, token *oauth2.Token) (*identity.GoogleUserInfo, error) {
