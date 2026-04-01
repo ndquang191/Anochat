@@ -1,11 +1,34 @@
 "use client";
 
+import { useEffect } from "react";
 import Chatbox from "@/components/chat-box";
 import { useAuth } from "@/contexts/auth";
 import { Loader2 } from "lucide-react";
+import { getWebSocketClient } from "@/lib/websocket";
+import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
 
 const Page = () => {
-	const { room, inQueue, loading: authLoading } = useAuth();
+	const { user, room, inQueue, loading: authLoading } = useAuth();
+	const invalidateUserState = useInvalidateUserState();
+
+	// Ensure WebSocket is connected when in queue (e.g. after page refresh while inQueue=true)
+	useEffect(() => {
+		if (!user || !inQueue) return;
+		const client = getWebSocketClient();
+		if (!client.isConnected()) {
+			client.connect().catch(console.error);
+		}
+	}, [user, inQueue]);
+
+	// Handle match_found at page level so it works even when ChatBox is unmounted (inQueue=true)
+	useEffect(() => {
+		const client = getWebSocketClient();
+		const handleMatchFound = () => {
+			invalidateUserState();
+		};
+		client.on("match_found", handleMatchFound);
+		return () => client.off("match_found", handleMatchFound);
+	}, [invalidateUserState]);
 
 	if (authLoading) {
 		return (

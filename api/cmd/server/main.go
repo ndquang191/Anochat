@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"log/slog"
 	"os"
@@ -15,6 +16,8 @@ import (
 	"github.com/ndquang191/Anochat/api/pkg/cache"
 	"github.com/ndquang191/Anochat/api/pkg/config"
 	"github.com/ndquang191/Anochat/api/pkg/database"
+	"github.com/ndquang191/Anochat/api/pkg/metrics"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -58,6 +61,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	metrics.Register()
+
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -81,6 +86,10 @@ func main() {
 	profileRepo := repository.NewProfileRepository(db)
 	roomRepo := repository.NewRoomRepository(db)
 	messageRepo := repository.NewMessageRepository(db)
+
+	if count, err := userRepo.Count(context.Background()); err == nil {
+		metrics.TotalUsers.Set(float64(count))
+	}
 
 	userService := service.NewUserService(userRepo, profileRepo)
 	roomService := service.NewRoomService(roomRepo, messageRepo)
@@ -108,6 +117,8 @@ func main() {
 		router.POST("/dev/reset", devHandler.ResetDB)
 		slog.Info("Dev routes enabled: POST /dev/reset")
 	}
+
+	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	router.GET("/healthz", func(c *gin.Context) {
 		if err := database.HealthCheck(); err != nil {

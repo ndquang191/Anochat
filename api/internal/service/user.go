@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/identity"
 	"github.com/ndquang191/Anochat/api/internal/repository"
+	"github.com/ndquang191/Anochat/api/pkg/metrics"
 )
 
 var (
@@ -62,7 +63,13 @@ func (s *UserService) GetOrCreateUser(ctx context.Context, email, name, avatarUR
 	user, err := s.GetUserByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
-			return s.CreateUser(ctx, email, name, avatarURL)
+			created, err := s.CreateUser(ctx, email, name, avatarURL)
+			if err != nil {
+				return nil, err
+			}
+			metrics.TotalUsers.Inc()
+			metrics.NewRegistrations.Inc()
+			return created, nil
 		}
 		return nil, err
 	}

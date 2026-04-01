@@ -59,7 +59,7 @@ export function ChatInput({ onSendMessage, onTypingChange, disabled }: ChatInput
 				className="flex-1"
 				disabled={disabled}
 			/>
-			<Button type="submit" className="shrink-0" disabled={disabled || !message.trim()}>
+			<Button type="submit" className="shrink-0 h-9" disabled={disabled || !message.trim()}>
 				Gửi
 			</Button>
 		</form>

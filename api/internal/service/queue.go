@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/matching"
 	"github.com/ndquang191/Anochat/api/internal/repository"
+	"github.com/ndquang191/Anochat/api/pkg/metrics"
 )
 
 type QueueService struct {
@@ -56,6 +58,7 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
 			// Remove the waiting entry
 			qs.entries = append(qs.entries[:i], qs.entries[i+1:]...)
 			delete(qs.inQueue, entry.UserID)
+			metrics.QueueSize.Dec()
 
 			// Create room
 			room, err := qs.roomService.CreateRoom(context.Background(), entry.UserID, userID)
@@ -64,8 +67,13 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
 				// Put the entry back
 				qs.entries = append(qs.entries, entry)
 				qs.inQueue[entry.UserID] = true
+				metrics.QueueSize.Inc()
 				return fmt.Errorf("failed to create room: %w", err)
 			}
+
+			// Observe match duration for both users
+			now := time.Now()
+			metrics.MatchDuration.Observe(now.Sub(entry.JoinedAt).Seconds())
 
 			slog.Info("Match found", "room_id", room.ID, "user1_id", entry.UserID, "user2_id", userID)
 
@@ -78,10 +86,12 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
 
 	// No match available, add to queue
 	entry := &matching.QueueEntry{
-		UserID: userID,
+		UserID:   userID,
+		JoinedAt: time.Now(),
 	}
 	qs.entries = append(qs.entries, entry)
 	qs.inQueue[userID] = true
+	metrics.QueueSize.Inc()
 
 	slog.Info("User joined queue", "user_id", userID, "queue_size", len(qs.entries))
 	return nil
@@ -96,6 +106,7 @@ func (qs *QueueService) LeaveQueue(_ context.Context, userID uuid.UUID) error {
 	}
 
 	qs.removeUserLocked(userID)
+	metrics.QueueSize.Dec()
 	slog.Info("User left queue", "user_id", userID, "queue_size", len(qs.entries))
 	return nil
 }
@@ -112,6 +123,7 @@ func (qs *QueueService) UserDisconnected(userID uuid.UUID) {
 
 	if qs.inQueue[userID] {
 		qs.removeUserLocked(userID)
+		metrics.QueueSize.Dec()
 		slog.Info("User disconnected, removed from queue", "user_id", userID, "queue_size", len(qs.entries))
 	}
 }

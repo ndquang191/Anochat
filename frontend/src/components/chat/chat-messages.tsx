@@ -43,7 +43,7 @@ export function ChatMessages({ messages, currentUserId }: ChatMessagesProps) {
 	return (
 		<div ref={scrollAreaRef} className="flex-1 h-[calc(100vh-200px)]">
 			<ScrollArea className="h-full p-2">
-				<div className="flex flex-col gap-3">
+				<div className="flex flex-col gap-3 pb-20">
 					{messages.map((message) => (
 						<ChatMessage
 							key={message.id}

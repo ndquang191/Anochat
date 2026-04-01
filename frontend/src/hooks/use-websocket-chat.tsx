@@ -18,6 +18,7 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 	const [roomId, setRoomId] = useState<string | null>(null);
 	const [isPartnerTyping, setIsPartnerTyping] = useState(false);
 	const wsClient = useRef(getWebSocketClient());
+	const userIdRef = useRef(userId);
 	const onMatchFoundRef = useRef(onMatchFound);
 	const onPartnerLeftRef = useRef(onPartnerLeft);
 	const { room } = useAuth();
@@ -29,6 +30,10 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 		onMatchFoundRef.current = onMatchFound;
 		onPartnerLeftRef.current = onPartnerLeft;
 	}, [onMatchFound, onPartnerLeft]);
+
+	useEffect(() => {
+		userIdRef.current = userId;
+	}, [userId]);
 
 	useEffect(() => {
 		if (room?.id && !roomId && !hasRehydratedRef.current) {
@@ -174,13 +179,13 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 			const optimisticMessage: ChatMessage = {
 				id: crypto.randomUUID(),
 				room_id: roomId,
-				sender_id: userId,
+				sender_id: userIdRef.current,
 				content,
 				created_at: Math.floor(Date.now() / 1000),
 			};
 			setMessages((prev) => [...prev, optimisticMessage]);
 		},
-		[roomId, isConnected, userId]
+		[roomId, isConnected]
 	);
 
 	const joinRoom = useCallback(

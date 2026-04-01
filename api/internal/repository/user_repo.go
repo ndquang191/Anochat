@@ -16,6 +16,7 @@ type UserRepository interface {
 	FindByEmail(ctx context.Context, email string) (*identity.User, error)
 	Create(ctx context.Context, user *identity.User) error
 	Update(ctx context.Context, user *identity.User) error
+	Count(ctx context.Context) (int64, error)
 }
 
 type userRepo struct{ db *gorm.DB }
@@ -59,6 +60,12 @@ func (r *userRepo) Create(ctx context.Context, user *identity.User) error {
 func (r *userRepo) Update(ctx context.Context, user *identity.User) error {
 	m := userDomainToModel(user)
 	return r.db.WithContext(ctx).Save(m).Error
+}
+
+func (r *userRepo) Count(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.User{}).Where("is_deleted = false").Count(&count).Error
+	return count, err
 }
 
 // --- mapping helpers ---

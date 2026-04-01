@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/service"
+	"github.com/ndquang191/Anochat/api/pkg/metrics"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -66,6 +67,7 @@ func (h *Hub) registerClient(client *Client) {
 	h.clients[client.UserID] = client
 	h.mutex.Unlock()
 
+	metrics.ActiveConnections.Inc()
 	slog.Info("Client registered", "user_id", client.UserID, "client_id", client.ID)
 
 	successMsg := WSMessage{
@@ -117,6 +119,9 @@ func (h *Hub) unregisterClient(client *Client) {
 	// Only clean up queue state if no newer connection has replaced this one
 	if isLatest {
 		h.queueService.UserDisconnected(client.UserID)
+	}
+	if isLatest {
+		metrics.ActiveConnections.Dec()
 	}
 	close(client.Send)
 	slog.Info("Client unregistered", "user_id", client.UserID, "client_id", client.ID, "was_latest", isLatest)
