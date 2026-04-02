@@ -26,7 +26,6 @@ type Profile struct {
 	UserID    uuid.UUID `gorm:"type:uuid;primaryKey" json:"user_id"`
 	IsMale    *bool     `gorm:"type:boolean" json:"is_male"`
 	Age       *int      `gorm:"type:integer" json:"age"`
-	City      *string   `gorm:"type:text" json:"city"`
 	IsHidden  bool      `gorm:"default:false" json:"is_hidden"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 

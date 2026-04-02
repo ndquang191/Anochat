@@ -65,9 +65,9 @@
 	--muted: oklch(0.8 0.06 280);
 	--muted-foreground: oklch(0.5 0.05 230);
 
-	/* Accent - #59c4e6 (cyan) */
-	--accent: oklch(0.75 0.12 195);
-	--accent-foreground: oklch(0.25 0.05 230);
+	/* Accent - soft blue hover (light bg, dark text) */
+	--accent: oklch(0.91 0.05 218);
+	--accent-foreground: oklch(0.2 0.07 228);
 
 	--destructive: oklch(0.577 0.245 27.325);
 	--border: oklch(0.9 0.02 220);
@@ -86,58 +86,150 @@
 	--sidebar-foreground: oklch(0.25 0.05 230);
 	--sidebar-primary: oklch(0.45 0.08 230);
 	--sidebar-primary-foreground: oklch(0.98 0.01 220);
-	--sidebar-accent: oklch(0.75 0.08 220);
-	--sidebar-accent-foreground: oklch(0.25 0.05 230);
+	--sidebar-accent: oklch(0.91 0.05 220);       /* was 0.75 — too heavy on light sidebar */
+	--sidebar-accent-foreground: oklch(0.2 0.07 228); /* slightly darker for crisp contrast */
 	--sidebar-border: oklch(0.9 0.02 220);
 	--sidebar-ring: oklch(0.6 0.08 230);
 }
 
 .dark {
-	/* Dark theme - sử dụng #516b91 tối hơn làm background */
-	--background: oklch(0.2 0.05 230); /* Dark slate blue */
-	--foreground: oklch(0.95 0.01 220); /* Light text */
-	--card: oklch(0.25 0.05 230);
-	--card-foreground: oklch(0.95 0.01 220);
-	--popover: oklch(0.25 0.05 230);
-	--popover-foreground: oklch(0.95 0.01 220);
+	/* Dark theme - neutral gray */
+	--background: oklch(0.18 0 0);
+	--foreground: oklch(0.93 0 0);
+	--card: oklch(0.22 0 0);
+	--card-foreground: oklch(0.93 0 0);
+	--popover: oklch(0.22 0 0);
+	--popover-foreground: oklch(0.93 0 0);
 
-	/* Primary - #59c4e6 (cyan) for contrast */
-	--primary: oklch(0.75 0.12 195);
-	--primary-foreground: oklch(0.2 0.05 230);
+	/* Primary - light gray for buttons */
+	--primary: oklch(0.82 0 0);
+	--primary-foreground: oklch(0.15 0 0);
 
-	/* Secondary - #93b7e3 darker */
-	--secondary: oklch(0.35 0.08 220);
-	--secondary-foreground: oklch(0.9 0.02 220);
+	/* Secondary */
+	--secondary: oklch(0.3 0 0);
+	--secondary-foreground: oklch(0.88 0 0);
 
-	/* Muted - darker version of #cbb0e3 */
-	--muted: oklch(0.3 0.06 280);
-	--muted-foreground: oklch(0.7 0.05 220);
+	/* Muted */
+	--muted: oklch(0.36 0 0);
+	--muted-foreground: oklch(0.68 0 0);
 
-	/* Accent - #edafda (pink) for pop */
-	--accent: oklch(0.8 0.12 320);
-	--accent-foreground: oklch(0.2 0.05 230);
+	/* Accent - gray hover bg with light text */
+	--accent: oklch(0.3 0 0);
+	--accent-foreground: oklch(0.93 0 0);
 
-	--destructive: oklch(0.704 0.191 22.216);
-	--border: oklch(0.3 0.05 230);
-	--input: oklch(0.25 0.05 230);
-	--ring: oklch(0.6 0.1 195);
+	--destructive: oklch(0.65 0.2 22);
+	--border: oklch(0.28 0 0);
+	--input: oklch(0.25 0 0);
+	--ring: oklch(0.52 0 0);
 
-	/* Chart colors for dark theme - brighten for visibility */
-	--chart-1: oklch(0.6 0.1 230); /* Brighter #516b91 */
-	--chart-2: oklch(0.75 0.12 195); /* #59c4e6 */
-	--chart-3: oklch(0.8 0.12 320); /* #edafda */
-	--chart-4: oklch(0.75 0.08 220); /* #93b7e3 */
-	--chart-5: oklch(0.85 0.08 195); /* #a5e7f0 */
+	/* Chart colors */
+	--chart-1: oklch(0.65 0.1 220);
+	--chart-2: oklch(0.72 0.12 195);
+	--chart-3: oklch(0.75 0.12 320);
+	--chart-4: oklch(0.7 0.08 150);
+	--chart-5: oklch(0.78 0.1 60);
 
-	/* Sidebar for dark theme */
-	--sidebar: oklch(0.22 0.05 230);
-	--sidebar-foreground: oklch(0.9 0.02 220);
-	--sidebar-primary: oklch(0.75 0.12 195);
-	--sidebar-primary-foreground: oklch(0.2 0.05 230);
-	--sidebar-accent: oklch(0.35 0.08 220);
-	--sidebar-accent-foreground: oklch(0.9 0.02 220);
-	--sidebar-border: oklch(0.3 0.05 230);
-	--sidebar-ring: oklch(0.6 0.1 195);
+	/* Sidebar */
+	--sidebar: oklch(0.2 0 0);
+	--sidebar-foreground: oklch(0.88 0 0);
+	--sidebar-primary: oklch(0.82 0 0);
+	--sidebar-primary-foreground: oklch(0.15 0 0);
+	--sidebar-accent: oklch(0.3 0 0);
+	--sidebar-accent-foreground: oklch(0.93 0 0);
+	--sidebar-border: oklch(0.27 0 0);
+	--sidebar-ring: oklch(0.52 0 0);
+}
+
+.pink {
+	/* Pink theme */
+	--background: oklch(0.97 0.01 350);
+	--foreground: oklch(0.25 0.05 340);
+	--card: oklch(0.99 0.005 350);
+	--card-foreground: oklch(0.25 0.05 340);
+	--popover: oklch(0.99 0.005 350);
+	--popover-foreground: oklch(0.25 0.05 340);
+
+	/* Primary - hot pink */
+	--primary: oklch(0.55 0.18 340);
+	--primary-foreground: oklch(0.97 0.01 350);
+
+	/* Secondary - soft rose */
+	--secondary: oklch(0.82 0.08 330);
+	--secondary-foreground: oklch(0.25 0.05 340);
+
+	/* Muted - light dusty rose */
+	--muted: oklch(0.88 0.05 320);
+	--muted-foreground: oklch(0.5 0.05 330);
+
+	/* Accent - light pink hover (light bg, dark text) */
+	--accent: oklch(0.90 0.07 345);
+	--accent-foreground: oklch(0.2 0.08 338);
+
+	--destructive: oklch(0.577 0.245 27.325);
+	--border: oklch(0.9 0.03 340);
+	--input: oklch(0.95 0.02 340);
+	--ring: oklch(0.65 0.15 340);
+
+	/* Chart colors */
+	--chart-1: oklch(0.55 0.18 340);
+	--chart-2: oklch(0.72 0.16 350);
+	--chart-3: oklch(0.82 0.08 330);
+	--chart-4: oklch(0.65 0.12 10);
+	--chart-5: oklch(0.88 0.06 320);
+
+	/* Sidebar */
+	--sidebar: oklch(0.95 0.02 350);
+	--sidebar-foreground: oklch(0.25 0.05 340);
+	--sidebar-primary: oklch(0.55 0.18 340);
+	--sidebar-primary-foreground: oklch(0.97 0.01 350);
+	--sidebar-accent: oklch(0.89 0.08 345);       /* was 0.82 0.08 — more pop, clearer vs 0.95 bg */
+	--sidebar-accent-foreground: oklch(0.2 0.08 338); /* was 0.25 — darker for more contrast */
+	--sidebar-border: oklch(0.88 0.04 340);
+	--sidebar-ring: oklch(0.65 0.15 340);
+}
+
+/* Suppress all transitions during theme switch to prevent flicker (fallback) */
+.no-transition * {
+	transition: none !important;
+}
+
+/* View transition wave — suppress default cross-fade, let JS animate */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation: none;
+	mix-blend-mode: normal;
+}
+
+:root {
+  --aurora-1: #516b91;
+  --aurora-2: #93b7e3;
+  --aurora-3: #59c4e6;
+  --aurora-4: #cbb0e3;
+}
+
+.dark {
+  --aurora-1: #9ca3af;
+  --aurora-2: #d1d5db;
+  --aurora-3: #6b7280;
+  --aurora-4: #e5e7eb;
+}
+
+.pink {
+  --aurora-1: #f472b6;
+  --aurora-2: #c084fc;
+  --aurora-3: #fb7185;
+  --aurora-4: #e879f9;
+}
+
+@keyframes aurora {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-aurora {
+  animation: aurora 10s linear infinite;
+  background-size: 200% auto;
 }
 
 @layer base {

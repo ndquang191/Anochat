@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Nunito, Changa_One } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { AppProvider } from "@/contexts/app";
 
-const inter = Inter({ subsets: ["latin"] });
+const nunito = Nunito({ subsets: ["latin", "vietnamese"] });
+const changaOne = Changa_One({ subsets: ["latin"], weight: "400", variable: "--font-changa-one" });
 
 export const metadata: Metadata = {
 	title: "AnoChat",
@@ -13,8 +14,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
 	return (
-		<html lang="en">
-			<body className={inter.className}>
+		<html lang="en" suppressHydrationWarning>
+			<head>
+				<script
+					dangerouslySetInnerHTML={{
+						__html: `try{var t=localStorage.getItem('theme');if(t==='dark')document.documentElement.classList.add('dark');else if(t==='pink')document.documentElement.classList.add('pink');}catch(e){}`,
+					}}
+				/>
+			</head>
+			<body className={`${nunito.className} ${changaOne.variable}`}>
 				<AppProvider>
 					{children}
 					<Toaster />

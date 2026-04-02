@@ -58,7 +58,6 @@ export const userAPI = {
 
 	updateProfile: async (data: {
 		age?: number | null;
-		city?: string;
 		is_male?: boolean;
 		is_hidden?: boolean;
 	}) => {

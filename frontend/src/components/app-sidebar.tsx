@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { LogOut, Settings, Shield } from "lucide-react";
+import { LogOut, Settings, Shield, User } from "lucide-react";
 import {
 	Sidebar,
 	SidebarContent,
@@ -17,11 +17,13 @@ import {
 } from "@/components/ui/sidebar";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { UserSettingsDialog } from "@/components/user-settings-dialog";
 import { AdminPanel } from "@/components/admin/admin-panel";
 import { AdminUserID } from "@/types";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { AuroraText } from "@/components/aurora-text";
 import { useAuth } from "@/contexts/auth";
 import { userAPI } from "@/lib/api";
 import { useUserState, useInvalidateUserState } from "@/hooks/queries/use-user-state";
@@ -32,7 +34,6 @@ interface UserData {
 	name: string;
 	age: number | null;
 	gender: string;
-	city: string;
 	isVisible: boolean;
 }
 
@@ -42,7 +43,6 @@ const defaultUserData: UserData = {
 	name: "...",
 	age: null,
 	gender: "other",
-	city: "---",
 	isVisible: true,
 };
 
@@ -60,7 +60,6 @@ function deriveUserData(user: ReturnType<typeof useAuth>["user"], data: ReturnTy
 				: profile?.is_male === false
 				? "female"
 				: "other",
-		city: profile?.city || "---",
 		isVisible: !(profile?.is_hidden ?? false),
 	};
 }
@@ -72,7 +71,7 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 	const [localOverrides, setLocalOverrides] = React.useState<Partial<UserData>>({});
 	const router = useRouter();
 	const { logout, user } = useAuth();
-	const { data } = useUserState();
+	const { data, isLoading } = useUserState();
 	const invalidateUserState = useInvalidateUserState();
 
 	const isAdmin = user?.id === AdminUserID;
@@ -106,11 +105,10 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 		}
 	};
 
-	const handleSaveSettings = async (newSettings: { age: number | null; gender: string; city: string }) => {
+	const handleSaveSettings = async (newSettings: { age: number | null; gender: string }) => {
 		try {
 			await userAPI.updateProfile({
 				age: newSettings.age,
-				city: newSettings.city,
 				is_male:
 					newSettings.gender === "male"
 						? true
@@ -125,7 +123,6 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 			...prev,
 			age: newSettings.age,
 			gender: newSettings.gender,
-			city: newSettings.city,
 		}));
 		invalidateUserState();
 		setIsSettingsOpen(false);
@@ -134,35 +131,50 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 	return (
 		<>
 			<Sidebar className={cn(className)} {...props}>
-				<SidebarHeader>
-					<SidebarGroup>
-						<SidebarGroupContent className="flex flex-col items-start gap-2 p-4">
-							<div className="flex flex-col items-start">
-								<span className="text-lg font-semibold whitespace-nowrap overflow-hidden text-ellipsis max-w-full">
-									{userData.name}
-								</span>
-								{state === "expanded" && (
-									<>
-										<span className="text-sm text-muted-foreground">
-											{userData.city !== "---"
-												? `${getGenderDisplay(userData.gender)}, ${userData.city}`
-												: getGenderDisplay(userData.gender)}
-										</span>
-										<div className="flex items-center gap-2 mt-2">
-											<Switch
-												id="public-status"
-												checked={userData.isVisible}
-												onCheckedChange={handleVisibilityToggle}
-											/>
-											<Label htmlFor="public-status" className="text-sm">
-												{userData.isVisible ? "Công khai thông tin" : "Riêng tư"}
-											</Label>
-										</div>
-									</>
+				<div className="px-6 pt-4 pb-2" style={{ fontFamily: "var(--font-changa-one)" }}>
+					<AuroraText className="text-4xl tracking-widest">
+						ANOCHAT
+					</AuroraText>
+				</div>
+			<SidebarHeader>
+					{state === "expanded" ? (
+						<div className="mx-3 my-2 rounded-md bg-card border border-border/50 shadow-sm p-4 flex flex-col gap-3">
+							<div className="flex flex-col gap-1">
+								{isLoading && !data ? (
+									<Skeleton className="h-5 w-28 rounded" />
+								) : (
+									<span className="text-base font-semibold truncate leading-tight">
+										{userData.name}
+									</span>
 								)}
+								<div className="flex items-center gap-1.5 text-muted-foreground">
+									<User size={12} />
+									{isLoading && !data ? (
+										<Skeleton className="h-3.5 w-16 rounded" />
+									) : (
+										<span className="text-xs">
+											{getGenderDisplay(userData.gender)}
+											{userData.age ? `, ${userData.age} tuổi` : ""}
+										</span>
+									)}
+								</div>
 							</div>
-						</SidebarGroupContent>
-					</SidebarGroup>
+							<div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2">
+								<Label htmlFor="public-status" className="text-xs text-muted-foreground cursor-pointer select-none">
+									{userData.isVisible ? "Công khai thông tin" : "Riêng tư"}
+								</Label>
+								<Switch
+									id="public-status"
+									checked={userData.isVisible}
+									onCheckedChange={handleVisibilityToggle}
+								/>
+							</div>
+						</div>
+					) : (
+						<div className="flex justify-center py-3">
+							<User size={18} className="text-muted-foreground" />
+						</div>
+					)}
 				</SidebarHeader>
 				<SidebarContent />
 				<SidebarFooter>
@@ -199,7 +211,6 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 				initialData={{
 					age: userData.age,
 					gender: userData.gender,
-					city: userData.city,
 				}}
 				onSave={handleSaveSettings}
 			/>

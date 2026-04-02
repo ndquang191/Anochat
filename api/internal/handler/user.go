@@ -53,7 +53,6 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 	if profile != nil {
 		resp.Profile = &dto.ProfileDTO{
 			Age:      profile.Age,
-			City:     profile.City,
 			IsMale:   profile.IsMale,
 			IsHidden: profile.IsHidden,
 		}
@@ -83,7 +82,6 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 					partnerDTO.Name = partnerUser.Name
 					partnerDTO.Profile = &dto.ProfileDTO{
 						Age:      partnerProfile.Age,
-						City:     partnerProfile.City,
 						IsMale:   partnerProfile.IsMale,
 						IsHidden: false,
 					}
@@ -128,7 +126,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	profile, err := h.userService.UpdateProfile(c.Request.Context(), userID, req.IsMale, req.Age, req.City, req.IsHidden)
+	profile, err := h.userService.UpdateProfile(c.Request.Context(), userID, req.IsMale, req.Age, req.IsHidden)
 	if err != nil {
 		dto.Fail(c, http.StatusInternalServerError, err.Error())
 		return
@@ -136,7 +134,6 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 
 	dto.OKWithMessage(c, "Profile updated successfully", dto.ProfileDTO{
 		Age:      profile.Age,
-		City:     profile.City,
 		IsMale:   profile.IsMale,
 		IsHidden: profile.IsHidden,
 	})

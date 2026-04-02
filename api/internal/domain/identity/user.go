@@ -23,7 +23,6 @@ type Profile struct {
 	UserID    uuid.UUID
 	IsMale    *bool
 	Age       *int
-	City      *string
 	IsHidden  bool
 	UpdatedAt time.Time
 }

@@ -13,10 +13,9 @@ type AddBannedWordRequest struct {
 
 // UpdateProfileRequest is the body for PUT /profile.
 type UpdateProfileRequest struct {
-	Age      *int    `json:"age"`
-	City     *string `json:"city"`
-	IsMale   *bool   `json:"is_male"`
-	IsHidden *bool   `json:"is_hidden"`
+	Age      *int  `json:"age"`
+	IsMale   *bool `json:"is_male"`
+	IsHidden *bool `json:"is_hidden"`
 }
 
 // UserStateResponse is returned by GET /user/state.
@@ -37,10 +36,9 @@ type UserDTO struct {
 
 // ProfileDTO is the profile data in API responses.
 type ProfileDTO struct {
-	Age      *int    `json:"age"`
-	City     *string `json:"city"`
-	IsMale   *bool   `json:"is_male"`
-	IsHidden bool    `json:"is_hidden"`
+	Age      *int  `json:"age"`
+	IsMale   *bool `json:"is_male"`
+	IsHidden bool  `json:"is_hidden"`
 }
 
 // RoomDTO is the room data in API responses.

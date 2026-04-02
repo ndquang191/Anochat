@@ -8,7 +8,6 @@ export interface UserDTO {
 
 export interface ProfileDTO {
 	age?: number;
-	city?: string;
 	is_male?: boolean;
 	is_hidden: boolean;
 }

@@ -105,7 +105,7 @@ func (s *UserService) GetPublicProfile(ctx context.Context, userID uuid.UUID) (*
 	return profile, nil
 }
 
-func (s *UserService) UpdateProfile(ctx context.Context, userID uuid.UUID, isMale *bool, age *int, city *string, isHidden *bool) (*identity.Profile, error) {
+func (s *UserService) UpdateProfile(ctx context.Context, userID uuid.UUID, isMale *bool, age *int, isHidden *bool) (*identity.Profile, error) {
 	profile, err := s.GetProfile(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -116,9 +116,6 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID uuid.UUID, isMal
 	}
 	if age != nil {
 		profile.Age = age
-	}
-	if city != nil {
-		profile.City = city
 	}
 	if isHidden != nil {
 		profile.IsHidden = *isHidden

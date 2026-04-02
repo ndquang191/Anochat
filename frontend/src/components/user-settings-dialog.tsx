@@ -13,8 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface UserSettingsDialogProps {
 	open: boolean;
@@ -22,7 +22,6 @@ interface UserSettingsDialogProps {
 	initialData: {
 		age: number | null;
 		gender: string;
-		city: string;
 	};
 	onSave: (data: UserSettingsDialogProps["initialData"]) => void;
 }
@@ -33,7 +32,6 @@ export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: 
 		const validGenders = ["male", "female"];
 		return validGenders.includes(initialData.gender) ? initialData.gender : "male";
 	});
-	const [city, setCity] = React.useState(initialData.city);
 	const [isLoading, setIsLoading] = React.useState(false);
 
 	React.useEffect(() => {
@@ -42,7 +40,6 @@ export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: 
 			const validGenders = ["male", "female"];
 			const validGender = validGenders.includes(initialData.gender) ? initialData.gender : "male";
 			setGender(validGender);
-			setCity(initialData.city);
 		}
 	}, [open, initialData]);
 
@@ -50,11 +47,7 @@ export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: 
 		setIsLoading(true);
 
 		try {
-			onSave({
-				age,
-				gender,
-				city,
-			});
+			onSave({ age, gender });
 
 			toast.success("Thông tin đã được lưu thành công!");
 			onOpenChange(false);
@@ -120,20 +113,11 @@ export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: 
 							</div>
 						</div>
 					</div>
-					<div className="grid grid-cols-4 items-center gap-4 relative">
-						<Label htmlFor="region" className="text-right">
-							Vùng miền
-						</Label>
-						<Select value={city} onValueChange={(value) => setCity(value)}>
-							<SelectTrigger className="col-span-3">
-								<SelectValue placeholder="Chọn vùng miền" />
-							</SelectTrigger>
-							<SelectContent position="popper" side="top" align="start" className="z-[99999]">
-								<SelectItem value="north">Miền Bắc</SelectItem>
-								<SelectItem value="central">Miền Trung</SelectItem>
-								<SelectItem value="south">Miền Nam</SelectItem>
-							</SelectContent>
-						</Select>
+					<div className="grid grid-cols-4 items-center gap-4">
+						<Label className="text-right">Giao diện</Label>
+						<div className="col-span-3">
+							<ThemeToggle />
+						</div>
 					</div>
 				</div>
 				<DialogFooter>

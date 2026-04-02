@@ -67,7 +67,6 @@ func profileModelToDomain(m *model.Profile) *identity.Profile {
 		UserID:    m.UserID,
 		IsMale:    m.IsMale,
 		Age:       m.Age,
-		City:      m.City,
 		IsHidden:  m.IsHidden,
 		UpdatedAt: m.UpdatedAt,
 	}
@@ -78,7 +77,6 @@ func profileDomainToModel(p *identity.Profile) *model.Profile {
 		UserID:    p.UserID,
 		IsMale:    p.IsMale,
 		Age:       p.Age,
-		City:      p.City,
 		IsHidden:  p.IsHidden,
 		UpdatedAt: p.UpdatedAt,
 	}
