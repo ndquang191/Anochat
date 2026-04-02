@@ -46,7 +46,7 @@ export function useAlertDialog() {
 		<>
 			{options && (
 				<AlertDialog open={isOpen}>
-					<AlertDialogContent className="h-fit">
+					<AlertDialogContent className="h-fit max-h-[95vh] overflow-y-auto">
 						<AlertDialogHeader>
 							<AlertDialogTitle>{options.title}</AlertDialogTitle>
 							<AlertDialogDescription>{options.description}</AlertDialogDescription>

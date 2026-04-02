@@ -21,6 +21,8 @@ func RunMigrations() error {
 		&model.Profile{},
 		&model.Room{},
 		&model.Message{},
+		&model.BannedWord{},
+		&model.Report{},
 	)
 
 	DB.Exec("SET session_replication_role = 'origin';")
@@ -63,6 +65,9 @@ func createIndexes() error {
 		"CREATE INDEX IF NOT EXISTS idx_messages_sender_id ON messages(sender_id)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_room_created ON messages(room_id, created_at)",
+		"CREATE INDEX IF NOT EXISTS idx_reports_reported_user_id ON reports(reported_user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status)",
+		"CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at)",
 	}
 
 	for _, indexSQL := range indexes {

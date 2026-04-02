@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { LogOut, Settings } from "lucide-react";
+import { LogOut, Settings, Shield } from "lucide-react";
 import {
 	Sidebar,
 	SidebarContent,
@@ -18,6 +18,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { UserSettingsDialog } from "@/components/user-settings-dialog";
+import { AdminPanel } from "@/components/admin/admin-panel";
+import { AdminUserID } from "@/types";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth";
@@ -44,35 +46,37 @@ const defaultUserData: UserData = {
 	isVisible: true,
 };
 
-function deriveUserData(data: ReturnType<typeof useUserState>["data"]): UserData {
-	if (!data) return defaultUserData;
-	const { user } = data;
+function deriveUserData(user: ReturnType<typeof useAuth>["user"], data: ReturnType<typeof useUserState>["data"]): UserData {
+	if (!user) return defaultUserData;
+	const profile = data?.profile;
 	return {
 		id: user.id,
 		email: user.email || "",
 		name: user.name || "Unknown",
-		age: user.profile?.age ?? null,
+		age: profile?.age ?? null,
 		gender:
-			user.profile?.is_male === true
+			profile?.is_male === true
 				? "male"
-				: user.profile?.is_male === false
+				: profile?.is_male === false
 				? "female"
 				: "other",
-		city: user.profile?.city || "---",
-		isVisible: !(user.profile?.is_hidden ?? false),
+		city: profile?.city || "---",
+		isVisible: !(profile?.is_hidden ?? false),
 	};
 }
 
 export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
 	const { state } = useSidebar();
 	const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
+	const [isAdminOpen, setIsAdminOpen] = React.useState(false);
 	const [localOverrides, setLocalOverrides] = React.useState<Partial<UserData>>({});
 	const router = useRouter();
-	const { logout } = useAuth();
+	const { logout, user } = useAuth();
 	const { data } = useUserState();
 	const invalidateUserState = useInvalidateUserState();
 
-	const derived = deriveUserData(data);
+	const isAdmin = user?.id === AdminUserID;
+	const derived = deriveUserData(user, data);
 	const userData = { ...derived, ...localOverrides };
 
 	const handleLogout = async () => {
@@ -163,6 +167,14 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 				<SidebarContent />
 				<SidebarFooter>
 					<SidebarMenu>
+						{isAdmin && (
+							<SidebarMenuItem>
+								<SidebarMenuButton onClick={() => setIsAdminOpen(true)}>
+									<Shield />
+									<span>Admin</span>
+								</SidebarMenuButton>
+							</SidebarMenuItem>
+						)}
 						<SidebarMenuItem>
 							<SidebarMenuButton onClick={() => setIsSettingsOpen(true)}>
 								<Settings />
@@ -180,6 +192,7 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 				<SidebarRail />
 			</Sidebar>
 
+			{isAdmin && <AdminPanel open={isAdminOpen} onOpenChange={setIsAdminOpen} />}
 			<UserSettingsDialog
 				open={isSettingsOpen}
 				onOpenChange={setIsSettingsOpen}

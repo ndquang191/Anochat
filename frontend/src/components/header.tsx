@@ -1,8 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
+import { Flag } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
+import { useAlertDialogContext } from "@/contexts/alert-dialog";
 import { ActionButton } from "./header/action-button";
+import { moderationAPI } from "@/lib/api";
+import { toast } from "sonner";
 
 interface HeaderProps {
 	trigger: React.ReactNode;
@@ -11,6 +15,26 @@ interface HeaderProps {
 export default function Header({ trigger }: HeaderProps) {
 	const { room } = useAuth();
 	const partner = room?.partner;
+	const [reported, setReported] = useState(false);
+	const alertDialog = useAlertDialogContext();
+
+	const handleReport = async () => {
+		if (!partner || !room || reported) return;
+		const confirmed = await alertDialog.open({
+			title: "Report user",
+			description: "Are you sure you want to report this user?",
+			confirmText: "Report",
+			cancelText: "Cancel",
+		});
+		if (!confirmed) return;
+		try {
+			await moderationAPI.createReport(partner.id, room.id);
+			setReported(true);
+			toast.success("Report submitted");
+		} catch {
+			// error toast handled by apiCall
+		}
+	};
 	const isHidden = partner?.profile?.is_hidden;
 
 	const partnerName = isHidden ? "Ẩn danh" : (partner?.name || "Người dùng");
@@ -37,6 +61,15 @@ export default function Header({ trigger }: HeaderProps) {
 				)}
 			</div>
 			<div className="flex items-center gap-2">
+				{partner && !reported && (
+					<button
+						onClick={handleReport}
+						className="w-8 h-8 flex items-center justify-center rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+						title="Report user"
+					>
+						<Flag size={16} />
+					</button>
+				)}
 				<ActionButton />
 			</div>
 		</header>

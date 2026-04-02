@@ -1,5 +1,16 @@
 package dto
 
+// CreateReportRequest is the body for POST /report.
+type CreateReportRequest struct {
+	ReportedUserID string `json:"reported_user_id" binding:"required"`
+	RoomID         string `json:"room_id"          binding:"required"`
+}
+
+// AddBannedWordRequest is the body for POST /admin/words.
+type AddBannedWordRequest struct {
+	Word string `json:"word" binding:"required"`
+}
+
 // UpdateProfileRequest is the body for PUT /profile.
 type UpdateProfileRequest struct {
 	Age      *int    `json:"age"`
@@ -10,20 +21,18 @@ type UpdateProfileRequest struct {
 
 // UserStateResponse is returned by GET /user/state.
 type UserStateResponse struct {
-	User      UserDTO      `json:"user"`
-	Room      *RoomDTO     `json:"room"`
-	Messages  []MessageDTO `json:"messages"`
-	IsNewUser bool         `json:"is_new_user"`
-	InQueue   bool         `json:"in_queue"`
+	Profile  *ProfileDTO  `json:"profile,omitempty"`
+	Room     *RoomDTO     `json:"room"`
+	Messages []MessageDTO `json:"messages"`
+	InQueue  bool         `json:"in_queue"`
 }
 
 // UserDTO is the user data in API responses.
 type UserDTO struct {
-	ID        string      `json:"id"`
-	Email     *string     `json:"email"`
-	Name      *string     `json:"name"`
-	AvatarURL *string     `json:"avatar_url"`
-	Profile   *ProfileDTO `json:"profile,omitempty"`
+	ID      string      `json:"id"`
+	Email   *string     `json:"email"`
+	Name    *string     `json:"name"`
+	Profile *ProfileDTO `json:"profile,omitempty"`
 }
 
 // ProfileDTO is the profile data in API responses.
@@ -45,7 +54,6 @@ type RoomDTO struct {
 // MessageDTO is the message data in API responses.
 type MessageDTO struct {
 	ID        string `json:"id"`
-	RoomID    string `json:"room_id"`
 	SenderID  string `json:"sender_id"`
 	Content   string `json:"content"`
 	CreatedAt int64  `json:"created_at"`

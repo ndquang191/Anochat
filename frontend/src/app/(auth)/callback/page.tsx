@@ -18,7 +18,7 @@ export default function CallbackPage() {
 
 				if (userDataStr) {
 					try {
-						const decodedUserDataStr = decodeURIComponent(userDataStr);
+						const decodedUserDataStr = decodeURIComponent(userDataStr.replace(/\+/g, '%20'));
 						const userData = JSON.parse(decodedUserDataStr);
 
 						login(userData);

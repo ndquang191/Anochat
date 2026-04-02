@@ -70,7 +70,7 @@ export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: 
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="h-fit sm:max-w-[425px] z-[9998]">
+			<DialogContent className="h-fit max-h-[95vh] sm:max-w-[425px] z-[9998] overflow-y-auto">
 				<DialogHeader>
 					<DialogTitle>Cài đặt tài khoản</DialogTitle>
 					<DialogDescription>Thay đổi thông tin cá nhân của bạn tại đây.</DialogDescription>

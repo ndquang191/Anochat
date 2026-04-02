@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import type { ApiResponse, UserStateResponse, ProfileDTO } from "@/types";
+import type { ApiResponse, UserStateResponse, ProfileDTO, BannedWordDTO, ReportDTO } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -91,6 +91,26 @@ export const authAPI = {
 	getGoogleAuthUrl: () => {
 		return `${API_BASE}/auth/google`;
 	},
+};
+
+export const moderationAPI = {
+	listWords: () => apiCall<BannedWordDTO[]>("/admin/words"),
+	addWord: (word: string) =>
+		apiCall<BannedWordDTO>("/admin/words", { method: "POST", body: JSON.stringify({ word }) }),
+	deleteWord: (id: string) =>
+		apiCall<void>(`/admin/words/${id}`, { method: "DELETE" }),
+	listReports: () => apiCall<ReportDTO[]>("/admin/reports"),
+	banUser: (userId: string) =>
+		apiCall<void>(`/admin/users/${userId}/ban`, { method: "POST" }),
+	createReport: (reportedUserId: string, roomId: string) =>
+		apiCall<void>("/report", {
+			method: "POST",
+			body: JSON.stringify({ reported_user_id: reportedUserId, room_id: roomId }),
+		}),
+	getRoomMessages: (roomId: string) =>
+		apiCall<{ id: string; sender_id: string; content: string; created_at: number }[]>(
+			`/admin/rooms/${roomId}/messages`
+		),
 };
 
 export const roomAPI = {

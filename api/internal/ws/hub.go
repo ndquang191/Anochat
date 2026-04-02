@@ -20,10 +20,11 @@ type Hub struct {
 	unregister  chan *Client
 	broadcast   chan *BroadcastMessage
 
-	queueService   *service.QueueService
-	messageService *service.MessageService
-	roomService    *service.RoomService
-	rdb            *redis.Client
+	queueService      *service.QueueService
+	messageService    *service.MessageService
+	roomService       *service.RoomService
+	moderationService *service.ModerationService
+	rdb               *redis.Client
 
 	mutex     sync.RWMutex
 	roomMutex sync.RWMutex
@@ -35,17 +36,18 @@ type BroadcastMessage struct {
 	Exclude uuid.UUID
 }
 
-func NewHub(queueService *service.QueueService, messageService *service.MessageService, roomService *service.RoomService, rdb *redis.Client) *Hub {
+func NewHub(queueService *service.QueueService, messageService *service.MessageService, roomService *service.RoomService, moderationService *service.ModerationService, rdb *redis.Client) *Hub {
 	return &Hub{
-		clients:        make(map[uuid.UUID]*Client),
-		roomClients:    make(map[uuid.UUID]map[uuid.UUID]*Client),
-		register:       make(chan *Client),
-		unregister:     make(chan *Client),
-		broadcast:      make(chan *BroadcastMessage, 256),
-		queueService:   queueService,
-		messageService: messageService,
-		roomService:    roomService,
-		rdb:            rdb,
+		clients:           make(map[uuid.UUID]*Client),
+		roomClients:       make(map[uuid.UUID]map[uuid.UUID]*Client),
+		register:          make(chan *Client),
+		unregister:        make(chan *Client),
+		broadcast:         make(chan *BroadcastMessage, 256),
+		queueService:      queueService,
+		messageService:    messageService,
+		roomService:       roomService,
+		moderationService: moderationService,
+		rdb:               rdb,
 	}
 }
 

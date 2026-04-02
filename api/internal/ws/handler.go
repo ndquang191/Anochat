@@ -54,6 +54,17 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 		return
 	}
 
+	if c.Hub.moderationService.ContainsBannedWord(content) {
+		slog.Info("Auto-reporting user for banned word", "user_id", c.UserID, "room_id", *c.RoomID)
+		go func(roomID uuid.UUID) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := c.Hub.moderationService.CreateReport(ctx, uuid.Nil, c.UserID, roomID); err != nil {
+				slog.Error("Failed to create auto-report", "error", err, "user_id", c.UserID)
+			}
+		}(*c.RoomID)
+	}
+
 	msgID := uuid.New()
 	now := time.Now().UTC()
 	roomID := *c.RoomID

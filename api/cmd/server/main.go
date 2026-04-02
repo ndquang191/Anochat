@@ -86,6 +86,8 @@ func main() {
 	profileRepo := repository.NewProfileRepository(db)
 	roomRepo := repository.NewRoomRepository(db)
 	messageRepo := repository.NewMessageRepository(db)
+	bannedWordRepo := repository.NewBannedWordRepository(db)
+	reportRepo := repository.NewReportRepository(db)
 
 	if count, err := userRepo.Count(context.Background()); err == nil {
 		metrics.TotalUsers.Set(float64(count))
@@ -96,8 +98,12 @@ func main() {
 	messageService := service.NewMessageService(messageRepo)
 	authService := service.NewAuthService(userService, oauthConfig, cfg.OAuth.JWTSecret)
 	queueService := service.NewQueueService(roomService, roomRepo)
+	moderationService := service.NewModerationService(bannedWordRepo, reportRepo, userRepo)
+	if err := moderationService.LoadWords(context.Background()); err != nil {
+		slog.Warn("Failed to load banned words at startup", "error", err)
+	}
 
-	wsHub := ws.NewHub(queueService, messageService, roomService, cache.Client)
+	wsHub := ws.NewHub(queueService, messageService, roomService, moderationService, cache.Client)
 	go wsHub.Run()
 	slog.Info("WebSocket hub started")
 
@@ -107,11 +113,12 @@ func main() {
 	userHandler := handler.NewUserHandler(userService, roomService, queueService, roomRepo, messageRepo, cfg)
 	queueHandler := handler.NewQueueHandler(queueService, cfg)
 	wsHandler := handler.NewWebSocketHandler(wsHub, authService, cfg)
+	moderationHandler := handler.NewModerationHandler(moderationService, messageRepo)
 	devHandler := handler.NewDevHandler(db)
 
-	authMiddleware := middleware.AuthMiddleware(authService, cfg)
+	authMiddleware := middleware.AuthMiddleware(authService, userRepo, cfg)
 
-	setupRoutes(router, authHandler, userHandler, queueHandler, wsHandler, authMiddleware)
+	setupRoutes(router, authHandler, userHandler, queueHandler, wsHandler, moderationHandler, authMiddleware)
 
 	if !cfg.IsProduction() {
 		router.POST("/dev/reset", devHandler.ResetDB)
@@ -157,7 +164,7 @@ func main() {
 	slog.Info("Queue service stopped")
 }
 
-func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandler *handler.UserHandler, queueHandler *handler.QueueHandler, wsHandler *handler.WebSocketHandler, authMiddleware gin.HandlerFunc) {
+func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandler *handler.UserHandler, queueHandler *handler.QueueHandler, wsHandler *handler.WebSocketHandler, moderationHandler *handler.ModerationHandler, authMiddleware gin.HandlerFunc) {
 	router.GET("/auth/google", authHandler.GoogleLogin)
 	router.GET("/auth/callback", authHandler.GoogleCallback)
 	router.POST("/auth/logout", authHandler.Logout)
@@ -173,5 +180,17 @@ func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandl
 		protected.POST("/queue/leave", queueHandler.LeaveQueue)
 
 		protected.GET("/ws", wsHandler.HandleWebSocket)
+
+		protected.POST("/report", moderationHandler.CreateReport)
+
+		admin := protected.Group("/admin")
+		{
+			admin.GET("/words", moderationHandler.ListWords)
+			admin.POST("/words", moderationHandler.AddWord)
+			admin.DELETE("/words/:id", moderationHandler.DeleteWord)
+			admin.GET("/reports", moderationHandler.ListReports)
+			admin.POST("/users/:id/ban", moderationHandler.BanUser)
+			admin.GET("/rooms/:id/messages", moderationHandler.ListRoomMessages)
+		}
 	}
 }

@@ -45,34 +45,18 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 		return
 	}
 
-	user, err := h.userService.GetUserByID(c.Request.Context(), userID)
-	if err != nil {
-		dto.Fail(c, http.StatusInternalServerError, "Failed to get user")
-		return
-	}
+	profile, _ := h.userService.GetProfile(c.Request.Context(), userID)
 
-	profile, err := h.userService.GetProfile(c.Request.Context(), userID)
-	isNewUser := err != nil || profile == nil
-
-	userDTO := dto.UserDTO{
-		ID:        user.ID.String(),
-		Email:     user.Email,
-		Name:      user.Name,
-		AvatarURL: user.AvatarURL,
+	resp := dto.UserStateResponse{
+		InQueue: h.queueService.IsInQueue(userID),
 	}
 	if profile != nil {
-		userDTO.Profile = &dto.ProfileDTO{
+		resp.Profile = &dto.ProfileDTO{
 			Age:      profile.Age,
 			City:     profile.City,
 			IsMale:   profile.IsMale,
 			IsHidden: profile.IsHidden,
 		}
-	}
-
-	resp := dto.UserStateResponse{
-		User:      userDTO,
-		IsNewUser: isNewUser,
-		InQueue:   h.queueService.IsInQueue(userID),
 	}
 
 	room, err := h.roomRepo.FindActiveByUserID(c.Request.Context(), userID)
@@ -91,17 +75,23 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 		partnerUser, err := h.userService.GetUserByID(c.Request.Context(), partnerID)
 		if err == nil && partnerUser != nil {
 			partnerDTO := &dto.UserDTO{
-				ID:   partnerUser.ID.String(),
-				Name: partnerUser.Name,
+				ID: partnerUser.ID.String(),
 			}
 			partnerProfile, err := h.userService.GetProfile(c.Request.Context(), partnerID)
 			if err == nil && partnerProfile != nil {
-				partnerDTO.Profile = &dto.ProfileDTO{
-					Age:      partnerProfile.Age,
-					City:     partnerProfile.City,
-					IsMale:   partnerProfile.IsMale,
-					IsHidden: partnerProfile.IsHidden,
+				if !partnerProfile.IsHidden {
+					partnerDTO.Name = partnerUser.Name
+					partnerDTO.Profile = &dto.ProfileDTO{
+						Age:      partnerProfile.Age,
+						City:     partnerProfile.City,
+						IsMale:   partnerProfile.IsMale,
+						IsHidden: false,
+					}
+				} else {
+					partnerDTO.Profile = &dto.ProfileDTO{IsHidden: true}
 				}
+			} else {
+				partnerDTO.Name = partnerUser.Name
 			}
 			roomDTO.Partner = partnerDTO
 		}
@@ -114,7 +104,6 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 			for i, msg := range messages {
 				resp.Messages[i] = dto.MessageDTO{
 					ID:        msg.ID.String(),
-					RoomID:    msg.RoomID.String(),
 					SenderID:  msg.SenderID.String(),
 					Content:   msg.Content,
 					CreatedAt: msg.CreatedAt.Unix(),

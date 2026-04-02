@@ -27,6 +27,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	useEffect(() => setMounted(true), []);
 
 	const hasCookie = mounted ? !!getCookie("user_info") : false;
+	const userFromCookie: UserDTO | null = hasCookie
+		? (() => { try { return JSON.parse(decodeURIComponent(getCookie("user_info")!.replace(/\+/g, '%20'))); } catch { return null; } })()
+		: null;
 	const { data, isLoading, isError } = useUserState(hasCookie);
 
 	const login = useCallback((user: UserDTO) => {
@@ -59,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 	const value: AuthContextType = {
 		isAuthenticated,
-		user: data?.user ?? null,
+		user: userFromCookie,
 		room: data?.room ?? null,
 		messages: data?.messages ?? [],
 		inQueue: data?.in_queue ?? false,

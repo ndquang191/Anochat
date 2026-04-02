@@ -61,6 +61,26 @@ type Message struct {
 	Sender *User `gorm:"foreignKey:SenderID;constraint:OnDelete:CASCADE" json:"sender,omitempty"`
 }
 
+// BannedWord stores words to filter from chat messages.
+type BannedWord struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	Word      string    `gorm:"type:text;not null;uniqueIndex"`
+	CreatedBy uuid.UUID `gorm:"type:uuid;not null"`
+	CreatedAt time.Time `gorm:"autoCreateTime"`
+}
+
+// Report stores a report made by one user (or system) about another.
+type Report struct {
+	ID             uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	ReporterID     uuid.UUID `gorm:"type:uuid;not null"`
+	ReportedUserID uuid.UUID `gorm:"type:uuid;not null"`
+	RoomID         uuid.UUID `gorm:"type:uuid;not null"`
+	Status         string    `gorm:"type:text;not null;default:'pending'"`
+	CreatedAt      time.Time `gorm:"autoCreateTime"`
+
+	ReportedUser *User `gorm:"foreignKey:ReportedUserID;constraint:OnDelete:CASCADE"`
+}
+
 // TableName methods to ensure correct table names
 func (User) TableName() string {
 	return "users"
@@ -76,6 +96,14 @@ func (Room) TableName() string {
 
 func (Message) TableName() string {
 	return "messages"
+}
+
+func (BannedWord) TableName() string {
+	return "banned_words"
+}
+
+func (Report) TableName() string {
+	return "reports"
 }
 
 // BeforeCreate hooks for setting UUIDs if needed
@@ -96,6 +124,20 @@ func (r *Room) BeforeCreate(tx *gorm.DB) error {
 func (m *Message) BeforeCreate(tx *gorm.DB) error {
 	if m.ID == uuid.Nil {
 		m.ID = uuid.New()
+	}
+	return nil
+}
+
+func (b *BannedWord) BeforeCreate(tx *gorm.DB) error {
+	if b.ID == uuid.Nil {
+		b.ID = uuid.New()
+	}
+	return nil
+}
+
+func (r *Report) BeforeCreate(tx *gorm.DB) error {
+	if r.ID == uuid.Nil {
+		r.ID = uuid.New()
 	}
 	return nil
 }

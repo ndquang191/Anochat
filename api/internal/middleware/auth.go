@@ -5,11 +5,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/internal/service"
 	"github.com/ndquang191/Anochat/api/pkg/config"
 )
 
-func AuthMiddleware(authService *service.AuthService, cfg *config.Config) gin.HandlerFunc {
+func AuthMiddleware(authService *service.AuthService, userRepo repository.UserRepository, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tokenString string
 
@@ -36,6 +37,14 @@ func AuthMiddleware(authService *service.AuthService, cfg *config.Config) gin.Ha
 		if err != nil {
 			c.SetCookie("jwt_token", "", -1, "/", "", cfg.IsProduction(), true)
 			c.Redirect(http.StatusTemporaryRedirect, cfg.ClientURL+"/login")
+			c.Abort()
+			return
+		}
+
+		user, err := userRepo.FindByID(c.Request.Context(), claims.UserID)
+		if err != nil || !user.IsActive {
+			c.SetCookie("jwt_token", "", -1, "/", "", cfg.IsProduction(), true)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Account suspended"})
 			c.Abort()
 			return
 		}

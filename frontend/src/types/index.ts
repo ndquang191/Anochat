@@ -29,10 +29,9 @@ export interface MessageDTO {
 }
 
 export interface UserStateResponse {
-	user: UserDTO;
+	profile?: ProfileDTO;
 	room?: RoomDTO;
 	messages?: MessageDTO[];
-	is_new_user: boolean;
 	in_queue?: boolean;
 }
 
@@ -41,6 +40,24 @@ export interface ApiResponse<T> {
 	data?: T;
 	error?: string;
 	message?: string;
+}
+
+export const AdminUserID = "8d2e7280-bdc8-47b2-8508-8911b5c9f796";
+
+export interface BannedWordDTO {
+	id: string;
+	word: string;
+	created_at: number;
+}
+
+export interface ReportDTO {
+	id: string;
+	reporter_id: string;
+	reported_user_id: string;
+	reported_user_name?: string;
+	room_id: string;
+	status: "pending" | "reviewed";
+	created_at: number;
 }
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
