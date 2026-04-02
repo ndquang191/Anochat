@@ -13,6 +13,7 @@ import (
 type BannedWordRepository interface {
 	FindAll(ctx context.Context) ([]*moderation.BannedWord, error)
 	Create(ctx context.Context, word *moderation.BannedWord) error
+	Update(ctx context.Context, word *moderation.BannedWord) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
@@ -44,6 +45,16 @@ func (r *bannedWordRepo) Create(ctx context.Context, word *moderation.BannedWord
 	return nil
 }
 
+func (r *bannedWordRepo) Update(ctx context.Context, word *moderation.BannedWord) error {
+	category := word.Category
+	if category == "" {
+		category = "General"
+	}
+	return r.db.WithContext(ctx).Model(&model.BannedWord{}).
+		Where("id = ?", word.ID).
+		Updates(map[string]any{"word": word.Word, "category": category}).Error
+}
+
 func (r *bannedWordRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.BannedWord{}).Error
 }
@@ -54,15 +65,21 @@ func bannedWordModelToDomain(m *model.BannedWord) *moderation.BannedWord {
 	return &moderation.BannedWord{
 		ID:        m.ID,
 		Word:      m.Word,
+		Category:  m.Category,
 		CreatedBy: m.CreatedBy,
 		CreatedAt: m.CreatedAt,
 	}
 }
 
 func bannedWordDomainToModel(w *moderation.BannedWord) *model.BannedWord {
+	category := w.Category
+	if category == "" {
+		category = "General"
+	}
 	return &model.BannedWord{
 		ID:        w.ID,
 		Word:      w.Word,
+		Category:  category,
 		CreatedBy: w.CreatedBy,
 	}
 }
@@ -71,6 +88,8 @@ func bannedWordDomainToModel(w *moderation.BannedWord) *model.BannedWord {
 type ReportRepository interface {
 	Create(ctx context.Context, report *moderation.Report) error
 	FindAll(ctx context.Context) ([]*moderation.Report, error)
+	MarkReviewedByUser(ctx context.Context, reportedUserID uuid.UUID) error
+	FindLatestRoomForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error)
 }
 
 type reportRepo struct{ db *gorm.DB }
@@ -102,6 +121,37 @@ func (r *reportRepo) FindAll(ctx context.Context) ([]*moderation.Report, error) 
 		result[i] = reportModelToDomain(&models[i])
 	}
 	return result, nil
+}
+
+func (r *reportRepo) FindLatestRoomForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
+	if len(userIDs) == 0 {
+		return map[uuid.UUID]uuid.UUID{}, nil
+	}
+	type row struct {
+		ReportedUserID uuid.UUID
+		RoomID         uuid.UUID
+	}
+	var rows []row
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT DISTINCT ON (reported_user_id) reported_user_id, room_id
+		FROM reports
+		WHERE reported_user_id = ANY(?)
+		ORDER BY reported_user_id, created_at DESC
+	`, userIDs).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[uuid.UUID]uuid.UUID, len(rows))
+	for _, row := range rows {
+		result[row.ReportedUserID] = row.RoomID
+	}
+	return result, nil
+}
+
+func (r *reportRepo) MarkReviewedByUser(ctx context.Context, reportedUserID uuid.UUID) error {
+	return r.db.WithContext(ctx).Model(&model.Report{}).
+		Where("reported_user_id = ? AND status = 'pending'", reportedUserID).
+		Update("status", "reviewed").Error
 }
 
 // --- mapping helpers ---

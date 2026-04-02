@@ -8,7 +8,14 @@ type CreateReportRequest struct {
 
 // AddBannedWordRequest is the body for POST /admin/words.
 type AddBannedWordRequest struct {
-	Word string `json:"word" binding:"required"`
+	Word     string `json:"word"     binding:"required"`
+	Category string `json:"category"`
+}
+
+// UpdateBannedWordRequest is the body for PUT /admin/words/:id.
+type UpdateBannedWordRequest struct {
+	Word     string `json:"word"     binding:"required"`
+	Category string `json:"category"`
 }
 
 // UpdateProfileRequest is the body for PUT /profile.

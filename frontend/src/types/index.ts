@@ -46,6 +46,7 @@ export const AdminUserID = "8d2e7280-bdc8-47b2-8508-8911b5c9f796";
 export interface BannedWordDTO {
 	id: string;
 	word: string;
+	category: string;
 	created_at: number;
 }
 
@@ -57,6 +58,14 @@ export interface ReportDTO {
 	room_id: string;
 	status: "pending" | "reviewed";
 	created_at: number;
+}
+
+export interface BannedUserDTO {
+	id: string;
+	name?: string;
+	email?: string;
+	created_at: number;
+	last_room_id?: string;
 }
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import Header from "@/components/header";
+import { AdminProvider } from "@/contexts/admin";
 
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
 	const cookieStore = await cookies();
@@ -11,11 +12,13 @@ export default async function MainLayout({ children }: { children: React.ReactNo
 
 	return (
 		<SidebarProvider defaultOpen={defaultOpen}>
-			<AppSidebar />
-			<SidebarInset className="h-screen flex flex-col overflow-hidden">
-				<Header trigger={<SidebarTrigger className="-ml-1" />} />
-				<main className="flex-1 mt-16 overflow-hidden">{children}</main>
-			</SidebarInset>
+			<AdminProvider>
+				<AppSidebar />
+				<SidebarInset className="h-screen flex flex-col overflow-hidden">
+					<Header trigger={<SidebarTrigger className="-ml-1" />} />
+					<main className="flex-1 mt-16 overflow-hidden">{children}</main>
+				</SidebarInset>
+			</AdminProvider>
 		</SidebarProvider>
 	);
 }

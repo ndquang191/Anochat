@@ -44,11 +44,12 @@ func (h *ModerationHandler) ListWords(c *gin.Context) {
 	type wordDTO struct {
 		ID        string `json:"id"`
 		Word      string `json:"word"`
+		Category  string `json:"category"`
 		CreatedAt int64  `json:"created_at"`
 	}
 	result := make([]wordDTO, len(words))
 	for i, w := range words {
-		result[i] = wordDTO{ID: w.ID.String(), Word: w.Word, CreatedAt: w.CreatedAt.Unix()}
+		result[i] = wordDTO{ID: w.ID.String(), Word: w.Word, Category: w.Category, CreatedAt: w.CreatedAt.Unix()}
 	}
 	dto.OK(c, result)
 }
@@ -63,7 +64,7 @@ func (h *ModerationHandler) AddWord(c *gin.Context) {
 		return
 	}
 	adminID := getUserID(c)
-	word, err := h.moderationService.AddWord(c.Request.Context(), req.Word, adminID)
+	word, err := h.moderationService.AddWord(c.Request.Context(), req.Word, req.Category, adminID)
 	if err != nil {
 		dto.Fail(c, http.StatusInternalServerError, "Failed to add banned word")
 		return
@@ -71,8 +72,30 @@ func (h *ModerationHandler) AddWord(c *gin.Context) {
 	dto.OKWithMessage(c, "Word added", gin.H{
 		"id":         word.ID.String(),
 		"word":       word.Word,
+		"category":   word.Category,
 		"created_at": word.CreatedAt.Unix(),
 	})
+}
+
+func (h *ModerationHandler) UpdateWord(c *gin.Context) {
+	if !h.requireAdmin(c) {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		dto.Fail(c, http.StatusBadRequest, "Invalid word ID")
+		return
+	}
+	var req dto.UpdateBannedWordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		dto.Fail(c, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if err := h.moderationService.UpdateWord(c.Request.Context(), id, req.Word, req.Category); err != nil {
+		dto.Fail(c, http.StatusInternalServerError, "Failed to update banned word")
+		return
+	}
+	dto.OKWithMessage(c, "Word updated", nil)
 }
 
 func (h *ModerationHandler) DeleteWord(c *gin.Context) {
@@ -171,6 +194,67 @@ func (h *ModerationHandler) ListRoomMessages(c *gin.Context) {
 		}
 	}
 	dto.OK(c, result)
+}
+
+func (h *ModerationHandler) ListBannedUsers(c *gin.Context) {
+	if !h.requireAdmin(c) {
+		return
+	}
+	users, err := h.moderationService.ListBannedUsers(c.Request.Context())
+	if err != nil {
+		dto.Fail(c, http.StatusInternalServerError, "Failed to list banned users")
+		return
+	}
+
+	// Build list of user IDs to fetch latest room for each banned user
+	userIDs := make([]uuid.UUID, len(users))
+	for i, u := range users {
+		userIDs[i] = u.ID
+	}
+	roomMap, err := h.moderationService.GetLatestRoomsForUsers(c.Request.Context(), userIDs)
+	if err != nil {
+		roomMap = map[uuid.UUID]uuid.UUID{} // non-fatal
+	}
+
+	type bannedUserDTO struct {
+		ID         string  `json:"id"`
+		Name       *string `json:"name"`
+		Email      *string `json:"email"`
+		CreatedAt  int64   `json:"created_at"`
+		LastRoomID *string `json:"last_room_id"`
+	}
+	result := make([]bannedUserDTO, len(users))
+	for i, u := range users {
+		var lastRoomID *string
+		if rid, ok := roomMap[u.ID]; ok {
+			s := rid.String()
+			lastRoomID = &s
+		}
+		result[i] = bannedUserDTO{
+			ID:         u.ID.String(),
+			Name:       u.Name,
+			Email:      u.Email,
+			CreatedAt:  u.CreatedAt.Unix(),
+			LastRoomID: lastRoomID,
+		}
+	}
+	dto.OK(c, result)
+}
+
+func (h *ModerationHandler) UnbanUser(c *gin.Context) {
+	if !h.requireAdmin(c) {
+		return
+	}
+	userID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		dto.Fail(c, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+	if err := h.moderationService.UnbanUser(c.Request.Context(), userID); err != nil {
+		dto.Fail(c, http.StatusInternalServerError, "Failed to unban user")
+		return
+	}
+	dto.OKWithMessage(c, "User unbanned", nil)
 }
 
 func (h *ModerationHandler) CreateReport(c *gin.Context) {

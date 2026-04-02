@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { Flag } from "lucide-react";
+import { Flag, X } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
+import { useAdmin } from "@/contexts/admin";
 import { useAlertDialogContext } from "@/contexts/alert-dialog";
 import { ActionButton } from "./header/action-button";
 import { moderationAPI } from "@/lib/api";
@@ -14,6 +15,7 @@ interface HeaderProps {
 
 export default function Header({ trigger }: HeaderProps) {
     const { room } = useAuth();
+    const { isAdminOpen, setIsAdminOpen } = useAdmin();
     const partner = room?.partner;
     const [reported, setReported] = useState(false);
     const alertDialog = useAlertDialogContext();
@@ -53,6 +55,24 @@ export default function Header({ trigger }: HeaderProps) {
     const partnerSubtitle = [partnerAge, partnerGender]
         .filter(Boolean)
         .join(" • ");
+
+    if (isAdminOpen) {
+        return (
+            <header className="absolute top-0 left-0 right-0 flex h-16 shrink-0 items-center justify-between border-b-2 px-4">
+                <div className="flex items-center gap-2">
+                    {trigger}
+                    <span className="text-base font-semibold">Admin Panel</span>
+                </div>
+                <button
+                    onClick={() => setIsAdminOpen(false)}
+                    className="w-8 h-8 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    title="Close admin panel"
+                >
+                    <X size={16} />
+                </button>
+            </header>
+        );
+    }
 
     return (
         <header className="absolute top-0 left-0 right-0 flex h-16 shrink-0 items-center justify-between border-b-2 px-4">

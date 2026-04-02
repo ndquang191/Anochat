@@ -187,9 +187,12 @@ func setupRoutes(router *gin.Engine, authHandler *handler.AuthHandler, userHandl
 		{
 			admin.GET("/words", moderationHandler.ListWords)
 			admin.POST("/words", moderationHandler.AddWord)
+			admin.PUT("/words/:id", moderationHandler.UpdateWord)
 			admin.DELETE("/words/:id", moderationHandler.DeleteWord)
 			admin.GET("/reports", moderationHandler.ListReports)
 			admin.POST("/users/:id/ban", moderationHandler.BanUser)
+			admin.POST("/users/:id/unban", moderationHandler.UnbanUser)
+			admin.GET("/users/banned", moderationHandler.ListBannedUsers)
 			admin.GET("/rooms/:id/messages", moderationHandler.ListRoomMessages)
 		}
 	}

@@ -8,6 +8,7 @@ interface Message {
 	id: string;
 	content: string;
 	sender_id: string;
+	created_at?: number;
 }
 
 interface ChatMessagesProps {
@@ -49,6 +50,7 @@ export function ChatMessages({ messages, currentUserId }: ChatMessagesProps) {
 							key={message.id}
 							content={message.content}
 							isCurrentUser={message.sender_id === currentUserId}
+							created_at={message.created_at}
 						/>
 					))}
 				</div>

@@ -9,6 +9,7 @@ import (
 type BannedWord struct {
 	ID        uuid.UUID
 	Word      string
+	Category  string
 	CreatedBy uuid.UUID
 	CreatedAt time.Time
 }

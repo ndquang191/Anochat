@@ -17,6 +17,7 @@ type UserRepository interface {
 	Create(ctx context.Context, user *identity.User) error
 	Update(ctx context.Context, user *identity.User) error
 	Count(ctx context.Context) (int64, error)
+	FindBanned(ctx context.Context) ([]*identity.User, error)
 }
 
 type userRepo struct{ db *gorm.DB }
@@ -66,6 +67,21 @@ func (r *userRepo) Count(ctx context.Context) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&model.User{}).Where("is_deleted = false").Count(&count).Error
 	return count, err
+}
+
+func (r *userRepo) FindBanned(ctx context.Context) ([]*identity.User, error) {
+	var models []model.User
+	if err := r.db.WithContext(ctx).
+		Where("is_active = false AND is_deleted = false").
+		Order("created_at DESC").
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+	result := make([]*identity.User, len(models))
+	for i := range models {
+		result[i] = userModelToDomain(&models[i])
+	}
+	return result, nil
 }
 
 // --- mapping helpers ---

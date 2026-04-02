@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import type { ApiResponse, UserStateResponse, ProfileDTO, BannedWordDTO, ReportDTO } from "@/types";
+import type { ApiResponse, UserStateResponse, ProfileDTO, BannedWordDTO, ReportDTO, BannedUserDTO } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -94,8 +94,10 @@ export const authAPI = {
 
 export const moderationAPI = {
 	listWords: () => apiCall<BannedWordDTO[]>("/admin/words"),
-	addWord: (word: string) =>
-		apiCall<BannedWordDTO>("/admin/words", { method: "POST", body: JSON.stringify({ word }) }),
+	addWord: (word: string, category?: string) =>
+		apiCall<BannedWordDTO>("/admin/words", { method: "POST", body: JSON.stringify({ word, category: category || "General" }) }),
+	updateWord: (id: string, word: string, category: string) =>
+		apiCall<void>(`/admin/words/${id}`, { method: "PUT", body: JSON.stringify({ word, category }) }),
 	deleteWord: (id: string) =>
 		apiCall<void>(`/admin/words/${id}`, { method: "DELETE" }),
 	listReports: () => apiCall<ReportDTO[]>("/admin/reports"),
@@ -110,6 +112,9 @@ export const moderationAPI = {
 		apiCall<{ id: string; sender_id: string; content: string; created_at: number }[]>(
 			`/admin/rooms/${roomId}/messages`
 		),
+	listBannedUsers: () => apiCall<BannedUserDTO[]>("/admin/users/banned"),
+	unbanUser: (userId: string) =>
+		apiCall<void>(`/admin/users/${userId}/unban`, { method: "POST" }),
 };
 
 export const roomAPI = {

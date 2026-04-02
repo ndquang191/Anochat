@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/ndquang191/Anochat/api/internal/domain/identity"
 	"github.com/ndquang191/Anochat/api/internal/domain/moderation"
 	"github.com/ndquang191/Anochat/api/internal/repository"
 )
@@ -63,9 +64,13 @@ func (s *ModerationService) ContainsBannedWord(content string) bool {
 }
 
 // AddWord persists a new banned word and refreshes the cache.
-func (s *ModerationService) AddWord(ctx context.Context, word string, createdBy uuid.UUID) (*moderation.BannedWord, error) {
+func (s *ModerationService) AddWord(ctx context.Context, word, category string, createdBy uuid.UUID) (*moderation.BannedWord, error) {
+	if category == "" {
+		category = "General"
+	}
 	w := &moderation.BannedWord{
 		Word:      strings.TrimSpace(word),
+		Category:  category,
 		CreatedBy: createdBy,
 	}
 	if err := s.bannedWordRepo.Create(ctx, w); err != nil {
@@ -75,6 +80,18 @@ func (s *ModerationService) AddWord(ctx context.Context, word string, createdBy 
 		slog.Warn("Failed to refresh banned word cache after add", "error", err)
 	}
 	return w, nil
+}
+
+// UpdateWord changes a word's text and category, then refreshes cache.
+func (s *ModerationService) UpdateWord(ctx context.Context, id uuid.UUID, word, category string) error {
+	if category == "" {
+		category = "General"
+	}
+	w := &moderation.BannedWord{ID: id, Word: strings.TrimSpace(word), Category: category}
+	if err := s.bannedWordRepo.Update(ctx, w); err != nil {
+		return err
+	}
+	return s.refreshCache(ctx)
 }
 
 // DeleteWord removes a banned word by ID and refreshes the cache.
@@ -110,14 +127,37 @@ func (s *ModerationService) ListReports(ctx context.Context) ([]*moderation.Repo
 	return s.reportRepo.FindAll(ctx)
 }
 
-// BanUser sets is_active = false for a user.
+// BanUser sets is_active = false for a user and marks all their pending reports as reviewed.
 func (s *ModerationService) BanUser(ctx context.Context, userID uuid.UUID) error {
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
 		return err
 	}
 	user.IsActive = false
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return err
+	}
+	return s.reportRepo.MarkReviewedByUser(ctx, userID)
+}
+
+// UnbanUser sets is_active = true for a user.
+func (s *ModerationService) UnbanUser(ctx context.Context, userID uuid.UUID) error {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	user.IsActive = true
 	return s.userRepo.Update(ctx, user)
+}
+
+// ListBannedUsers returns all users with is_active = false.
+func (s *ModerationService) ListBannedUsers(ctx context.Context) ([]*identity.User, error) {
+	return s.userRepo.FindBanned(ctx)
+}
+
+// GetLatestRoomsForUsers returns a map of userID -> latest roomID from reports.
+func (s *ModerationService) GetLatestRoomsForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
+	return s.reportRepo.FindLatestRoomForUsers(ctx, userIDs)
 }
 
 func (s *ModerationService) refreshCache(ctx context.Context) error {

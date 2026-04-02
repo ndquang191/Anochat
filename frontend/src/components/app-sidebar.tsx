@@ -19,12 +19,12 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserSettingsDialog } from "@/components/user-settings-dialog";
-import { AdminPanel } from "@/components/admin/admin-panel";
 import { AdminUserID } from "@/types";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { AuroraText } from "@/components/aurora-text";
 import { useAuth } from "@/contexts/auth";
+import { useAdmin } from "@/contexts/admin";
 import { userAPI } from "@/lib/api";
 import { useUserState, useInvalidateUserState } from "@/hooks/queries/use-user-state";
 
@@ -67,7 +67,7 @@ function deriveUserData(user: ReturnType<typeof useAuth>["user"], data: ReturnTy
 export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
 	const { state } = useSidebar();
 	const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
-	const [isAdminOpen, setIsAdminOpen] = React.useState(false);
+	const { isAdminOpen, setIsAdminOpen } = useAdmin();
 	const [localOverrides, setLocalOverrides] = React.useState<Partial<UserData>>({});
 	const router = useRouter();
 	const { logout, user } = useAuth();
@@ -204,7 +204,6 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 				<SidebarRail />
 			</Sidebar>
 
-			{isAdmin && <AdminPanel open={isAdminOpen} onOpenChange={setIsAdminOpen} />}
 			<UserSettingsDialog
 				open={isSettingsOpen}
 				onOpenChange={setIsSettingsOpen}

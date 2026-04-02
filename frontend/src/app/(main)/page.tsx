@@ -2,14 +2,19 @@
 
 import { useEffect } from "react";
 import Chatbox from "@/components/chat-box";
+import { AdminPanel } from "@/components/admin/admin-panel";
 import { useAuth } from "@/contexts/auth";
+import { useAdmin } from "@/contexts/admin";
 import { Loader2 } from "lucide-react";
 import { getWebSocketClient } from "@/lib/websocket";
 import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
+import { AdminUserID } from "@/types";
 
 const Page = () => {
 	const { user, room, inQueue, loading: authLoading } = useAuth();
+	const { isAdminOpen } = useAdmin();
 	const invalidateUserState = useInvalidateUserState();
+	const isAdmin = user?.id === AdminUserID;
 
 	// Ensure WebSocket is connected when in queue (e.g. after page refresh while inQueue=true)
 	useEffect(() => {
@@ -29,6 +34,14 @@ const Page = () => {
 		client.on("match_found", handleMatchFound);
 		return () => client.off("match_found", handleMatchFound);
 	}, [invalidateUserState]);
+
+	if (isAdmin && isAdminOpen) {
+		return (
+			<div className="h-full w-full">
+				<AdminPanel />
+			</div>
+		);
+	}
 
 	if (authLoading) {
 		return (

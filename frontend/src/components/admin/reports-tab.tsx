@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { moderationAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Search } from "lucide-react";
 import { toast } from "sonner";
 import type { ReportDTO } from "@/types";
 
@@ -18,7 +21,23 @@ interface ChatMessage {
 	created_at: number;
 }
 
-function ChatViewer({ roomId, reportedUserId }: { roomId: string; reportedUserId: string }) {
+export interface GroupedUser {
+	reported_user_id: string;
+	reported_user_name?: string;
+	report_count: number;
+	auto_count: number;
+	manual_count: number;
+	latest_room_id: string;
+	latest_report: ReportDTO;
+}
+
+export function ChatViewer({
+	roomId,
+	reportedUserId,
+}: {
+	roomId: string;
+	reportedUserId: string;
+}) {
 	const { data: messages = [], isLoading } = useQuery({
 		queryKey: ["admin", "room-messages", roomId],
 		queryFn: async () => {
@@ -29,23 +48,27 @@ function ChatViewer({ roomId, reportedUserId }: { roomId: string; reportedUserId
 
 	if (isLoading) return <p className="text-sm text-muted-foreground p-4">Loading...</p>;
 	if (messages.length === 0)
-		return <p className="text-sm text-muted-foreground p-4">No messages found (may have been deleted).</p>;
+		return (
+			<p className="text-sm text-muted-foreground p-4">
+				No messages found (may have been deleted).
+			</p>
+		);
 
 	return (
-		<ScrollArea className="h-[400px] pr-2">
-			<div className="flex flex-col">
-				{messages.map((m: ChatMessage) => {
+		<ScrollArea className="h-[380px] pr-2">
+			<div className="flex flex-col gap-0.5">
+				{messages.map((m) => {
 					const isReported = m.sender_id === reportedUserId;
 					return (
 						<div
 							key={m.id}
-							className={`flex ${isReported ? "justify-end" : "justify-start"} py-1`}
+							className={`flex ${isReported ? "justify-end" : "justify-start"} py-0.5`}
 						>
 							<div
 								className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${
 									isReported
-										? "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-100"
-										: "bg-muted text-foreground"
+										? "bg-secondary text-secondary-foreground"
+										: "bg-muted text-muted-foreground"
 								}`}
 							>
 								<p>{m.content}</p>
@@ -63,7 +86,8 @@ function ChatViewer({ roomId, reportedUserId }: { roomId: string; reportedUserId
 
 export function ReportsTab() {
 	const queryClient = useQueryClient();
-	const [viewingReport, setViewingReport] = useState<ReportDTO | null>(null);
+	const [search, setSearch] = useState("");
+	const [viewing, setViewing] = useState<GroupedUser | null>(null);
 
 	const { data: reports = [], isLoading } = useQuery({
 		queryKey: ["admin", "reports"],
@@ -77,64 +101,124 @@ export function ReportsTab() {
 		mutationFn: (userId: string) => moderationAPI.banUser(userId),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["admin", "reports"] });
+			queryClient.invalidateQueries({ queryKey: ["admin", "banned-users"] });
+			setViewing(null);
 			toast.success("User banned");
 		},
 		onError: () => toast.error("Failed to ban user"),
 	});
 
+	const grouped = useMemo<GroupedUser[]>(() => {
+		const pending = reports.filter((r) => r.status === "pending");
+		const map = new Map<string, GroupedUser>();
+		for (const r of pending) {
+			const isAuto = r.reporter_id === NULL_UUID;
+			const existing = map.get(r.reported_user_id);
+			if (!existing) {
+				map.set(r.reported_user_id, {
+					reported_user_id: r.reported_user_id,
+					reported_user_name: r.reported_user_name,
+					report_count: 1,
+					auto_count: isAuto ? 1 : 0,
+					manual_count: isAuto ? 0 : 1,
+					latest_room_id: r.room_id,
+					latest_report: r,
+				});
+			} else {
+				existing.report_count++;
+				if (isAuto) existing.auto_count++;
+				else existing.manual_count++;
+				if (r.created_at > existing.latest_report.created_at) {
+					existing.latest_report = r;
+					existing.latest_room_id = r.room_id;
+				}
+			}
+		}
+		return Array.from(map.values()).sort((a, b) => b.report_count - a.report_count);
+	}, [reports]);
+
+	const filtered = useMemo(() => {
+		if (!search.trim()) return grouped;
+		const q = search.toLowerCase();
+		return grouped.filter(
+			(g) =>
+				g.reported_user_name?.toLowerCase().includes(q) ||
+				g.reported_user_id.toLowerCase().includes(q)
+		);
+	}, [grouped, search]);
+
 	return (
 		<>
-			<div className="flex flex-col">
-				{isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
-				{!isLoading && reports.length === 0 && (
-					<p className="text-sm text-muted-foreground">No reports yet.</p>
-				)}
-				{reports.map((r: ReportDTO) => (
-					<div key={r.id} className="flex items-center justify-between py-3 border-b last:border-b-0">
-						<div className="flex flex-col min-w-0">
-							<span className="text-sm font-medium truncate">
-								{r.reported_user_name ?? r.reported_user_id.slice(0, 8)}
+			<div className="relative mb-4">
+				<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+				<Input
+					placeholder="Search by name or ID..."
+					value={search}
+					onChange={(e) => setSearch(e.target.value)}
+					className="pl-9"
+				/>
+			</div>
+
+			{isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
+			{!isLoading && filtered.length === 0 && (
+				<p className="text-sm text-muted-foreground">
+					{grouped.length === 0 ? "No pending reports." : "No results for your search."}
+				</p>
+			)}
+
+			<div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+				{filtered.map((g) => (
+					<button
+						key={g.reported_user_id}
+						onClick={() => setViewing(g)}
+						className="rounded-lg border bg-card p-4 flex flex-col gap-2 shadow-sm text-left hover:bg-accent/50 transition-colors cursor-pointer"
+					>
+						<div className="flex items-start justify-between gap-2">
+							<span className="text-sm font-semibold leading-tight break-all">
+								{g.reported_user_name ?? g.reported_user_id.slice(0, 8)}
 							</span>
-							<span className="text-xs text-muted-foreground">
-								{r.reporter_id === NULL_UUID ? "Auto" : "Manual"} ·{" "}
-								{new Date(r.created_at * 1000).toLocaleString()}
-							</span>
+							<Badge className="shrink-0 text-xs">{g.report_count}×</Badge>
 						</div>
-						<div className="flex items-center gap-2 flex-shrink-0">
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => setViewingReport(r)}
-							>
-								View
-							</Button>
-							{r.status === "pending" && (
-								<Button
-									variant="destructive"
-									size="sm"
-									onClick={() => banMutation.mutate(r.reported_user_id)}
-									disabled={banMutation.isPending}
-								>
-									Ban
-								</Button>
+						<div className="flex gap-1.5 flex-wrap">
+							{g.auto_count > 0 && (
+								<Badge variant="secondary" className="text-xs px-1.5 py-0">
+									Auto {g.auto_count}
+								</Badge>
+							)}
+							{g.manual_count > 0 && (
+								<Badge variant="outline" className="text-xs px-1.5 py-0">
+									Manual {g.manual_count}
+								</Badge>
 							)}
 						</div>
-					</div>
+					</button>
 				))}
 			</div>
 
-			<Dialog open={!!viewingReport} onOpenChange={(open) => !open && setViewingReport(null)}>
-				<DialogContent className="sm:max-w-lg max-h-[95vh] flex flex-col overflow-hidden">
+			<Dialog open={!!viewing} onOpenChange={(open) => !open && setViewing(null)}>
+				<DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
 					<DialogHeader>
 						<DialogTitle>
-							Chat — {viewingReport?.reported_user_name ?? viewingReport?.reported_user_id.slice(0, 8)}
+							{viewing?.reported_user_name ?? viewing?.reported_user_id.slice(0, 8)}
 						</DialogTitle>
 					</DialogHeader>
-					{viewingReport && (
-						<ChatViewer
-							roomId={viewingReport.room_id}
-							reportedUserId={viewingReport.reported_user_id}
-						/>
+
+					{viewing && (
+						<>
+							<ChatViewer
+								roomId={viewing.latest_room_id}
+								reportedUserId={viewing.reported_user_id}
+							/>
+							<div className="pt-2 border-t">
+								<Button
+									className="w-full"
+									onClick={() => banMutation.mutate(viewing.reported_user_id)}
+									disabled={banMutation.isPending}
+								>
+									Ban User
+								</Button>
+							</div>
+						</>
 					)}
 				</DialogContent>
 			</Dialog>

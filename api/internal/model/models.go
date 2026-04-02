@@ -64,6 +64,7 @@ type Message struct {
 type BannedWord struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	Word      string    `gorm:"type:text;not null;uniqueIndex"`
+	Category  string    `gorm:"type:text;not null;default:'General'"`
 	CreatedBy uuid.UUID `gorm:"type:uuid;not null"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
 }
