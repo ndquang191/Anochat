@@ -156,13 +156,13 @@ export function BannedWordsTab() {
 										<button
 											onClick={() => updateMutation.mutate(editing)}
 											disabled={updateMutation.isPending}
-											className="p-0.5 rounded text-muted-foreground hover:text-foreground"
+											className="p-0.5 rounded text-muted-foreground hover:text-foreground cursor-pointer"
 										>
 											<Check size={12} />
 										</button>
 										<button
 											onClick={() => setEditing(null)}
-											className="p-0.5 rounded text-muted-foreground hover:text-foreground"
+											className="p-0.5 rounded text-muted-foreground hover:text-foreground cursor-pointer"
 										>
 											<X size={12} />
 										</button>
@@ -183,7 +183,7 @@ export function BannedWordsTab() {
 												category: w.category || DEFAULT_CATEGORY,
 											})
 										}
-										className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground transition-opacity"
+										className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground transition-opacity cursor-pointer"
 										title="Edit"
 									>
 										<Pencil size={11} />
@@ -191,7 +191,7 @@ export function BannedWordsTab() {
 									<button
 										onClick={() => deleteMutation.mutate(w.id)}
 										disabled={deleteMutation.isPending}
-										className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-destructive transition-opacity"
+										className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-destructive transition-opacity cursor-pointer"
 										title="Delete"
 									>
 										<Trash2 size={11} />

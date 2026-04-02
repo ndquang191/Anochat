@@ -90,7 +90,7 @@ export function ThemeToggle({ collapsed }: { collapsed?: boolean }) {
 						onClick={(e) => handleClick(t.id, e)}
 						title={t.label}
 						className={cn(
-							"relative rounded-md transition-all duration-150 ease-out focus-visible:outline-none",
+							"relative rounded-md transition-all duration-150 ease-out focus-visible:outline-none cursor-pointer",
 							active ? "scale-105 shadow-md" : "opacity-55 hover:opacity-85 hover:scale-102"
 						)}
 						style={{

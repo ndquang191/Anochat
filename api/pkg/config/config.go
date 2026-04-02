@@ -14,6 +14,7 @@ type Config struct {
 	Database  DatabaseConfig
 	OAuth     OAuthConfig
 	Chat      ChatConfig
+	User      UserConfig
 	Security  SecurityConfig
 	Redis     RedisConfig
 }
@@ -38,6 +39,11 @@ type OAuthConfig struct {
 type ChatConfig struct {
 	MessageRateLimit int
 	MaxMessageLength int
+}
+
+type UserConfig struct {
+	MinAge int
+	MaxAge int
 }
 
 type SecurityConfig struct {
@@ -77,6 +83,11 @@ func Load() *Config {
 		Chat: ChatConfig{
 			MessageRateLimit: getEnvAsInt("MESSAGE_RATE_LIMIT", 10),
 			MaxMessageLength: getEnvAsInt("MAX_MESSAGE_LENGTH", 1000),
+		},
+
+		User: UserConfig{
+			MinAge: getEnvAsInt("MIN_AGE", 10),
+			MaxAge: getEnvAsInt("MAX_AGE", 99),
 		},
 
 		Security: SecurityConfig{

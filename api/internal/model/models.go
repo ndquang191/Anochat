@@ -24,6 +24,7 @@ type User struct {
 // Profile represents the profiles table
 type Profile struct {
 	UserID    uuid.UUID `gorm:"type:uuid;primaryKey" json:"user_id"`
+	Nickname  *string   `gorm:"type:text" json:"nickname"`
 	IsMale    *bool     `gorm:"type:boolean" json:"is_male"`
 	Age       *int      `gorm:"type:integer" json:"age"`
 	IsHidden  bool      `gorm:"default:false" json:"is_hidden"`

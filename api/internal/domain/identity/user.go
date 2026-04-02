@@ -21,6 +21,7 @@ type User struct {
 // Profile represents user demographic information.
 type Profile struct {
 	UserID    uuid.UUID
+	Nickname  *string
 	IsMale    *bool
 	Age       *int
 	IsHidden  bool

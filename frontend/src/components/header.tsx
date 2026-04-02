@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/auth";
 import { useAdmin } from "@/contexts/admin";
 import { useAlertDialogContext } from "@/contexts/alert-dialog";
 import { ActionButton } from "./header/action-button";
+import { Button } from "@/components/ui/button";
 import { moderationAPI } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -19,6 +20,11 @@ export default function Header({ trigger }: HeaderProps) {
     const partner = room?.partner;
     const [reported, setReported] = useState(false);
     const alertDialog = useAlertDialogContext();
+
+    const roomId = room?.id;
+    React.useEffect(() => {
+        setReported(false);
+    }, [roomId]);
 
     const handleReport = async () => {
         if (!partner || !room || reported) return;
@@ -39,7 +45,7 @@ export default function Header({ trigger }: HeaderProps) {
     };
     const isHidden = partner?.profile?.is_hidden;
 
-    const partnerName = isHidden ? "Ẩn danh" : partner?.name || "Người dùng";
+    const partnerName = isHidden ? "Ẩn danh" : partner?.nickname || partner?.name || "Người dùng";
     const partnerAge =
         !isHidden && partner?.profile?.age
             ? `${partner.profile.age} tuổi`
@@ -63,13 +69,10 @@ export default function Header({ trigger }: HeaderProps) {
                     {trigger}
                     <span className="text-base font-semibold">Admin Panel</span>
                 </div>
-                <button
-                    onClick={() => setIsAdminOpen(false)}
-                    className="w-8 h-8 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                    title="Close admin panel"
-                >
-                    <X size={16} />
-                </button>
+                <Button variant="secondary" size="sm" onClick={() => setIsAdminOpen(false)}>
+                    <X />
+                    Back to chat
+                </Button>
             </header>
         );
     }
@@ -95,7 +98,7 @@ export default function Header({ trigger }: HeaderProps) {
                 {partner && !reported && (
                     <button
                         onClick={handleReport}
-                        className="w-8 h-8 flex items-center justify-center rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+                        className="w-8 h-8 flex items-center justify-center rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950 transition-colors cursor-pointer"
                         title="Report user"
                     >
                         <Flag size={16} />

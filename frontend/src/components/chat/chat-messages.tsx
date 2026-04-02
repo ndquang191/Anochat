@@ -28,32 +28,26 @@ export function ChatMessages({ messages, currentUserId }: ChatMessagesProps) {
 		}
 	}, [messages]);
 
-	if (messages.length === 0) {
-		return (
-			<div ref={scrollAreaRef} className="flex-1 h-[calc(100vh-200px)]">
-				<ScrollArea className="h-full p-2">
-					<div className="text-center text-muted-foreground py-8">
-						<p>Chưa có tin nhắn nào</p>
-						<p className="text-sm mt-2">Hãy bắt đầu cuộc trò chuyện!</p>
-					</div>
-				</ScrollArea>
-			</div>
-		);
-	}
-
 	return (
-		<div ref={scrollAreaRef} className="flex-1 h-[calc(100vh-200px)]">
+		<div ref={scrollAreaRef} className="flex-1 min-h-0 overflow-hidden">
 			<ScrollArea className="h-full p-2">
-				<div className="flex flex-col gap-3 pb-20">
-					{messages.map((message) => (
-						<ChatMessage
-							key={message.id}
-							content={message.content}
-							isCurrentUser={message.sender_id === currentUserId}
-							created_at={message.created_at}
-						/>
-					))}
-				</div>
+				{messages.length === 0 ? (
+					<div className="text-center text-muted-foreground py-8">
+						<p className="text-sm md:text-base">Chưa có tin nhắn nào</p>
+						<p className="text-sm md:text-base mt-2">Hãy bắt đầu cuộc trò chuyện!</p>
+					</div>
+				) : (
+					<div className="flex flex-col gap-3 pb-20">
+						{messages.map((message) => (
+							<ChatMessage
+								key={message.id}
+								content={message.content}
+								isCurrentUser={message.sender_id === currentUserId}
+								created_at={message.created_at}
+							/>
+						))}
+					</div>
+				)}
 			</ScrollArea>
 		</div>
 	);

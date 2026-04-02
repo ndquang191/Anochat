@@ -65,6 +65,7 @@ func (r *profileRepo) Update(ctx context.Context, profile *identity.Profile) err
 func profileModelToDomain(m *model.Profile) *identity.Profile {
 	return &identity.Profile{
 		UserID:    m.UserID,
+		Nickname:  m.Nickname,
 		IsMale:    m.IsMale,
 		Age:       m.Age,
 		IsHidden:  m.IsHidden,
@@ -75,6 +76,7 @@ func profileModelToDomain(m *model.Profile) *identity.Profile {
 func profileDomainToModel(p *identity.Profile) *model.Profile {
 	return &model.Profile{
 		UserID:    p.UserID,
+		Nickname:  p.Nickname,
 		IsMale:    p.IsMale,
 		Age:       p.Age,
 		IsHidden:  p.IsHidden,

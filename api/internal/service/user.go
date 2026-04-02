@@ -105,12 +105,19 @@ func (s *UserService) GetPublicProfile(ctx context.Context, userID uuid.UUID) (*
 	return profile, nil
 }
 
-func (s *UserService) UpdateProfile(ctx context.Context, userID uuid.UUID, isMale *bool, age *int, isHidden *bool) (*identity.Profile, error) {
+func (s *UserService) UpdateProfile(ctx context.Context, userID uuid.UUID, nickname *string, isMale *bool, age *int, isHidden *bool) (*identity.Profile, error) {
 	profile, err := s.GetProfile(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 
+	if nickname != nil {
+		if *nickname == "" {
+			profile.Nickname = nil
+		} else {
+			profile.Nickname = nickname
+		}
+	}
 	if isMale != nil {
 		profile.IsMale = isMale
 	}

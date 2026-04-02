@@ -15,19 +15,26 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { MIN_AGE, MAX_AGE } from "@/types";
+
+const CURRENT_YEAR = new Date().getFullYear();
+const MIN_BIRTH_YEAR = CURRENT_YEAR - MAX_AGE;
+const MAX_BIRTH_YEAR = CURRENT_YEAR - MIN_AGE;
 
 interface UserSettingsDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	initialData: {
-		age: number | null;
+		nickname: string;
+		birthYear: number | null;
 		gender: string;
 	};
 	onSave: (data: UserSettingsDialogProps["initialData"]) => void;
 }
 
 export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: UserSettingsDialogProps) {
-	const [age, setAge] = React.useState(initialData.age);
+	const [nickname, setNickname] = React.useState(initialData.nickname);
+	const [birthYear, setBirthYear] = React.useState<number | null>(initialData.birthYear);
 	const [gender, setGender] = React.useState(() => {
 		const validGenders = ["male", "female"];
 		return validGenders.includes(initialData.gender) ? initialData.gender : "male";
@@ -36,25 +43,26 @@ export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: 
 
 	React.useEffect(() => {
 		if (open) {
-			setAge(initialData.age);
+			setNickname(initialData.nickname);
+			setBirthYear(initialData.birthYear);
 			const validGenders = ["male", "female"];
-			const validGender = validGenders.includes(initialData.gender) ? initialData.gender : "male";
-			setGender(validGender);
+			setGender(validGenders.includes(initialData.gender) ? initialData.gender : "male");
 		}
 	}, [open, initialData]);
 
 	const handleSave = async () => {
+		if (birthYear !== null && (birthYear < MIN_BIRTH_YEAR || birthYear > MAX_BIRTH_YEAR)) {
+			toast.error(`Năm sinh phải từ ${MIN_BIRTH_YEAR} đến ${MAX_BIRTH_YEAR}`);
+			return;
+		}
+
 		setIsLoading(true);
-
 		try {
-			onSave({ age, gender });
-
+			onSave({ nickname, birthYear, gender });
 			toast.success("Thông tin đã được lưu thành công!");
 			onOpenChange(false);
 		} catch (error) {
-			console.error("Error saving user settings:", error);
-			const errorMessage =
-				error instanceof Error ? error.message : "Không thể lưu thông tin. Vui lòng thử lại.";
+			const errorMessage = error instanceof Error ? error.message : "Không thể lưu thông tin. Vui lòng thử lại.";
 			toast.error(errorMessage);
 		} finally {
 			setIsLoading(false);
@@ -70,18 +78,31 @@ export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: 
 				</DialogHeader>
 				<div className="grid gap-4 py-4">
 					<div className="grid grid-cols-4 items-center gap-4">
-						<Label htmlFor="age" className="text-right">
-							Tuổi
+						<Label htmlFor="nickname" className="text-right">
+							Nickname
 						</Label>
 						<Input
-							id="age"
-							type="number"
-							value={age || ""}
-							onChange={(e) => setAge(e.target.value ? parseInt(e.target.value) : null)}
+							id="nickname"
+							value={nickname}
+							onChange={(e) => setNickname(e.target.value)}
 							className="col-span-3"
-							placeholder="Nhập tuổi"
-							min="1"
-							max="120"
+							placeholder="Để trống để dùng tên Google"
+							maxLength={32}
+						/>
+					</div>
+					<div className="grid grid-cols-4 items-center gap-4">
+						<Label htmlFor="birthYear" className="text-right">
+							Năm sinh
+						</Label>
+						<Input
+							id="birthYear"
+							type="number"
+							value={birthYear ?? ""}
+							onChange={(e) => setBirthYear(e.target.value ? parseInt(e.target.value) : null)}
+							className="col-span-3"
+							placeholder={`${MIN_BIRTH_YEAR} – ${MAX_BIRTH_YEAR}`}
+							min={MIN_BIRTH_YEAR}
+							max={MAX_BIRTH_YEAR}
 						/>
 					</div>
 					<div className="grid grid-cols-4 items-center gap-4">

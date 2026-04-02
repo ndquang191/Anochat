@@ -58,7 +58,7 @@ export function ActionButton() {
 		}
 		if (inQueue) {
 			return {
-				bgColor: "bg-primary hover:bg-primary/90",
+				bgColor: "bg-primary hover:bg-primary/90 opacity-70",
 				icon: <RotateCw size={18} />,
 				title: "Nhấn để rời hàng chờ",
 				spinning: true,
@@ -79,7 +79,7 @@ export function ActionButton() {
 			onClick={handleClick}
 			disabled={isLoading}
 			className={`relative w-10 h-10 rounded-full transition-all duration-300 ease-in-out transform ${
-				isLoading ? "cursor-not-allowed opacity-70" : "hover:scale-110"
+				isLoading ? "cursor-not-allowed opacity-70" : "hover:scale-110 cursor-pointer"
 			} ${config.bgColor}`}
 			title={config.title}
 		>

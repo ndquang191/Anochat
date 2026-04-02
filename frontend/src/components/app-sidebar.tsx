@@ -27,11 +27,13 @@ import { useAuth } from "@/contexts/auth";
 import { useAdmin } from "@/contexts/admin";
 import { userAPI } from "@/lib/api";
 import { useUserState, useInvalidateUserState } from "@/hooks/queries/use-user-state";
+import { toast } from "sonner";
 
 interface UserData {
 	id: string;
 	email: string;
 	name: string;
+	nickname: string;
 	age: number | null;
 	gender: string;
 	isVisible: boolean;
@@ -41,9 +43,10 @@ const defaultUserData: UserData = {
 	id: "",
 	email: "",
 	name: "...",
+	nickname: "",
 	age: null,
 	gender: "other",
-	isVisible: true,
+	isVisible: false,
 };
 
 function deriveUserData(user: ReturnType<typeof useAuth>["user"], data: ReturnType<typeof useUserState>["data"]): UserData {
@@ -53,6 +56,7 @@ function deriveUserData(user: ReturnType<typeof useAuth>["user"], data: ReturnTy
 		id: user.id,
 		email: user.email || "",
 		name: user.name || "Unknown",
+		nickname: profile?.nickname || "",
 		age: profile?.age ?? null,
 		gender:
 			profile?.is_male === true
@@ -102,13 +106,17 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 			setLocalOverrides((prev) => ({ ...prev, isVisible }));
 			invalidateUserState();
 		} catch {
+			toast.error("Không thể cập nhật trạng thái hiển thị");
 		}
 	};
 
-	const handleSaveSettings = async (newSettings: { age: number | null; gender: string }) => {
+	const handleSaveSettings = async (newSettings: { nickname: string; birthYear: number | null; gender: string }) => {
+		const currentYear = new Date().getFullYear();
+		const age = newSettings.birthYear ? currentYear - newSettings.birthYear : null;
 		try {
 			await userAPI.updateProfile({
-				age: newSettings.age,
+				nickname: newSettings.nickname || null,
+				age,
 				is_male:
 					newSettings.gender === "male"
 						? true
@@ -117,11 +125,13 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 						: undefined,
 			});
 		} catch {
+			toast.error("Không thể lưu cài đặt");
 		}
 
 		setLocalOverrides((prev) => ({
 			...prev,
-			age: newSettings.age,
+			nickname: newSettings.nickname,
+			age,
 			gender: newSettings.gender,
 		}));
 		invalidateUserState();
@@ -139,40 +149,58 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 			<SidebarHeader>
 					{state === "expanded" ? (
 						<div className="mx-3 my-2 rounded-md bg-card border border-border/50 shadow-sm p-4 flex flex-col gap-3">
-							<div className="flex flex-col gap-1">
-								{isLoading && !data ? (
-									<Skeleton className="h-5 w-28 rounded" />
-								) : (
-									<span className="text-base font-semibold truncate leading-tight">
-										{userData.name}
-									</span>
-								)}
-								<div className="flex items-center gap-1.5 text-muted-foreground">
-									<User size={12} />
+							<div className="flex items-start justify-between gap-2">
+								<div className="flex flex-col gap-1 min-w-0">
 									{isLoading && !data ? (
-										<Skeleton className="h-3.5 w-16 rounded" />
+										<Skeleton className="h-5 w-28 rounded" />
 									) : (
-										<span className="text-xs">
-											{getGenderDisplay(userData.gender)}
-											{userData.age ? `, ${userData.age} tuổi` : ""}
+										<span className="text-sm md:text-base font-semibold truncate leading-tight">
+											{userData.nickname || userData.name}
 										</span>
 									)}
+									<div className="flex items-center gap-1.5 text-muted-foreground">
+										<User className="h-4 w-4 md:h-5 md:w-5" />
+										{isLoading && !data ? (
+											<Skeleton className="h-3.5 w-16 rounded" />
+										) : (
+											<span className="text-sm md:text-base">
+												{getGenderDisplay(userData.gender)}
+												{userData.age ? `, ${userData.age} tuổi` : ""}
+											</span>
+										)}
+									</div>
 								</div>
+								<button
+									onClick={() => setIsSettingsOpen(true)}
+									className="shrink-0 p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
+									title="Cài đặt"
+								>
+									<Settings className="h-4 w-4 md:h-5 md:w-5" />
+								</button>
 							</div>
 							<div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2">
-								<Label htmlFor="public-status" className="text-xs text-muted-foreground cursor-pointer select-none">
-									{userData.isVisible ? "Công khai thông tin" : "Riêng tư"}
-								</Label>
-								<Switch
-									id="public-status"
-									checked={userData.isVisible}
-									onCheckedChange={handleVisibilityToggle}
-								/>
+								{isLoading && !data ? (
+									<>
+										<Skeleton className="h-3.5 w-24 rounded" />
+										<Skeleton className="h-5 w-9 rounded-full" />
+									</>
+								) : (
+									<>
+										<Label htmlFor="public-status" className="text-sm md:text-base text-muted-foreground cursor-pointer select-none">
+											{userData.isVisible ? "Công khai" : "Ẩn danh"}
+										</Label>
+										<Switch
+											id="public-status"
+											checked={userData.isVisible}
+											onCheckedChange={handleVisibilityToggle}
+										/>
+									</>
+								)}
 							</div>
 						</div>
 					) : (
 						<div className="flex justify-center py-3">
-							<User size={18} className="text-muted-foreground" />
+							<User className="h-4 w-4 md:h-5 md:w-5 text-muted-foreground" />
 						</div>
 					)}
 				</SidebarHeader>
@@ -182,20 +210,14 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 						{isAdmin && (
 							<SidebarMenuItem>
 								<SidebarMenuButton onClick={() => setIsAdminOpen(true)}>
-									<Shield />
+									<Shield className="h-[18px] w-[18px]" />
 									<span>Admin</span>
 								</SidebarMenuButton>
 							</SidebarMenuItem>
 						)}
 						<SidebarMenuItem>
-							<SidebarMenuButton onClick={() => setIsSettingsOpen(true)}>
-								<Settings />
-								<span>Cài đặt</span>
-							</SidebarMenuButton>
-						</SidebarMenuItem>
-						<SidebarMenuItem>
-							<SidebarMenuButton onClick={handleLogout}>
-								<LogOut />
+							<SidebarMenuButton onClick={handleLogout} className="text-sm md:text-base">
+								<LogOut className="h-[18px] w-[18px]" />
 								<span>Đăng xuất</span>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
@@ -208,7 +230,8 @@ export function AppSidebar({ className, ...props }: React.HTMLAttributes<HTMLDiv
 				open={isSettingsOpen}
 				onOpenChange={setIsSettingsOpen}
 				initialData={{
-					age: userData.age,
+					nickname: userData.nickname,
+					birthYear: userData.age ? new Date().getFullYear() - userData.age : null,
 					gender: userData.gender,
 				}}
 				onSave={handleSaveSettings}

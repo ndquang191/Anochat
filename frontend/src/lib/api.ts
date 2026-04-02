@@ -57,8 +57,9 @@ export const userAPI = {
 	},
 
 	updateProfile: async (data: {
+		nickname?: string | null;
 		age?: number | null;
-		is_male?: boolean;
+		is_male?: boolean | null;
 		is_hidden?: boolean;
 	}) => {
 		try {

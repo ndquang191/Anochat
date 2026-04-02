@@ -1,8 +1,6 @@
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipTrigger,
-} from "@/components/ui/tooltip";
+"use client";
+
+import { useState } from "react";
 
 interface ChatMessageProps {
 	content: string;
@@ -11,32 +9,28 @@ interface ChatMessageProps {
 }
 
 export function ChatMessage({ content, isCurrentUser, created_at }: ChatMessageProps) {
-	const bubble = (
-		<div
-			className={`max-w-[70%] rounded-md px-3 py-2 ${
-				isCurrentUser
-					? "bg-primary text-primary-foreground"
-					: "bg-muted text-foreground"
-			}`}
-		>
-			<p>{content}</p>
-		</div>
-	);
+	const [showTime, setShowTime] = useState(false);
+
+	const timeStr = created_at
+		? new Date(created_at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+		: null;
 
 	return (
-		<div className={`flex ${isCurrentUser ? "justify-end" : "justify-start"}`}>
-			{created_at ? (
-				<Tooltip delayDuration={1000}>
-					<TooltipTrigger asChild>{bubble}</TooltipTrigger>
-					<TooltipContent side="top">
-						{new Date(created_at * 1000).toLocaleTimeString([], {
-							hour: "2-digit",
-							minute: "2-digit",
-						})}
-					</TooltipContent>
-				</Tooltip>
-			) : (
-				bubble
+		<div className={`flex flex-col gap-0.5 ${isCurrentUser ? "items-end" : "items-start"}`}>
+			<div
+				onClick={() => timeStr && setShowTime((v) => !v)}
+				className={`max-w-[70%] rounded-md px-3 py-2 break-words ${
+					timeStr ? "cursor-pointer" : ""
+				} ${
+					isCurrentUser
+						? "bg-primary text-primary-foreground"
+						: "bg-muted text-foreground"
+				}`}
+			>
+				<p>{content}</p>
+			</div>
+			{showTime && timeStr && (
+				<span className="text-[10px] text-muted-foreground px-1">{timeStr}</span>
 			)}
 		</div>
 	);

@@ -2,11 +2,13 @@ export interface UserDTO {
 	id: string;
 	email?: string;
 	name?: string;
+	nickname?: string;
 	avatar_url?: string;
 	profile?: ProfileDTO;
 }
 
 export interface ProfileDTO {
+	nickname?: string;
 	age?: number;
 	is_male?: boolean;
 	is_hidden: boolean;
@@ -71,5 +73,5 @@ export interface BannedUserDTO {
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 export const MAX_MESSAGE_LENGTH = 1000;
-export const MIN_AGE = 13;
-export const MAX_AGE = 100;
+export const MIN_AGE = Number(process.env.NEXT_PUBLIC_MIN_AGE ?? 10);
+export const MAX_AGE = Number(process.env.NEXT_PUBLIC_MAX_AGE ?? 99);

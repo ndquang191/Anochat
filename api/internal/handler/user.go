@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -52,6 +53,7 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 	}
 	if profile != nil {
 		resp.Profile = &dto.ProfileDTO{
+			Nickname: profile.Nickname,
 			Age:      profile.Age,
 			IsMale:   profile.IsMale,
 			IsHidden: profile.IsHidden,
@@ -80,6 +82,7 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 			if err == nil && partnerProfile != nil {
 				if !partnerProfile.IsHidden {
 					partnerDTO.Name = partnerUser.Name
+					partnerDTO.Nickname = partnerProfile.Nickname
 					partnerDTO.Profile = &dto.ProfileDTO{
 						Age:      partnerProfile.Age,
 						IsMale:   partnerProfile.IsMale,
@@ -126,13 +129,19 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	profile, err := h.userService.UpdateProfile(c.Request.Context(), userID, req.IsMale, req.Age, req.IsHidden)
+	if req.Age != nil && (*req.Age < h.config.User.MinAge || *req.Age > h.config.User.MaxAge) {
+		dto.Fail(c, http.StatusBadRequest, fmt.Sprintf("Age must be between %d and %d", h.config.User.MinAge, h.config.User.MaxAge))
+		return
+	}
+
+	profile, err := h.userService.UpdateProfile(c.Request.Context(), userID, req.Nickname, req.IsMale, req.Age, req.IsHidden)
 	if err != nil {
 		dto.Fail(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	dto.OKWithMessage(c, "Profile updated successfully", dto.ProfileDTO{
+		Nickname: profile.Nickname,
 		Age:      profile.Age,
 		IsMale:   profile.IsMale,
 		IsHidden: profile.IsHidden,
