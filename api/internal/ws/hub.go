@@ -40,8 +40,8 @@ func NewHub(queueService *service.QueueService, messageService *service.MessageS
 	return &Hub{
 		clients:           make(map[uuid.UUID]*Client),
 		roomClients:       make(map[uuid.UUID]map[uuid.UUID]*Client),
-		register:          make(chan *Client),
-		unregister:        make(chan *Client),
+		register:          make(chan *Client, 64),
+		unregister:        make(chan *Client, 64),
 		broadcast:         make(chan *BroadcastMessage, 256),
 		queueService:      queueService,
 		messageService:    messageService,
@@ -193,12 +193,12 @@ func (h *Hub) broadcastToRoom(msg *BroadcastMessage) {
 		}
 	}
 
-	// Unregister stale clients outside the iteration to avoid deadlock
-	// (h.unregister is unbuffered and Run() is the only reader)
 	for _, client := range staleClients {
-		go func(c *Client) {
-			h.unregister <- c
-		}(client)
+		select {
+		case h.unregister <- client:
+		default:
+			go func(c *Client) { h.unregister <- c }(client)
+		}
 	}
 }
 
