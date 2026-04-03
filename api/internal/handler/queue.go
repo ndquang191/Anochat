@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/dto"
@@ -27,7 +25,7 @@ func (h *QueueHandler) JoinQueue(c *gin.Context) {
 	}
 
 	if err := h.queueService.JoinQueue(c.Request.Context(), userID); err != nil {
-		dto.Fail(c, http.StatusBadRequest, err.Error())
+		dto.FailErr(c, err)
 		return
 	}
 
@@ -42,7 +40,7 @@ func (h *QueueHandler) LeaveQueue(c *gin.Context) {
 	}
 
 	if err := h.queueService.LeaveQueue(c.Request.Context(), userID); err != nil {
-		dto.Fail(c, http.StatusBadRequest, err.Error())
+		dto.FailErr(c, err)
 		return
 	}
 

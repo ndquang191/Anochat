@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
 	try {
-		const token = request.cookies.get("jwt_token")?.value;
+		const token = request.cookies.get("access_token")?.value || request.cookies.get("jwt_token")?.value;
 
 		if (!token) {
 			return NextResponse.json({ error: "No authentication token found" }, { status: 401 });

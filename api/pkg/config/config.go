@@ -29,11 +29,12 @@ type DatabaseConfig struct {
 }
 
 type OAuthConfig struct {
-	GoogleClientID     string
-	GoogleClientSecret string
-	RedirectURL        string
-	JWTSecret          string
-	JWTExpiration      time.Duration
+	GoogleClientID       string
+	GoogleClientSecret   string
+	RedirectURL          string
+	JWTSecret            string
+	AccessTokenExpiry    time.Duration
+	RefreshTokenExpiry   time.Duration
 }
 
 type ChatConfig struct {
@@ -73,11 +74,12 @@ func Load() *Config {
 		},
 
 		OAuth: OAuthConfig{
-			GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
-			GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
-			RedirectURL:        getEnv("OAUTH_REDIRECT_URL", "http://localhost:8080/auth/callback"),
-			JWTSecret:          getEnv("JWT_SECRET", ""),
-			JWTExpiration:      getEnvAsDuration("JWT_EXPIRATION", 24*time.Hour),
+			GoogleClientID:       getEnv("GOOGLE_CLIENT_ID", ""),
+			GoogleClientSecret:   getEnv("GOOGLE_CLIENT_SECRET", ""),
+			RedirectURL:          getEnv("OAUTH_REDIRECT_URL", "http://localhost:8080/auth/callback"),
+			JWTSecret:            getEnv("JWT_SECRET", ""),
+			AccessTokenExpiry:    getEnvAsDuration("ACCESS_TOKEN_EXPIRY", 15*time.Minute),
+			RefreshTokenExpiry:   getEnvAsDuration("REFRESH_TOKEN_EXPIRY", 30*24*time.Hour),
 		},
 
 		Chat: ChatConfig{

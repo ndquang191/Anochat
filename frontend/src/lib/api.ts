@@ -3,6 +3,21 @@ import type { ApiResponse, UserStateResponse, ProfileDTO, BannedWordDTO, ReportD
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
+let isRefreshing = false;
+let refreshPromise: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+	try {
+		const response = await fetch(`${API_BASE}/auth/refresh`, {
+			method: "POST",
+			credentials: "include",
+		});
+		return response.ok;
+	} catch {
+		return false;
+	}
+}
+
 async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
 	const config: RequestInit = {
 		...options,
@@ -14,6 +29,44 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 	};
 
 	const response = await fetch(`${API_BASE}${endpoint}`, config);
+
+	if (response.status === 401) {
+		const errorData = await response.json().catch(() => ({}));
+
+		if (errorData.code === "token_expired") {
+			// Prevent concurrent refresh calls
+			if (!isRefreshing) {
+				isRefreshing = true;
+				refreshPromise = refreshAccessToken();
+			}
+
+			const refreshed = await refreshPromise;
+			isRefreshing = false;
+			refreshPromise = null;
+
+			if (refreshed) {
+				// Retry original request with new access token
+				const retryResponse = await fetch(`${API_BASE}${endpoint}`, config);
+				if (retryResponse.ok) {
+					return retryResponse.json();
+				}
+			}
+
+			// Refresh failed — redirect to login
+			window.location.href = "/login";
+			throw new Error("Session expired");
+		}
+
+		if (errorData.code === "account_suspended") {
+			toast.error("Tài khoản đã bị khóa");
+			window.location.href = "/login";
+			throw new Error("Account suspended");
+		}
+
+		const errorMessage = errorData.message || errorData.error || "Authentication required";
+		toast.error(errorMessage);
+		throw new Error(errorMessage);
+	}
 
 	if (!response.ok) {
 		const errorData = await response.json().catch(() => ({}));

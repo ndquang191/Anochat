@@ -3,13 +3,13 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/chat"
 	"github.com/ndquang191/Anochat/api/internal/repository"
+	"github.com/ndquang191/Anochat/api/pkg/apperr"
 )
 
 type RoomService struct {
@@ -43,7 +43,7 @@ func (s *RoomService) GetActiveRoomByUserID(ctx context.Context, userID uuid.UUI
 	room, err := s.roomRepo.FindActiveByUserID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			return nil, errors.New("no active room found")
+			return nil, apperr.ErrNoActiveRoom
 		}
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (s *RoomService) LeaveRoom(ctx context.Context, roomID, userID uuid.UUID) e
 	}
 
 	if !room.HasUser(userID) {
-		return errors.New("user not part of this room")
+		return apperr.ErrNotRoomMember
 	}
 
 	if room.EndedAt != nil {
@@ -76,7 +76,7 @@ func (s *RoomService) LeaveRoom(ctx context.Context, roomID, userID uuid.UUID) e
 func (s *RoomService) LeaveCurrentRoom(ctx context.Context, userID uuid.UUID) error {
 	room, err := s.GetActiveRoomByUserID(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("no active room found: %w", err)
+		return err
 	}
 	return s.LeaveRoom(ctx, room.ID, userID)
 }

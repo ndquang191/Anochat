@@ -23,28 +23,34 @@ func AuthMiddleware(authService *service.AuthService, userRepo repository.UserRe
 		}
 
 		if tokenString == "" {
+			tokenString, _ = c.Cookie("access_token")
+		}
+
+		// Fallback to legacy cookie name for backward compatibility
+		if tokenString == "" {
 			tokenString, _ = c.Cookie("jwt_token")
 		}
 
 		if tokenString == "" {
-			c.SetCookie("jwt_token", "", -1, "/", "", cfg.IsProduction(), true)
-			c.Redirect(http.StatusTemporaryRedirect, cfg.ClientURL+"/login")
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Bạn cần đăng nhập để tiếp tục", "code": "no_token"})
 			c.Abort()
 			return
 		}
 
 		claims, err := authService.ValidateJWT(tokenString)
 		if err != nil {
-			c.SetCookie("jwt_token", "", -1, "/", "", cfg.IsProduction(), true)
-			c.Redirect(http.StatusTemporaryRedirect, cfg.ClientURL+"/login")
+			if strings.Contains(err.Error(), "token is expired") {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại", "code": "token_expired"})
+			} else {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Token xác thực không hợp lệ, vui lòng đăng nhập lại", "code": "token_invalid"})
+			}
 			c.Abort()
 			return
 		}
 
 		user, err := userRepo.FindByID(c.Request.Context(), claims.UserID)
 		if err != nil || !user.IsActive {
-			c.SetCookie("jwt_token", "", -1, "/", "", cfg.IsProduction(), true)
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Account suspended"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Tài khoản của bạn đã bị khóa", "code": "account_suspended"})
 			c.Abort()
 			return
 		}

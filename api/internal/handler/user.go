@@ -9,6 +9,7 @@ import (
 	"github.com/ndquang191/Anochat/api/internal/dto"
 	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/internal/service"
+	"github.com/ndquang191/Anochat/api/pkg/apperr"
 	"github.com/ndquang191/Anochat/api/pkg/config"
 )
 
@@ -73,19 +74,18 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 		if room.User1ID == userID {
 			partnerID = room.User2ID
 		}
-		partnerUser, err := h.userService.GetUserByID(c.Request.Context(), partnerID)
+		partnerUser, err := h.userService.GetUserWithProfile(c.Request.Context(), partnerID)
 		if err == nil && partnerUser != nil {
 			partnerDTO := &dto.UserDTO{
 				ID: partnerUser.ID.String(),
 			}
-			partnerProfile, err := h.userService.GetProfile(c.Request.Context(), partnerID)
-			if err == nil && partnerProfile != nil {
-				if !partnerProfile.IsHidden {
+			if partnerUser.Profile != nil {
+				if !partnerUser.Profile.IsHidden {
 					partnerDTO.Name = partnerUser.Name
-					partnerDTO.Nickname = partnerProfile.Nickname
+					partnerDTO.Nickname = partnerUser.Profile.Nickname
 					partnerDTO.Profile = &dto.ProfileDTO{
-						Age:      partnerProfile.Age,
-						IsMale:   partnerProfile.IsMale,
+						Age:      partnerUser.Profile.Age,
+						IsMale:   partnerUser.Profile.IsMale,
 						IsHidden: false,
 					}
 				} else {
@@ -119,24 +119,24 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	userID := getUserID(c)
 	if userID == uuid.Nil {
-		dto.Fail(c, http.StatusUnauthorized, "User not authenticated")
+		dto.FailErr(c, apperr.ErrUnauthenticated)
 		return
 	}
 
 	var req dto.UpdateProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		dto.Fail(c, http.StatusBadRequest, "Invalid request body")
+		dto.FailErr(c, apperr.ErrInvalidBody)
 		return
 	}
 
 	if req.Age != nil && (*req.Age < h.config.User.MinAge || *req.Age > h.config.User.MaxAge) {
-		dto.Fail(c, http.StatusBadRequest, fmt.Sprintf("Age must be between %d and %d", h.config.User.MinAge, h.config.User.MaxAge))
+		dto.Fail(c, http.StatusBadRequest, fmt.Sprintf("Tuổi phải nằm trong khoảng từ %d đến %d", h.config.User.MinAge, h.config.User.MaxAge))
 		return
 	}
 
 	profile, err := h.userService.UpdateProfile(c.Request.Context(), userID, req.Nickname, req.IsMale, req.Age, req.IsHidden)
 	if err != nil {
-		dto.Fail(c, http.StatusInternalServerError, err.Error())
+		dto.FailErr(c, err)
 		return
 	}
 
@@ -157,7 +157,7 @@ func (h *UserHandler) LeaveCurrentRoom(c *gin.Context) {
 
 	err := h.roomService.LeaveCurrentRoom(c.Request.Context(), userID)
 	if err != nil {
-		dto.Fail(c, http.StatusBadRequest, err.Error())
+		dto.FailErr(c, err)
 		return
 	}
 

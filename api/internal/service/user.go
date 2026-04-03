@@ -8,11 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/identity"
 	"github.com/ndquang191/Anochat/api/internal/repository"
+	"github.com/ndquang191/Anochat/api/pkg/apperr"
 	"github.com/ndquang191/Anochat/api/pkg/metrics"
-)
-
-var (
-	ErrUserNotFound = errors.New("user not found")
 )
 
 type UserService struct {
@@ -41,7 +38,18 @@ func (s *UserService) GetUserByID(ctx context.Context, userID uuid.UUID) (*ident
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			return nil, ErrUserNotFound
+			return nil, apperr.ErrUserNotFound
+		}
+		return nil, err
+	}
+	return user, nil
+}
+
+func (s *UserService) GetUserWithProfile(ctx context.Context, userID uuid.UUID) (*identity.User, error) {
+	user, err := s.userRepo.FindByIDWithProfile(ctx, userID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, apperr.ErrUserNotFound
 		}
 		return nil, err
 	}
@@ -52,7 +60,7 @@ func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*identi
 	user, err := s.userRepo.FindByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			return nil, ErrUserNotFound
+			return nil, apperr.ErrUserNotFound
 		}
 		return nil, err
 	}
@@ -62,7 +70,7 @@ func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*identi
 func (s *UserService) GetOrCreateUser(ctx context.Context, email, name, avatarURL string) (*identity.User, error) {
 	user, err := s.GetUserByEmail(ctx, email)
 	if err != nil {
-		if errors.Is(err, ErrUserNotFound) {
+		if errors.Is(err, apperr.ErrUserNotFound) {
 			created, err := s.CreateUser(ctx, email, name, avatarURL)
 			if err != nil {
 				return nil, err
@@ -98,7 +106,7 @@ func (s *UserService) GetPublicProfile(ctx context.Context, userID uuid.UUID) (*
 	profile, err := s.profileRepo.FindPublicByUserID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			return nil, errors.New("profile not found or hidden")
+			return nil, apperr.ErrProfileNotFound
 		}
 		return nil, err
 	}

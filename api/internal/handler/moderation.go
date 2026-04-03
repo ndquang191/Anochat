@@ -1,13 +1,12 @@
 package handler
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/dto"
 	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/internal/service"
+	"github.com/ndquang191/Anochat/api/pkg/apperr"
 )
 
 const AdminUserID = "8d2e7280-bdc8-47b2-8508-8911b5c9f796"
@@ -24,7 +23,7 @@ func NewModerationHandler(moderationService *service.ModerationService, messageR
 func (h *ModerationHandler) requireAdmin(c *gin.Context) bool {
 	id := getUserID(c)
 	if id.String() != AdminUserID {
-		dto.Fail(c, http.StatusForbidden, "Forbidden")
+		dto.FailErr(c, apperr.ErrForbidden)
 		c.Abort()
 		return false
 	}
@@ -37,7 +36,7 @@ func (h *ModerationHandler) ListWords(c *gin.Context) {
 	}
 	words, err := h.moderationService.ListWords(c.Request.Context())
 	if err != nil {
-		dto.Fail(c, http.StatusInternalServerError, "Failed to list banned words")
+		dto.FailErr(c, err)
 		return
 	}
 
@@ -60,13 +59,13 @@ func (h *ModerationHandler) AddWord(c *gin.Context) {
 	}
 	var req dto.AddBannedWordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		dto.Fail(c, http.StatusBadRequest, "Invalid request body")
+		dto.FailErr(c, apperr.ErrInvalidBody)
 		return
 	}
 	adminID := getUserID(c)
 	word, err := h.moderationService.AddWord(c.Request.Context(), req.Word, req.Category, adminID)
 	if err != nil {
-		dto.Fail(c, http.StatusInternalServerError, "Failed to add banned word")
+		dto.FailErr(c, err)
 		return
 	}
 	dto.OKWithMessage(c, "Word added", gin.H{
@@ -83,16 +82,16 @@ func (h *ModerationHandler) UpdateWord(c *gin.Context) {
 	}
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		dto.Fail(c, http.StatusBadRequest, "Invalid word ID")
+		dto.FailErr(c, apperr.ErrInvalidID)
 		return
 	}
 	var req dto.UpdateBannedWordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		dto.Fail(c, http.StatusBadRequest, "Invalid request body")
+		dto.FailErr(c, apperr.ErrInvalidBody)
 		return
 	}
 	if err := h.moderationService.UpdateWord(c.Request.Context(), id, req.Word, req.Category); err != nil {
-		dto.Fail(c, http.StatusInternalServerError, "Failed to update banned word")
+		dto.FailErr(c, err)
 		return
 	}
 	dto.OKWithMessage(c, "Word updated", nil)
@@ -104,11 +103,11 @@ func (h *ModerationHandler) DeleteWord(c *gin.Context) {
 	}
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		dto.Fail(c, http.StatusBadRequest, "Invalid word ID")
+		dto.FailErr(c, apperr.ErrInvalidID)
 		return
 	}
 	if err := h.moderationService.DeleteWord(c.Request.Context(), id); err != nil {
-		dto.Fail(c, http.StatusInternalServerError, "Failed to delete banned word")
+		dto.FailErr(c, err)
 		return
 	}
 	dto.OKWithMessage(c, "Word deleted", nil)
@@ -120,7 +119,7 @@ func (h *ModerationHandler) ListReports(c *gin.Context) {
 	}
 	reports, err := h.moderationService.ListReports(c.Request.Context())
 	if err != nil {
-		dto.Fail(c, http.StatusInternalServerError, "Failed to list reports")
+		dto.FailErr(c, err)
 		return
 	}
 
@@ -154,11 +153,11 @@ func (h *ModerationHandler) BanUser(c *gin.Context) {
 	}
 	userID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		dto.Fail(c, http.StatusBadRequest, "Invalid user ID")
+		dto.FailErr(c, apperr.ErrInvalidID)
 		return
 	}
 	if err := h.moderationService.BanUser(c.Request.Context(), userID); err != nil {
-		dto.Fail(c, http.StatusInternalServerError, "Failed to ban user")
+		dto.FailErr(c, err)
 		return
 	}
 	dto.OKWithMessage(c, "User banned", nil)
@@ -170,12 +169,12 @@ func (h *ModerationHandler) ListRoomMessages(c *gin.Context) {
 	}
 	roomID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		dto.Fail(c, http.StatusBadRequest, "Invalid room ID")
+		dto.FailErr(c, apperr.ErrInvalidID)
 		return
 	}
 	messages, err := h.messageRepo.FindByRoomID(c.Request.Context(), roomID)
 	if err != nil {
-		dto.Fail(c, http.StatusInternalServerError, "Failed to fetch messages")
+		dto.FailErr(c, err)
 		return
 	}
 	type msgDTO struct {
@@ -202,11 +201,10 @@ func (h *ModerationHandler) ListBannedUsers(c *gin.Context) {
 	}
 	users, err := h.moderationService.ListBannedUsers(c.Request.Context())
 	if err != nil {
-		dto.Fail(c, http.StatusInternalServerError, "Failed to list banned users")
+		dto.FailErr(c, err)
 		return
 	}
 
-	// Build list of user IDs to fetch latest room for each banned user
 	userIDs := make([]uuid.UUID, len(users))
 	for i, u := range users {
 		userIDs[i] = u.ID
@@ -247,11 +245,11 @@ func (h *ModerationHandler) UnbanUser(c *gin.Context) {
 	}
 	userID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		dto.Fail(c, http.StatusBadRequest, "Invalid user ID")
+		dto.FailErr(c, apperr.ErrInvalidID)
 		return
 	}
 	if err := h.moderationService.UnbanUser(c.Request.Context(), userID); err != nil {
-		dto.Fail(c, http.StatusInternalServerError, "Failed to unban user")
+		dto.FailErr(c, err)
 		return
 	}
 	dto.OKWithMessage(c, "User unbanned", nil)
@@ -260,26 +258,26 @@ func (h *ModerationHandler) UnbanUser(c *gin.Context) {
 func (h *ModerationHandler) CreateReport(c *gin.Context) {
 	reporterID := getUserID(c)
 	if reporterID == uuid.Nil {
-		dto.Fail(c, http.StatusUnauthorized, "Unauthorized")
+		dto.FailErr(c, apperr.ErrUnauthenticated)
 		return
 	}
 	var req dto.CreateReportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		dto.Fail(c, http.StatusBadRequest, "Invalid request body")
+		dto.FailErr(c, apperr.ErrInvalidBody)
 		return
 	}
 	reportedUserID, err := uuid.Parse(req.ReportedUserID)
 	if err != nil {
-		dto.Fail(c, http.StatusBadRequest, "Invalid reported user ID")
+		dto.FailErr(c, apperr.ErrInvalidID)
 		return
 	}
 	roomID, err := uuid.Parse(req.RoomID)
 	if err != nil {
-		dto.Fail(c, http.StatusBadRequest, "Invalid room ID")
+		dto.FailErr(c, apperr.ErrInvalidID)
 		return
 	}
 	if err := h.moderationService.CreateReport(c.Request.Context(), reporterID, reportedUserID, roomID); err != nil {
-		dto.Fail(c, http.StatusInternalServerError, "Failed to submit report")
+		dto.FailErr(c, err)
 		return
 	}
 	dto.OKWithMessage(c, "Report submitted", nil)

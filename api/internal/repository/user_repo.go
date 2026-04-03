@@ -13,6 +13,7 @@ import (
 // UserRepository defines data access for users.
 type UserRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*identity.User, error)
+	FindByIDWithProfile(ctx context.Context, id uuid.UUID) (*identity.User, error)
 	FindByEmail(ctx context.Context, email string) (*identity.User, error)
 	Create(ctx context.Context, user *identity.User) error
 	Update(ctx context.Context, user *identity.User) error
@@ -29,6 +30,17 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 func (r *userRepo) FindByID(ctx context.Context, id uuid.UUID) (*identity.User, error) {
 	var m model.User
 	if err := r.db.WithContext(ctx).Where("id = ? AND is_deleted = false", id).First(&m).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return userModelToDomain(&m), nil
+}
+
+func (r *userRepo) FindByIDWithProfile(ctx context.Context, id uuid.UUID) (*identity.User, error) {
+	var m model.User
+	if err := r.db.WithContext(ctx).Preload("Profile").Where("id = ? AND is_deleted = false", id).First(&m).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}

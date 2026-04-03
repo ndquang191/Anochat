@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/matching"
 	"github.com/ndquang191/Anochat/api/internal/repository"
+	"github.com/ndquang191/Anochat/api/pkg/apperr"
 	"github.com/ndquang191/Anochat/api/pkg/metrics"
 )
 
@@ -40,7 +41,7 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
 	// Check for active room
 	_, err := qs.roomRepo.FindActiveByUserID(ctx, userID)
 	if err == nil {
-		return fmt.Errorf("bạn đang có phòng chat đang hoạt động, vui lòng rời phòng trước khi tham gia hàng chờ")
+		return apperr.ErrHasActiveRoom
 	} else if err != repository.ErrNotFound {
 		return fmt.Errorf("failed to check active room: %w", err)
 	}
@@ -49,7 +50,7 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
 	defer qs.mu.Unlock()
 
 	if qs.inQueue[userID] {
-		return fmt.Errorf("bạn đã ở trong hàng chờ")
+		return apperr.ErrAlreadyInQueue
 	}
 
 	// If someone is already waiting, match immediately
@@ -102,7 +103,7 @@ func (qs *QueueService) LeaveQueue(_ context.Context, userID uuid.UUID) error {
 	defer qs.mu.Unlock()
 
 	if !qs.inQueue[userID] {
-		return fmt.Errorf("user not found in queue")
+		return apperr.ErrNotInQueue
 	}
 
 	qs.removeUserLocked(userID)
