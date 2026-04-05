@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/identity"
@@ -167,7 +166,6 @@ func TestUpdateProfile(t *testing.T) {
 	assert.True(t, profile.IsHidden)
 	assert.False(t, profile.UpdatedAt.IsZero())
 
-	_ = time.Now() // used import
 	profileRepo.AssertExpectations(t)
 }
 

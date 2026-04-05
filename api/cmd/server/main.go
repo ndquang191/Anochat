@@ -1,13 +1,11 @@
 package main
 
 import (
-	"log"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/joho/godotenv"
 	"github.com/ndquang191/Anochat/api/internal/initialize"
 	"github.com/ndquang191/Anochat/api/pkg/cache"
 	"github.com/ndquang191/Anochat/api/pkg/config"
@@ -16,10 +14,6 @@ import (
 )
 
 func main() {
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using system environment variables")
-	}
-
 	cfg := config.Load()
 
 	zapLogger := initialize.Logger(cfg)

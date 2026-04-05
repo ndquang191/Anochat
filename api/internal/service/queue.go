@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,24 +13,53 @@ import (
 	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/pkg/apperr"
 	"github.com/ndquang191/Anochat/api/pkg/metrics"
+	"github.com/redis/go-redis/v9"
 )
 
+const queueKey = "queue:waiting"
+
+// matchOrJoinScript atomically tries to match the joining user with a waiting one,
+// or adds them to the queue if no match is available.
+//
+// Returns:
+//
+//	"already_in_queue"       – user is already waiting
+//	"matched:<partnerID>"    – user was matched with partnerID (partner removed from queue)
+//	"waiting"                – no match; user added to queue
+var matchOrJoinScript = redis.NewScript(`
+local queue = KEYS[1]
+local userID = ARGV[1]
+local score  = tonumber(ARGV[2])
+
+if redis.call("ZSCORE", queue, userID) ~= false then
+    return "already_in_queue"
+end
+
+local candidates = redis.call("ZRANGE", queue, 0, -1)
+for _, candidate in ipairs(candidates) do
+    if candidate ~= userID then
+        local partnerScore = redis.call("ZSCORE", queue, candidate)
+        redis.call("ZREM", queue, candidate)
+        return "matched:" .. candidate .. ":" .. partnerScore
+    end
+end
+
+redis.call("ZADD", queue, score, userID)
+return "waiting"
+`)
+
 type QueueService struct {
-	roomService *RoomService
-	roomRepo    repository.RoomRepository
-
-	mu      sync.Mutex
-	entries []*matching.QueueEntry
-	inQueue map[uuid.UUID]bool
-
+	roomService   *RoomService
+	roomRepo      repository.RoomRepository
+	rdb           *redis.Client
 	matchNotifier matching.MatchNotifier
 }
 
-func NewQueueService(roomService *RoomService, roomRepo repository.RoomRepository) *QueueService {
+func NewQueueService(roomService *RoomService, roomRepo repository.RoomRepository, rdb *redis.Client) *QueueService {
 	return &QueueService{
 		roomService: roomService,
 		roomRepo:    roomRepo,
-		inQueue:     make(map[uuid.UUID]bool),
+		rdb:         rdb,
 	}
 }
 
@@ -38,7 +68,7 @@ func (qs *QueueService) SetMatchNotifier(notifier matching.MatchNotifier) {
 }
 
 func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
-	// Check for active room
+	// Check for active room first.
 	_, err := qs.roomRepo.FindActiveByUserID(ctx, userID)
 	if err == nil {
 		return apperr.ErrHasActiveRoom
@@ -46,102 +76,99 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
 		return fmt.Errorf("failed to check active room: %w", err)
 	}
 
-	qs.mu.Lock()
-	defer qs.mu.Unlock()
+	score := float64(time.Now().UnixMilli())
+	result, err := matchOrJoinScript.Run(ctx, qs.rdb, []string{queueKey}, userID.String(), score).Text()
+	if err != nil {
+		return fmt.Errorf("queue script error: %w", err)
+	}
 
-	if qs.inQueue[userID] {
+	switch {
+	case result == "already_in_queue":
 		return apperr.ErrAlreadyInQueue
-	}
 
-	// If someone is already waiting, match immediately
-	for i, entry := range qs.entries {
-		if entry.UserID != userID {
-			// Remove the waiting entry
-			qs.entries = append(qs.entries[:i], qs.entries[i+1:]...)
-			delete(qs.inQueue, entry.UserID)
-			metrics.QueueSize.Dec()
-
-			// Create room
-			room, err := qs.roomService.CreateRoom(context.Background(), entry.UserID, userID)
-			if err != nil {
-				slog.Error("Failed to create room for match", "error", err)
-				// Put the entry back
-				qs.entries = append(qs.entries, entry)
-				qs.inQueue[entry.UserID] = true
-				metrics.QueueSize.Inc()
-				return fmt.Errorf("failed to create room: %w", err)
-			}
-
-			// Observe match duration for both users
-			now := time.Now()
-			metrics.MatchDuration.Observe(now.Sub(entry.JoinedAt).Seconds())
-
-			slog.Info("Match found", "room_id", room.ID, "user1_id", entry.UserID, "user2_id", userID)
-
-			if qs.matchNotifier != nil {
-				qs.matchNotifier.NotifyMatch(entry.UserID, userID, room.ID)
-			}
-			return nil
+	case strings.HasPrefix(result, "matched:"):
+		// Format: "matched:<partnerID>:<joinScoreMs>"
+		parts := strings.SplitN(strings.TrimPrefix(result, "matched:"), ":", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("unexpected queue script result: %s", result)
 		}
+		partnerID, err := uuid.Parse(parts[0])
+		if err != nil {
+			return fmt.Errorf("invalid partner ID from queue: %w", err)
+		}
+		partnerJoinMs, _ := strconv.ParseFloat(parts[1], 64)
+
+		room, err := qs.roomService.CreateRoom(ctx, partnerID, userID)
+		if err != nil {
+			// Put the partner back so they are not lost.
+			qs.rdb.ZAdd(ctx, queueKey, redis.Z{Score: partnerJoinMs, Member: partnerID.String()})
+			slog.Error("Failed to create room for match", "error", err, "user1", partnerID, "user2", userID)
+			return fmt.Errorf("failed to create room: %w", err)
+		}
+
+		waitSeconds := time.Since(time.UnixMilli(int64(partnerJoinMs))).Seconds()
+		metrics.MatchDuration.Observe(waitSeconds)
+
+		qs.updateQueueMetric(ctx)
+		slog.Info("Match found", "room_id", room.ID, "user1_id", partnerID, "user2_id", userID, "wait_seconds", waitSeconds)
+
+		if qs.matchNotifier != nil {
+			qs.matchNotifier.NotifyMatch(partnerID, userID, room.ID)
+		}
+
+	case result == "waiting":
+		qs.updateQueueMetric(ctx)
+		slog.Info("User joined queue", "user_id", userID)
 	}
 
-	// No match available, add to queue
-	entry := &matching.QueueEntry{
-		UserID:   userID,
-		JoinedAt: time.Now(),
-	}
-	qs.entries = append(qs.entries, entry)
-	qs.inQueue[userID] = true
-	metrics.QueueSize.Inc()
-
-	slog.Info("User joined queue", "user_id", userID, "queue_size", len(qs.entries))
 	return nil
 }
 
-func (qs *QueueService) LeaveQueue(_ context.Context, userID uuid.UUID) error {
-	qs.mu.Lock()
-	defer qs.mu.Unlock()
-
-	if !qs.inQueue[userID] {
+func (qs *QueueService) LeaveQueue(ctx context.Context, userID uuid.UUID) error {
+	removed, err := qs.rdb.ZRem(ctx, queueKey, userID.String()).Result()
+	if err != nil {
+		return fmt.Errorf("failed to leave queue: %w", err)
+	}
+	if removed == 0 {
 		return apperr.ErrNotInQueue
 	}
 
-	qs.removeUserLocked(userID)
-	metrics.QueueSize.Dec()
-	slog.Info("User left queue", "user_id", userID, "queue_size", len(qs.entries))
+	qs.updateQueueMetric(ctx)
+	slog.Info("User left queue", "user_id", userID)
 	return nil
 }
 
 func (qs *QueueService) IsInQueue(userID uuid.UUID) bool {
-	qs.mu.Lock()
-	defer qs.mu.Unlock()
-	return qs.inQueue[userID]
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	score, err := qs.rdb.ZScore(ctx, queueKey, userID.String()).Result()
+	return err == nil && score >= 0
 }
 
 func (qs *QueueService) UserDisconnected(userID uuid.UUID) {
-	qs.mu.Lock()
-	defer qs.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
 
-	if qs.inQueue[userID] {
-		qs.removeUserLocked(userID)
-		metrics.QueueSize.Dec()
-		slog.Info("User disconnected, removed from queue", "user_id", userID, "queue_size", len(qs.entries))
+	removed, err := qs.rdb.ZRem(ctx, queueKey, userID.String()).Result()
+	if err != nil {
+		slog.Warn("Failed to remove disconnected user from queue", "user_id", userID, "error", err)
+		return
+	}
+	if removed > 0 {
+		qs.updateQueueMetric(ctx)
+		slog.Info("User disconnected, removed from queue", "user_id", userID)
 	}
 }
 
-func (qs *QueueService) removeUserLocked(userID uuid.UUID) {
-	for i, entry := range qs.entries {
-		if entry.UserID == userID {
-			qs.entries = append(qs.entries[:i], qs.entries[i+1:]...)
-			break
-		}
-	}
-	delete(qs.inQueue, userID)
-}
+// Stop is a no-op for the distributed Redis queue.
+// Users are removed individually as they disconnect; clearing the shared
+// queue key on one instance shutdown would affect other running instances.
+func (qs *QueueService) Stop() {}
 
-func (qs *QueueService) Stop() {
-	qs.mu.Lock()
-	defer qs.mu.Unlock()
-	qs.entries = nil
-	qs.inQueue = make(map[uuid.UUID]bool)
+func (qs *QueueService) updateQueueMetric(ctx context.Context) {
+	size, err := qs.rdb.ZCard(ctx, queueKey).Result()
+	if err == nil {
+		metrics.QueueSize.Set(float64(size))
+	}
 }

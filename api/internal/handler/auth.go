@@ -58,6 +58,7 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 
 	h.setAccessTokenCookie(c, result.AccessToken)
 	h.setRefreshTokenCookie(c, result.RefreshToken)
+	h.setSessionCookie(c)
 
 	userData := gin.H{
 		"id":         result.User.ID,
@@ -65,7 +66,12 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 		"name":       *result.User.Name,
 		"avatar_url": *result.User.AvatarURL,
 	}
-	userDataJSON, _ := json.Marshal(userData)
+	userDataJSON, err := json.Marshal(userData)
+	if err != nil {
+		// Non-fatal: redirect will still work; frontend won't have pre-filled data.
+		c.Redirect(http.StatusTemporaryRedirect, h.config.ClientURL+"/callback")
+		return
+	}
 	c.SetCookie("temp_user_data", string(userDataJSON), 60, "/", "", h.config.IsProduction(), false)
 
 	frontendURL := h.config.ClientURL + "/callback"
@@ -83,11 +89,13 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	if err != nil {
 		// Clear invalid refresh token cookie
 		h.clearRefreshTokenCookie(c)
+		h.clearSessionCookie(c)
 		dto.FailErr(c, err)
 		return
 	}
 
 	h.setAccessTokenCookie(c, accessToken)
+	h.setSessionCookie(c) // Reset has_session TTL alongside access token
 	dto.OK(c, gin.H{"message": "Token refreshed"})
 }
 
@@ -99,37 +107,58 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 	h.clearAccessTokenCookie(c)
 	h.clearRefreshTokenCookie(c)
+	h.clearSessionCookie(c)
 
-	redirectURL := c.Query("redirect")
-	if redirectURL == "" {
-		redirectURL = h.config.ClientURL + "/login"
-	}
-	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+	dto.OK(c, gin.H{"message": "Đăng xuất thành công"})
 }
 
 // --- Cookie helpers ---
 
+func (h *AuthHandler) sameSite() http.SameSite {
+	if h.config.IsProduction() {
+		return http.SameSiteNoneMode
+	}
+	return http.SameSiteLaxMode
+}
+
 func (h *AuthHandler) setAccessTokenCookie(c *gin.Context, token string) {
 	maxAge := int(h.config.OAuth.AccessTokenExpiry.Seconds())
+	c.SetSameSite(h.sameSite())
 	c.SetCookie("access_token", token, maxAge, "/", "", h.config.IsProduction(), true)
 }
 
 func (h *AuthHandler) setRefreshTokenCookie(c *gin.Context, token string) {
 	maxAge := int(h.config.OAuth.RefreshTokenExpiry.Seconds())
-	c.SetCookie("refresh_token", token, maxAge, "/auth", "", h.config.IsProduction(), true)
+	c.SetSameSite(h.sameSite())
+	c.SetCookie("refresh_token", token, maxAge, "/", "", h.config.IsProduction(), true)
 }
 
 func (h *AuthHandler) clearAccessTokenCookie(c *gin.Context) {
+	c.SetSameSite(h.sameSite())
 	c.SetCookie("access_token", "", -1, "/", "", h.config.IsProduction(), true)
-	c.SetCookie("jwt_token", "", -1, "/", "", h.config.IsProduction(), true) // clear legacy cookie
 }
 
 func (h *AuthHandler) clearRefreshTokenCookie(c *gin.Context) {
-	c.SetCookie("refresh_token", "", -1, "/auth", "", h.config.IsProduction(), true)
+	c.SetSameSite(h.sameSite())
+	c.SetCookie("refresh_token", "", -1, "/", "", h.config.IsProduction(), true)
+}
+
+func (h *AuthHandler) setSessionCookie(c *gin.Context) {
+	maxAge := int(h.config.OAuth.RefreshTokenExpiry.Seconds())
+	c.SetSameSite(h.sameSite())
+	// Non-HttpOnly so Next.js middleware can read it; value is just a presence indicator
+	c.SetCookie("has_session", "1", maxAge, "/", "", h.config.IsProduction(), false)
+}
+
+func (h *AuthHandler) clearSessionCookie(c *gin.Context) {
+	c.SetSameSite(h.sameSite())
+	c.SetCookie("has_session", "", -1, "/", "", h.config.IsProduction(), false)
 }
 
 func generateOAuthState() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand unavailable: " + err.Error())
+	}
 	return hex.EncodeToString(b)
 }

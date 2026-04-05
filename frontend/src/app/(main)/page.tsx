@@ -10,6 +10,7 @@ import { getWebSocketClient } from "@/lib/websocket";
 import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
 import { AdminUserID } from "@/types";
 import { useQueue } from "@/hooks/use-queue";
+import { playMatchSound } from "@/hooks/use-sound-notification";
 
 function RippleEffect({ active, onClick }: { active: boolean; onClick: () => void }) {
 	return (
@@ -70,6 +71,7 @@ const Page = () => {
 	useEffect(() => {
 		const client = getWebSocketClient();
 		const handleMatchFound = () => {
+			playMatchSound();
 			invalidateUserState();
 		};
 		client.on("match_found", handleMatchFound);

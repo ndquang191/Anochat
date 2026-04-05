@@ -4,27 +4,38 @@ import (
 	"context"
 	"testing"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/chat"
 	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/pkg/apperr"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-func newQueueServiceWithMocks() (*QueueService, *mockRoomRepo, *mockMessageRepo, *mockMatchNotifier) {
+func newTestRedis(t *testing.T) *redis.Client {
+	t.Helper()
+	mr, err := miniredis.Run()
+	require.NoError(t, err)
+	t.Cleanup(mr.Close)
+	return redis.NewClient(&redis.Options{Addr: mr.Addr()})
+}
+
+func newQueueServiceWithMocks(t *testing.T) (*QueueService, *mockRoomRepo, *mockMessageRepo, *mockMatchNotifier) {
 	roomRepo := new(mockRoomRepo)
 	msgRepo := new(mockMessageRepo)
 	roomService := NewRoomService(roomRepo, msgRepo)
 	notifier := new(mockMatchNotifier)
-	qs := NewQueueService(roomService, roomRepo)
+	rdb := newTestRedis(t)
+	qs := NewQueueService(roomService, roomRepo, rdb)
 	qs.SetMatchNotifier(notifier)
 	return qs, roomRepo, msgRepo, notifier
 }
 
 func TestJoinQueue(t *testing.T) {
-	qs, roomRepo, _, _ := newQueueServiceWithMocks()
+	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
 
 	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
@@ -35,7 +46,7 @@ func TestJoinQueue(t *testing.T) {
 }
 
 func TestJoinQueue_AlreadyInQueue(t *testing.T) {
-	qs, roomRepo, _, _ := newQueueServiceWithMocks()
+	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
 
 	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
@@ -49,7 +60,7 @@ func TestJoinQueue_AlreadyInQueue(t *testing.T) {
 }
 
 func TestJoinQueue_HasActiveRoom(t *testing.T) {
-	qs, roomRepo, _, _ := newQueueServiceWithMocks()
+	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
 
 	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(&chat.Room{ID: uuid.New()}, nil)
@@ -60,7 +71,7 @@ func TestJoinQueue_HasActiveRoom(t *testing.T) {
 }
 
 func TestJoinQueue_Match(t *testing.T) {
-	qs, roomRepo, _, notifier := newQueueServiceWithMocks()
+	qs, roomRepo, _, notifier := newQueueServiceWithMocks(t)
 	user1 := uuid.New()
 	user2 := uuid.New()
 
@@ -84,7 +95,7 @@ func TestJoinQueue_Match(t *testing.T) {
 }
 
 func TestLeaveQueue(t *testing.T) {
-	qs, roomRepo, _, _ := newQueueServiceWithMocks()
+	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
 
 	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
@@ -98,7 +109,7 @@ func TestLeaveQueue(t *testing.T) {
 }
 
 func TestLeaveQueue_NotInQueue(t *testing.T) {
-	qs, _, _, _ := newQueueServiceWithMocks()
+	qs, _, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
 
 	err := qs.LeaveQueue(context.Background(), userID)
@@ -106,7 +117,7 @@ func TestLeaveQueue_NotInQueue(t *testing.T) {
 }
 
 func TestIsInQueue(t *testing.T) {
-	qs, roomRepo, _, _ := newQueueServiceWithMocks()
+	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
 
 	assert.False(t, qs.IsInQueue(userID))
@@ -118,7 +129,7 @@ func TestIsInQueue(t *testing.T) {
 }
 
 func TestUserDisconnected(t *testing.T) {
-	qs, roomRepo, _, _ := newQueueServiceWithMocks()
+	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
 
 	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
@@ -130,19 +141,20 @@ func TestUserDisconnected(t *testing.T) {
 }
 
 func TestUserDisconnected_NotInQueue(t *testing.T) {
-	qs, _, _, _ := newQueueServiceWithMocks()
+	qs, _, _, _ := newQueueServiceWithMocks(t)
 	// Should not panic
 	qs.UserDisconnected(uuid.New())
 }
 
 func TestStop(t *testing.T) {
-	qs, roomRepo, _, _ := newQueueServiceWithMocks()
+	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	user1 := uuid.New()
 
 	roomRepo.On("FindActiveByUserID", mock.Anything, user1).Return(nil, repository.ErrNotFound)
 	_ = qs.JoinQueue(context.Background(), user1)
 	assert.True(t, qs.IsInQueue(user1))
 
+	// Stop is a no-op for the Redis-backed queue (shared across instances).
 	qs.Stop()
-	assert.False(t, qs.IsInQueue(user1))
+	// User is still in Redis queue after Stop() - that's expected behavior.
 }

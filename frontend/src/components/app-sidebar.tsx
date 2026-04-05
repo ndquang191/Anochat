@@ -166,62 +166,53 @@ export function AppSidebar({
                 </div>
                 <SidebarHeader>
                     {state === "expanded" ? (
-                        <div className="mx-3 my-2 rounded-md bg-card border border-border/50 shadow-sm p-4 flex flex-col gap-3">
-                            <div className="flex items-start justify-between gap-2">
-                                <div className="flex flex-col gap-1 min-w-0">
+                        <div className="mx-3 my-2 rounded-md bg-card border border-border/50 shadow-sm overflow-hidden">
+                            {/* Top row: name + settings */}
+                            <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+                                <div className="flex-1 min-w-0">
                                     {isLoading && !data ? (
-                                        <Skeleton className="h-5 w-28 rounded" />
+                                        <Skeleton className="h-4 w-28 rounded mb-1" />
                                     ) : (
-                                        <span className="text-sm md:text-base font-semibold truncate leading-tight">
+                                        <p className="text-sm font-semibold truncate leading-tight">
                                             {userData.nickname || userData.name}
-                                        </span>
+                                        </p>
                                     )}
-                                    <div className="flex items-center gap-1.5 text-muted-foreground">
-                                        <User className="h-4 w-4 md:h-5 md:w-5" />
-                                        {isLoading && !data ? (
-                                            <Skeleton className="h-3.5 w-16 rounded" />
-                                        ) : (
-                                            <span className="text-sm md:text-base">
-                                                {getGenderDisplay(
-                                                    userData.gender,
-                                                )}
-                                                {userData.age
-                                                    ? `, ${userData.age} tuổi`
-                                                    : ""}
-                                            </span>
-                                        )}
-                                    </div>
+                                    {isLoading && !data ? (
+                                        <Skeleton className="h-3 w-16 rounded" />
+                                    ) : (
+                                        <p className="text-xs text-muted-foreground truncate">
+                                            {getGenderDisplay(userData.gender)}
+                                            {userData.age ? `, ${userData.age} tuổi` : ""}
+                                        </p>
+                                    )}
                                 </div>
                                 <button
                                     onClick={() => setIsSettingsOpen(true)}
                                     className="shrink-0 p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
                                     title="Cài đặt"
                                 >
-                                    <Settings className="h-4 w-4 md:h-5 md:w-5" />
+                                    <Settings className="h-4 w-4" />
                                 </button>
                             </div>
-                            <div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2">
+                            {/* Bottom row: visibility toggle */}
+                            <div className="flex items-center justify-between border-t border-border/40 bg-muted/30 px-3 py-2">
                                 {isLoading && !data ? (
                                     <>
-                                        <Skeleton className="h-3.5 w-24 rounded" />
+                                        <Skeleton className="h-3 w-24 rounded" />
                                         <Skeleton className="h-5 w-9 rounded-full" />
                                     </>
                                 ) : (
                                     <>
                                         <Label
                                             htmlFor="public-status"
-                                            className="text-sm md:text-base text-muted-foreground cursor-pointer select-none"
+                                            className="text-xs text-muted-foreground cursor-pointer select-none"
                                         >
-                                            {userData.isVisible
-                                                ? "Công khai"
-                                                : "Ẩn danh"}
+                                            {userData.isVisible ? "Công khai" : "Ẩn danh"}
                                         </Label>
                                         <Switch
                                             id="public-status"
                                             checked={userData.isVisible}
-                                            onCheckedChange={
-                                                handleVisibilityToggle
-                                            }
+                                            onCheckedChange={handleVisibilityToggle}
                                         />
                                     </>
                                 )}
@@ -229,7 +220,7 @@ export function AppSidebar({
                         </div>
                     ) : (
                         <div className="flex justify-center py-3">
-                            <User className="h-4 w-4 md:h-5 md:w-5 text-muted-foreground" />
+                            <User className="h-4 w-4 text-muted-foreground" />
                         </div>
                     )}
                 </SidebarHeader>

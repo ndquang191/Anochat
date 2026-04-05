@@ -3,8 +3,10 @@ package config
 import (
 	"log/slog"
 	"os"
-	"strconv"
+	"strings"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
 type Config struct {
@@ -29,12 +31,12 @@ type DatabaseConfig struct {
 }
 
 type OAuthConfig struct {
-	GoogleClientID       string
-	GoogleClientSecret   string
-	RedirectURL          string
-	JWTSecret            string
-	AccessTokenExpiry    time.Duration
-	RefreshTokenExpiry   time.Duration
+	GoogleClientID     string
+	GoogleClientSecret string
+	RedirectURL        string
+	JWTSecret          string
+	AccessTokenExpiry  time.Duration
+	RefreshTokenExpiry time.Duration
 }
 
 type ChatConfig struct {
@@ -59,84 +61,113 @@ type RedisConfig struct {
 }
 
 func Load() *Config {
-	config := &Config{
-		Port:      getEnv("PORT", "8080"),
-		Env:       getEnv("ENV", "development"),
-		ClientURL: getEnv("CLIENT_URL", "http://localhost:3000"),
+	v := viper.New()
+	v.SetConfigType("yaml")
+	v.AddConfigPath("./config")
+	v.AddConfigPath(".")
+
+	// Base config (committed)
+	v.SetConfigName("config")
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			slog.Error("Failed to read config.yaml", "error", err)
+			os.Exit(1)
+		}
+		slog.Warn("config.yaml not found")
+	} else {
+		slog.Info("Loaded config", "file", v.ConfigFileUsed())
+	}
+
+	// Local overrides (gitignored — secrets + local env values)
+	v.SetConfigName("config.local")
+	if err := v.MergeInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			slog.Error("Failed to read config.local.yaml", "error", err)
+			os.Exit(1)
+		}
+		// No local file is fine in Docker/production
+	} else {
+		slog.Info("Merged local config", "file", v.ConfigFileUsed())
+	}
+
+	// Docker / production: allow env var overrides for a handful of fields
+	// that differ between environments (hostnames, secrets injected at runtime).
+	// Env var names mirror the YAML path with "." → "_" and uppercased.
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	cfg := &Config{
+		Port:      v.GetString("server.port"),
+		Env:       v.GetString("server.env"),
+		ClientURL: v.GetString("server.client_url"),
 
 		Database: DatabaseConfig{
-			Host:     getEnv("DB_HOST", ""),
-			Port:     getEnv("DB_PORT", "5432"),
-			User:     getEnv("DB_USER", ""),
-			Password: getEnv("DB_PASSWORD", ""),
-			Name:     getEnv("DB_NAME", ""),
-			SSLMode:  getEnv("DB_SSLMODE", "require"),
+			Host:     v.GetString("database.host"),
+			Port:     v.GetString("database.port"),
+			User:     v.GetString("database.user"),
+			Password: v.GetString("database.password"),
+			Name:     v.GetString("database.name"),
+			SSLMode:  v.GetString("database.ssl_mode"),
 		},
 
 		OAuth: OAuthConfig{
-			GoogleClientID:       getEnv("GOOGLE_CLIENT_ID", ""),
-			GoogleClientSecret:   getEnv("GOOGLE_CLIENT_SECRET", ""),
-			RedirectURL:          getEnv("OAUTH_REDIRECT_URL", "http://localhost:8080/auth/callback"),
-			JWTSecret:            getEnv("JWT_SECRET", ""),
-			AccessTokenExpiry:    getEnvAsDuration("ACCESS_TOKEN_EXPIRY", 15*time.Minute),
-			RefreshTokenExpiry:   getEnvAsDuration("REFRESH_TOKEN_EXPIRY", 30*24*time.Hour),
+			GoogleClientID:     v.GetString("oauth.google_client_id"),
+			GoogleClientSecret: v.GetString("oauth.google_client_secret"),
+			RedirectURL:        v.GetString("oauth.redirect_url"),
+			JWTSecret:          v.GetString("oauth.jwt_secret"),
+			AccessTokenExpiry:  v.GetDuration("oauth.access_token_expiry"),
+			RefreshTokenExpiry: v.GetDuration("oauth.refresh_token_expiry"),
 		},
 
 		Chat: ChatConfig{
-			MessageRateLimit: getEnvAsInt("MESSAGE_RATE_LIMIT", 10),
-			MaxMessageLength: getEnvAsInt("MAX_MESSAGE_LENGTH", 1000),
+			MessageRateLimit: v.GetInt("chat.message_rate_limit"),
+			MaxMessageLength: v.GetInt("chat.max_message_length"),
 		},
 
 		User: UserConfig{
-			MinAge: getEnvAsInt("MIN_AGE", 10),
-			MaxAge: getEnvAsInt("MAX_AGE", 99),
+			MinAge: v.GetInt("user.min_age"),
+			MaxAge: v.GetInt("user.max_age"),
 		},
 
 		Security: SecurityConfig{
-			CORSOrigins: getEnvAsSlice("CORS_ORIGINS", []string{"http://localhost:3000"}),
-			RateLimit:   getEnvAsInt("RATE_LIMIT", 100),
+			CORSOrigins: []string{v.GetString("server.client_url")},
+			RateLimit:   v.GetInt("security.rate_limit"),
 		},
 
 		Redis: RedisConfig{
-			URL:      getEnv("REDIS_URL", "localhost:6379"),
-			Password: getEnv("REDIS_PASSWORD", ""),
-			DB:       getEnvAsInt("REDIS_DB", 0),
+			URL:      v.GetString("redis.url"),
+			Password: v.GetString("redis.password"),
+			DB:       v.GetInt("redis.db"),
 		},
 	}
 
-	config.validate()
-
-	return config
+	cfg.validate()
+	return cfg
 }
 
 func (c *Config) validate() {
 	if c.Database.Host == "" {
-		slog.Error("DB_HOST is required")
+		slog.Error("database.host is required")
 		os.Exit(1)
 	}
-
 	if c.Database.User == "" {
-		slog.Error("DB_USER is required")
+		slog.Error("database.user is required")
 		os.Exit(1)
 	}
-
 	if c.Database.Password == "" {
-		slog.Error("DB_PASSWORD is required")
+		slog.Error("database.password is required")
 		os.Exit(1)
 	}
-
 	if c.Database.Name == "" {
-		slog.Error("DB_NAME is required")
+		slog.Error("database.name is required")
 		os.Exit(1)
 	}
-
-	if c.OAuth.GoogleClientID == "" {
-		slog.Warn("GOOGLE_CLIENT_ID not set - OAuth will be disabled")
-	}
-
 	if c.OAuth.JWTSecret == "" {
-		slog.Error("JWT_SECRET is required")
+		slog.Error("oauth.jwt_secret is required")
 		os.Exit(1)
+	}
+	if c.OAuth.GoogleClientID == "" {
+		slog.Warn("oauth.google_client_id not set — OAuth will be disabled")
 	}
 }
 
@@ -146,38 +177,4 @@ func (c *Config) IsProduction() bool {
 
 func (c *Config) IsDevelopment() bool {
 	return c.Env == "development"
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func getEnvAsInt(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
-		slog.Warn("Invalid integer value for environment variable", "key", key, "value", value)
-	}
-	return defaultValue
-}
-
-func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
-	if value := os.Getenv(key); value != "" {
-		if duration, err := time.ParseDuration(value); err == nil {
-			return duration
-		}
-		slog.Warn("Invalid duration value for environment variable", "key", key, "value", value)
-	}
-	return defaultValue
-}
-
-func getEnvAsSlice(key string, defaultValue []string) []string {
-	if value := os.Getenv(key); value != "" {
-		return []string{value}
-	}
-	return defaultValue
 }

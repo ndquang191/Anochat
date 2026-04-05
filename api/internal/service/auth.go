@@ -111,7 +111,12 @@ type googleBirthdayResponse struct {
 func (s *AuthService) getAgeFromGoogle(ctx context.Context, token *oauth2.Token) *int {
 	client := s.oauthConfig.Client(ctx, token)
 	resp, err := client.Get("https://people.googleapis.com/v1/people/me?personFields=birthdays")
-	if err != nil || resp.StatusCode != http.StatusOK {
+	if err != nil {
+		slog.Debug("Failed to fetch birthday from Google People API", "error", err)
+		return nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		slog.Debug("Google People API returned non-OK status", "status", resp.StatusCode)
 		return nil
 	}
 	defer resp.Body.Close()
@@ -222,6 +227,7 @@ func (s *AuthService) generateRefreshToken(ctx context.Context, userID uuid.UUID
 }
 
 // RefreshAccessToken validates a refresh token and returns a new access token.
+// Uses a sliding window: the refresh token TTL is reset on each use.
 func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshToken string) (string, error) {
 	key := refreshTokenPrefix + hashToken(refreshToken)
 	userIDStr, err := s.rdb.Get(ctx, key).Result()
@@ -239,19 +245,28 @@ func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshToken strin
 		return "", apperr.ErrUserNotFound
 	}
 	if !user.IsActive {
-		// User banned — revoke refresh token and reject
-		s.rdb.Del(ctx, key)
+		if err := s.rdb.Del(ctx, key).Err(); err != nil {
+			slog.Warn("Failed to revoke refresh token for suspended user", "error", err, "user_id", userID)
+		}
 		return "", apperr.ErrUserSuspended
 	}
 
 	if user.Email == nil {
 		return "", fmt.Errorf("user email is nil")
 	}
+
+	// Sliding window: reset TTL so active users never get kicked out
+	if err := s.rdb.Expire(ctx, key, s.refreshTokenExpiry).Err(); err != nil {
+		slog.Warn("Failed to extend refresh token TTL", "error", err)
+	}
+
 	return s.generateJWT(userID, *user.Email)
 }
 
 // RevokeRefreshToken removes a refresh token from Redis (used on logout).
 func (s *AuthService) RevokeRefreshToken(ctx context.Context, refreshToken string) {
 	key := refreshTokenPrefix + hashToken(refreshToken)
-	s.rdb.Del(ctx, key)
+	if err := s.rdb.Del(ctx, key).Err(); err != nil {
+		slog.Warn("Failed to revoke refresh token", "error", err)
+	}
 }

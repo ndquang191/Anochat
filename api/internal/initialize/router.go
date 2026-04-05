@@ -54,7 +54,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	roomService := service.NewRoomService(roomRepo, messageRepo)
 	messageService := service.NewMessageService(messageRepo)
 	authService := service.NewAuthService(userService, oauthConfig, cfg.OAuth.JWTSecret, redisClient, cfg.OAuth.AccessTokenExpiry, cfg.OAuth.RefreshTokenExpiry)
-	queueService := service.NewQueueService(roomService, roomRepo)
+	queueService := service.NewQueueService(roomService, roomRepo, redisClient)
 	moderationService := service.NewModerationService(bannedWordRepo, reportRepo, userRepo)
 	if err := moderationService.LoadWords(context.Background()); err != nil {
 		slog.Warn("Failed to load banned words at startup", "error", err)

@@ -1,150 +1,74 @@
-# Monitoring & Logging Guide - Anochat Backend
+# Monitoring & Logging Guide
 
-## Overview
+## Logging
 
-This document outlines monitoring, logging, and observability practices for the Anochat backend system. It provides guidelines for production monitoring and debugging.
+**Library:** `log/slog` (structured), backed by Zap
+**Format:** JSON in production, console in development
+**Default level:** Info (production), Debug (development)
 
----
+| Level | When to use |
+|-------|-------------|
+| Info | Normal operations: login, match found, room created |
+| Warn | Recoverable issues: rate limit hit, Redis error (fail-open) |
+| Error | Requires investigation: DB error, WS failure |
+| Debug | Birthday API misses, verbose queue state |
 
-## Logging Strategy
+### What to log
 
-### Current Implementation
-
-**Logging Library:** `log/slog` (structured logging)
-**Format:** JSON for production, console for development
-**Level:** Info (production), Debug (development)
-
-### Log Levels
-
-| Level | Usage | Examples |
-|-------|-------|----------|
-| **Info** | Normal operations, important events | User login, room created, match found |
-| **Warn** | Recoverable issues, rate limits | Rate limit exceeded, invalid input |
-| **Error** | Errors requiring investigation | Database errors, WebSocket failures |
-| **Debug** | Detailed debugging info | Request/response details, queue state |
-
----
-
-## What to Log
-
-### ✅ DO Log
-
-#### Authentication Events
 ```go
-slog.Info("User logged in", "user_id", userID, "email", email)
-slog.Info("User logged out", "user_id", userID)
+// Auth
+slog.Info("User logged in", "user_id", userID)
 slog.Warn("Authentication failed", "reason", "invalid_token")
+
+// Queue & matching
+slog.Info("User joined queue", "user_id", userID)
+slog.Info("Match found", "room_id", room.ID,
+    "user1_id", partnerID, "user2_id", userID, "wait_seconds", waitSeconds)
+slog.Info("User left queue", "user_id", userID)
+
+// WebSocket
+slog.Info("Client registered", "user_id", userID, "client_id", clientID)
+slog.Info("Client unregistered", "user_id", userID, "was_latest", isLatest)
+slog.Info("Subscribed to room channel", "room_id", roomID)
+slog.Info("Unsubscribed from room channel", "room_id", roomID)
+
+// Rate limiting
+slog.Warn("Message rate limit exceeded", "user_id", userID)
 ```
 
-#### Queue & Matching Events
-```go
-slog.Info("User joined queue",
-    "user_id", userID,
-    "category", category,
-    "position", position)
+### What NOT to log
 
-slog.Info("Match found",
-    "user1_id", user1ID,
-    "user2_id", user2ID,
-    "category", category,
-    "wait_time_ms", waitTime)
-
-slog.Info("User left queue",
-    "user_id", userID,
-    "time_in_queue_ms", duration)
-```
-
-#### Room & Message Events
-```go
-slog.Info("Room created",
-    "room_id", roomID,
-    "user1_id", user1ID,
-    "user2_id", user2ID)
-
-slog.Info("Message sent",
-    "user_id", userID,
-    "room_id", roomID,
-    "message_id", msgID)
-
-slog.Info("Room ended",
-    "room_id", roomID,
-    "duration_seconds", duration,
-    "message_count", msgCount)
-```
-
-#### WebSocket Events
-```go
-slog.Info("Client registered",
-    "user_id", userID,
-    "client_id", clientID)
-
-slog.Info("Client disconnected",
-    "user_id", userID,
-    "reason", reason,
-    "session_duration_seconds", duration)
-
-slog.Warn("WebSocket error",
-    "user_id", userID,
-    "error", err)
-```
-
-#### Rate Limiting
-```go
-slog.Warn("Rate limit exceeded",
-    "ip", clientIP,
-    "endpoint", endpoint,
-    "limit", rateLimit)
-
-slog.Warn("Message rate limit exceeded",
-    "user_id", userID,
-    "limit", messageRateLimit)
-```
-
-### ❌ DO NOT Log
-
-**Security Sensitive:**
-- ❌ JWT tokens
-- ❌ OAuth access tokens
-- ❌ User passwords
-- ❌ API secrets
-
-**Privacy Sensitive:**
-- ❌ Message content
-- ❌ Email addresses in public logs
-- ❌ IP addresses in public dashboards
-- ❌ Full user profiles
+- JWT tokens, OAuth tokens, refresh tokens
+- Message content
+- Full user profiles
+- Email addresses in high-volume logs
 
 ---
 
-## Monitoring Metrics
+## Prometheus Metrics
 
-### Application Metrics
+Exposed at `GET /metrics`.
 
-#### Connection Metrics
-- **Active WebSocket Connections**
-- **Connection Rate**
-- **Disconnection Rate**
-- **Average Session Duration**
-
-#### Queue Metrics
-- **Queue Size by Category**
-- **Average Wait Time**
-- **Match Rate**
-- **Queue Abandonment Rate**
-
-#### Message Metrics
-- **Messages Per Second**
-- **Message Latency**
-- **Failed Messages**
-
-#### API Metrics
-- **Request Rate**
-- **Response Time (P50, P95, P99)**
-- **Error Rate**
-- **Rate Limit Hits**
+| Metric | Type | Description |
+|--------|------|-------------|
+| `anochat_active_ws_connections` | Gauge | Live WebSocket connections |
+| `anochat_users_total` | Gauge | Total registered users |
+| `anochat_new_registrations_total` | Counter | New registrations since start |
+| `anochat_queue_size` | Gauge | Current `queue:waiting` size (from Redis `ZCARD`) |
+| `anochat_match_duration_seconds` | Histogram | Time from joining queue to being matched |
 
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2026-01-08
-**Status:** Production Guidelines
+## Health Check
+
+`GET /healthz` checks PostgreSQL and Redis connectivity:
+
+```json
+{
+  "status": "ok",
+  "database": "connected",
+  "redis": "connected"
+}
+```
+
+Returns `503` if either dependency is down.

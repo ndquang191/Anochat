@@ -1,7 +1,9 @@
 package ws
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,7 +19,11 @@ func (h *Hub) notifyPartnerLeft(roomID uuid.UUID, leaverID uuid.UUID) {
 		},
 	}
 
-	msgBytes, _ := json.Marshal(notification)
+	msgBytes, err := json.Marshal(notification)
+	if err != nil {
+		slog.Error("Failed to marshal partner_left notification", "error", err, "room_id", roomID)
+		return
+	}
 	h.broadcast <- &BroadcastMessage{
 		RoomID:  roomID,
 		Message: msgBytes,
@@ -25,27 +31,24 @@ func (h *Hub) notifyPartnerLeft(roomID uuid.UUID, leaverID uuid.UUID) {
 	}
 }
 
+// NotifyMatch publishes match_found events to each user's Redis channel.
+// The receiving Hub instance (wherever each user is connected) will deliver
+// the message locally and add the client to the room.
 func (h *Hub) NotifyMatch(user1ID, user2ID, roomID uuid.UUID) {
-	matchMsg := WSMessage{
-		Type: "match_found",
-		Payload: map[string]interface{}{
-			"room_id":   roomID.String(),
-			"timestamp": time.Now().Unix(),
-			"message":   "Match found! You are now connected.",
-		},
+	event := userPubMsg{
+		Type:   "match_found",
+		RoomID: roomID.String(),
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		slog.Error("Failed to marshal match_found event", "error", err)
+		return
 	}
 
-	msgBytes, _ := json.Marshal(matchMsg)
-
-	h.mutex.RLock()
-	if client1 := h.clients[user1ID]; client1 != nil {
-		client1.Send <- msgBytes
+	ctx := context.Background()
+	for _, userID := range []uuid.UUID{user1ID, user2ID} {
+		if err := h.rdb.Publish(ctx, "user:"+userID.String(), data).Err(); err != nil {
+			slog.Error("Failed to publish match_found to user channel", "user_id", userID, "error", err)
+		}
 	}
-	if client2 := h.clients[user2ID]; client2 != nil {
-		client2.Send <- msgBytes
-	}
-	h.mutex.RUnlock()
-
-	h.AddClientToRoom(user1ID, roomID)
-	h.AddClientToRoom(user2ID, roomID)
 }

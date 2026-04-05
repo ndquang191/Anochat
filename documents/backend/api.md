@@ -1,4 +1,4 @@
-# API Documentation
+# API Reference
 
 ## Base URL
 
@@ -6,301 +6,180 @@
 http://localhost:8080
 ```
 
+---
+
 ## Rate Limiting
 
-### Global Rate Limit
--   **100 requests per second** per IP address
--   **Burst capacity:** 200 requests
--   Algorithm: Token bucket with automatic refill
--   **Response on limit exceeded:** 429 Too Many Requests
+### HTTP (global)
+- **100 req/s** per IP, burst 200 — token bucket via Redis
+- Exceeded: `429 Too Many Requests`
 
-### Message Rate Limit (WebSocket)
--   **10 messages per second** per user
--   Applied to WebSocket `send_message` events
--   **Response on limit exceeded:** Error message via WebSocket
--   Prevents message spam and abuse
+### WebSocket messages (per user)
+- **10 messages/s** per user — enforced via Redis `INCR`/`EXPIRE`
+- Exceeded: WS error event `RATE_LIMIT_EXCEEDED`
 
-### Rate Limit Headers
-Rate limiting is transparent and automatic. Clients don't need to track limits manually.
+---
 
 ## Authentication
 
-### Google OAuth Flow
+All protected routes require a valid JWT in the HTTP-only `access_token` cookie.
+Include `credentials: "include"` on every frontend fetch.
 
-1. **GET** `/auth/google` - Redirect to Google OAuth
-2. **GET** `/auth/callback` - OAuth callback (handled by backend)
-3. **POST** `/auth/logout` - Logout and clear cookies
+### Endpoints
 
-### Authentication Method
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/auth/google` | Redirect to Google OAuth |
+| GET | `/auth/callback` | OAuth callback — sets cookies, redirects to frontend `/callback` |
+| POST | `/auth/refresh` | Exchange `refresh_token` cookie for new access token |
+| POST | `/auth/logout` | Revoke refresh token, clear cookies |
 
--   Uses HTTP-only cookies for JWT token storage
--   Frontend includes `credentials: "include"` in requests
--   No need for Authorization header in most cases
+---
 
 ## Protected Endpoints
 
-### User State 
+### GET `/user/state`
 
-**GET** `/user/state`
-
-Returns current user state including profile information.
+Returns the current user's full state, including any active room and messages.
 
 **Response:**
-
 ```json
 {
-	"user": {
-		"id": "uuid",
-		"email": "user@example.com",
-		"name": "User Name",
-		"avatar_url": "https://...",
-		"profile": {
-			"age": 25,
-			"city": "Ho Chi Minh City",
-			"is_male": true,
-			"is_hidden": false
-		}
-	},
-	"room": null,
-	"messages": null,
-	"is_new_user": false
-}
-```
-
-### Update Profile
-
-**PUT** `/profile`
-
-Update user profile information.
-
-**Request Body:**
-
-```json
-{
-	"age": 25, // optional, number
-	"city": "Hanoi", // optional, string
-	"is_male": true, // optional, boolean
-	"is_hidden": false // optional, boolean
-}
-```
-
-**Response:**
-
-```json
-{
-	"message": "Profile updated successfully",
-	"profile": {
-		"age": 25,
-		"city": "Hanoi",
-		"is_male": true,
-		"is_hidden": false
-	}
-}
-```
-
-### Queue Management
-
-**POST** `/queue/join`
-
-Join the matchmaking queue for a specific category.
-
-**Request Body:**
-
-```json
-{
-	"category": "polite" // required, string
-}
-```
-
-**Response:**
-
-```json
-{
-	"is_in_queue": true,
-	"position": 1,
-	"category": "polite"
+  "user": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "name": "Display Name",
+    "avatar_url": "https://...",
+    "profile": {
+      "nickname": "anon123",
+      "age": 25,
+      "is_male": true,
+      "is_hidden": false
+    }
+  },
+  "room": null,
+  "messages": null,
+  "is_new_user": false
 }
 ```
 
 ---
 
-**POST** `/queue/leave`
+### PUT `/profile`
 
-Leave the matchmaking queue.
+Update profile fields. All fields are optional.
 
-**Response:**
-
+**Request body:**
 ```json
 {
-	"message": "Successfully left queue"
+  "nickname": "anon123",
+  "age": 25,
+  "is_male": true,
+  "is_hidden": false
 }
 ```
 
 ---
 
-**GET** `/queue/status`
+### POST `/queue/join`
 
-Get current queue status for the user.
+Join the matchmaking queue. Match notification is delivered via WebSocket `match_found`.
 
-**Response:**
+**Request body:** _(empty)_
 
+**Errors:** `409` if already in queue or already in an active room.
+
+---
+
+### POST `/queue/leave`
+
+Leave the queue without being matched.
+
+---
+
+### POST `/room/leave`
+
+End the current active room and clean up messages.
+
+---
+
+### POST `/report`
+
+Report another user.
+
+**Request body:**
 ```json
-{
-	"is_in_queue": true,
-	"position": 1,
-	"category": "polite",
-	"estimated_wait_time": 10
-}
+{ "reported_user_id": "uuid" }
 ```
 
 ---
 
-**GET** `/queue/stats`
+### GET `/ws`
 
-Get queue statistics (admin/debugging endpoint).
+Upgrade to WebSocket. Requires valid `access_token` cookie.
 
-**Response:**
+#### Client → Server events
 
-```json
-{
-	"categories": {
-		"polite": {
-			"male": 5,
-			"female": 3,
-			"total": 8
-		}
-	},
-	"total_users": 8
-}
-```
+| Type | Payload | Description |
+|------|---------|-------------|
+| `send_message` | `{ "content": "..." }` | Send a message |
+| `join_room` | `{ "room_id": "uuid" }` | Re-join room after reconnect |
+| `leave_room` | `{ "room_id": "uuid" }` | Leave current room |
+| `typing` | `{ "is_typing": true\|false }` | Typing indicator |
+
+#### Server → Client events
+
+| Type | Payload | Description |
+|------|---------|-------------|
+| `connected` | `{ user_id, message, timestamp }` | Connection confirmed |
+| `room_rejoined` | `{ room_id, timestamp }` | Auto-rejoin on reconnect |
+| `match_found` | `{ room_id, timestamp, message }` | Matched with a partner |
+| `room_joined` | `{ room_id, timestamp }` | `join_room` confirmed |
+| `receive_message` | `{ id, room_id, sender_id, content, created_at }` | Incoming message |
+| `partner_typing` | `{ is_typing, user_id }` | Partner typing status |
+| `partner_left` | `{ room_id, timestamp, message }` | Partner left |
+| `room_left` | `{ room_id, timestamp }` | `leave_room` confirmed |
+| `error` | `{ message, code }` | e.g. `RATE_LIMIT_EXCEEDED` |
 
 ---
 
-**GET** `/queue/match-stats`
+## Admin Endpoints
 
-Get matching statistics.
+All require auth (no separate admin role enforced yet).
 
-**Response:**
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/admin/words` | List banned words |
+| POST | `/admin/words` | Add banned word |
+| PUT | `/admin/words/:id` | Update banned word |
+| DELETE | `/admin/words/:id` | Delete banned word |
+| GET | `/admin/reports` | List reports |
+| POST | `/admin/users/:id/ban` | Ban a user |
+| POST | `/admin/users/:id/unban` | Unban a user |
+| GET | `/admin/users/banned` | List banned users |
+| GET | `/admin/rooms/:id/messages` | List messages in a room |
 
-```json
-{
-	"total_matches": 150,
-	"matches_today": 25,
-	"average_wait_time": 8.5
-}
-```
+---
 
-### WebSocket Endpoints
+## Utility
 
-**GET** `/ws`
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/healthz` | Health check (DB + Redis status) |
+| GET | `/metrics` | Prometheus metrics |
 
-Establish WebSocket connection for real-time chat.
-
-**Authentication:** Requires JWT token in cookies
-
-**Events (Client → Server):**
-
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `send_message` | `{content: string}` | Send a chat message |
-| `join_room` | `{room_id: string}` | Join a chat room |
-| `leave_room` | `{room_id: string}` | Leave current room |
-| `typing` | `{is_typing: boolean}` | Send typing indicator |
-
-**Events (Server → Client):**
-
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `connected` | `{user_id, message, timestamp}` | Connection established |
-| `match_found` | `{room_id, category, timestamp}` | Matched with another user |
-| `room_joined` | `{room_id, timestamp}` | Successfully joined room |
-| `receive_message` | `{id, room_id, sender_id, content, created_at}` | New message received |
-| `partner_left` | `{room_id, timestamp, message}` | Partner left the room |
-| `partner_typing` | `{is_typing, user_id}` | Partner typing status |
-| `room_left` | `{room_id, timestamp}` | Left room confirmation |
-| `error` | `{message, code}` | Error message (e.g., rate limit) |
-
-## Health Check
-
-**GET** `/healthz`
-
-Returns server health status.
-
-**Response:**
-
-```json
-{
-	"status": "ok",
-	"message": "Anonymous Chat API is running",
-	"database": "connected"
-}
-```
+---
 
 ## Error Responses
 
-### Unauthorized (401)
-
 ```json
-{
-	"error": "Authorization required"
-}
+{ "error": "human-readable Vietnamese message", "code": "OPTIONAL_CODE" }
 ```
 
-### Bad Request (400)
-
-```json
-{
-	"error": "Invalid request body"
-}
-```
-
-### Internal Server Error (500)
-
-```json
-{
-	"error": "Error message"
-}
-```
-
-### Rate Limit Exceeded (429)
-
-```json
-{
-	"error": "Rate limit exceeded",
-	"message": "Too many requests. Please try again later."
-}
-```
-
-**For WebSocket message rate limiting:**
-
-```json
-{
-	"type": "error",
-	"payload": {
-		"message": "You are sending messages too quickly. Please slow down.",
-		"code": "RATE_LIMIT_EXCEEDED"
-	}
-}
-```
-
-## Best Practices
-
-### Rate Limiting
--   Implement exponential backoff on 429 responses
--   Don't retry immediately after rate limit
--   Recommended retry delay: 1 second for first retry, then exponential
-
-### WebSocket Connection
--   Maintain single WebSocket connection per user
--   Implement automatic reconnection with exponential backoff
--   Handle `error` events gracefully
-
-### Authentication
--   Always include `credentials: "include"` in fetch requests
--   Handle 401 errors by redirecting to login
--   JWT token expires after 7 days
-
-### Message Sending
--   Validate message content before sending
--   Keep messages under 1000 characters
--   Handle rate limit errors gracefully with user feedback
+| Status | Meaning |
+|--------|---------|
+| 400 | Bad request / validation error |
+| 401 | Missing, invalid, or expired token |
+| 409 | Conflict (already in queue, has active room, etc.) |
+| 429 | Rate limit exceeded |
+| 500 | Server error |

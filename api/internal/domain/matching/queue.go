@@ -1,16 +1,6 @@
 package matching
 
-import (
-	"time"
-
-	"github.com/google/uuid"
-)
-
-// QueueEntry represents a user waiting in the queue.
-type QueueEntry struct {
-	UserID   uuid.UUID
-	JoinedAt time.Time
-}
+import "github.com/google/uuid"
 
 // MatchNotifier is an interface for notifying when matches are found.
 type MatchNotifier interface {

@@ -6,15 +6,14 @@ Anonymous chat application with real-time matching and messaging.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              FRONTEND (Next.js 15)                         │
+│                              FRONTEND (Next.js 15)                          │
 │                                                                             │
 │  ┌──────────┐  ┌──────────────┐  ┌────────────┐  ┌──────────────────────┐  │
 │  │  Pages    │  │  Contexts    │  │   Hooks    │  │   Libraries          │  │
 │  │ /login    │  │ AuthProvider │  │ useQueue   │  │ api.ts (REST)        │  │
-│  │ /callback │  │ AlertDialog  │  │ useWsChat  │  │ websocket.ts (WS)   │  │
-│  │ /  (main) │  │ AppProvider  │  │ useUserSt. │  │ query-client.ts (RQ)│  │
-│  └──────────┘  └──────────────┘  │ useQueueQ. │  │ cookies.ts          │  │
-│                                   └────────────┘  └──────────────────────┘  │
+│  │ /callback │  │ AlertDialog  │  │ useWsChat  │  │ websocket.ts (WS)    │  │
+│  │ /  (main) │  │ AppProvider  │  │ useUserSt. │  │ query-client.ts (RQ) │  │
+│  └──────────┘  └──────────────┘  └────────────┘  └──────────────────────┘  │
 └────────────────────────┬──────────────────┬─────────────────────────────────┘
                          │ REST (fetch)     │ WebSocket
                          ▼                  ▼
@@ -22,7 +21,7 @@ Anonymous chat application with real-time matching and messaging.
 │                            BACKEND (Go / Gin)                               │
 │                                                                             │
 │  ┌─────────────────────────── Middleware ──────────────────────────────┐    │
-│  │  CORS  →  Rate Limit (Redis)  →  Auth (JWT)                       │    │
+│  │  CORS  →  Rate Limit (Redis)  →  Auth (JWT cookie)                 │    │
 │  └────────────────────────────────────────────────────────────────────┘    │
 │                                                                             │
 │  ┌─────────────┐  ┌─────────────┐  ┌────────────┐  ┌───────────────┐      │
@@ -31,24 +30,26 @@ Anonymous chat application with real-time matching and messaging.
 │         │                │               │                  │               │
 │  ┌──────▼──────┐  ┌──────▼──────┐  ┌─────▼──────┐  ┌───────▼───────┐      │
 │  │ AuthService │  │ UserService │  │QueueService│  │  WebSocket    │      │
-│  │ (OAuth+JWT) │  │             │  │(in-memory) │◄─┤  Hub          │      │
+│  │ (OAuth+JWT) │  │             │  │  (Redis)   │◄─┤  Hub          │      │
 │  └──────┬──────┘  └──────┬──────┘  └─────┬──────┘  │  (goroutine)  │      │
-│         │                │               │          └───────────────┘      │
-│  ┌──────▼──────────────▼───────────────▼────────────────────────┐         │
-│  │              Repositories (GORM)                              │         │
-│  │  UserRepo  │  ProfileRepo  │  RoomRepo  │  MessageRepo       │         │
-│  └──────────────────────────┬───────────────────────────────────┘         │
+│         │                │               │          └───────┬───────┘      │
+│  ┌──────▼──────────────▼───────────────▼──────────────────▼────────┐       │
+│  │              Repositories (GORM)                                 │       │
+│  │  UserRepo  │  ProfileRepo  │  RoomRepo  │  MessageRepo          │       │
+│  └──────────────────────────┬────────────────────────────────────--┘       │
 └─────────────────────────────┼───────────────────────────────────────────────┘
                               │
               ┌───────────────┼───────────────┐
               ▼                               ▼
-     ┌────────────────┐              ┌────────────────┐
-     │  PostgreSQL     │              │    Redis        │
-     │  Users          │              │  rl:{ip}        │
-     │  Profiles       │              │  msgrl:{userID} │
-     │  Rooms          │              │                 │
-     │  Messages       │              │  (fail-open)    │
-     └────────────────┘              └────────────────┘
+     ┌────────────────┐              ┌────────────────────────────┐
+     │  PostgreSQL     │              │  Redis                     │
+     │  Users          │              │  rate limit: rl:{ip}       │
+     │  Profiles       │              │  msg rate:  msgrl:{userID} │
+     │  Rooms          │              │  refresh:   refresh:{hash} │
+     │  Messages       │              │  queue:     queue:waiting  │
+     └────────────────┘              │  pub/sub:   room:{roomID}  │
+                                     │             user:{userID}  │
+                                     └────────────────────────────┘
 ```
 
 ## Tech Stack
@@ -58,8 +59,8 @@ Anonymous chat application with real-time matching and messaging.
 | Frontend | Next.js 15, React 19, React Query, TypeScript |
 | Backend | Go, Gin, GORM, Gorilla WebSocket |
 | Database | PostgreSQL |
-| Cache | Redis (rate limiting, fail-open) |
-| Auth | Google OAuth 2.0, JWT (HTTP-only cookie) |
+| Cache / Broker | Redis (rate limiting, auth tokens, queue, pub/sub) |
+| Auth | Google OAuth 2.0, JWT (HTTP-only `access_token` cookie) |
 | Logging | Zap (via slog interface) |
 
 ## Data Flow
@@ -80,21 +81,41 @@ QueryClientProvider
 |-----|----------|
 | `["user-state"]` | staleTime 30s, shared by AuthProvider + Sidebar |
 | `["queue-status"]` | refetchInterval 5s while in queue |
-| `["queue-stats"]` | on-demand |
-| `["match-stats"]` | on-demand |
 
 ## Queue Matching
 
+The queue is stored in a Redis sorted set (`queue:waiting`, score = join timestamp ms).
+Matching uses a Lua script for atomicity — safe across multiple backend instances.
+
 ```
-User A → POST /queue/join → queues[category][gender]
-User B → POST /queue/join → tryMatch() goroutine
-                              ├── 1. opposite gender
-                              ├── 2. same gender
-                              └── 3. unknown gender
-                             CreateRoom() → NotifyMatch()
-                              ├── WS "match_found" → User A
-                              └── WS "match_found" → User B
+User A → POST /queue/join
+           └── Lua script: ZRANGE queue:waiting → no match → ZADD
+
+User B → POST /queue/join
+           └── Lua script: ZRANGE queue:waiting → finds User A → ZREM User A
+                              └── CreateRoom(A, B)
+                                   └── Publish "match_found" → Redis user:A, user:B
+                                        ├── Hub (instance 1) → WS to User A
+                                        └── Hub (instance 2) → WS to User B
 ```
+
+## WebSocket Hub (Distributed)
+
+Each backend instance runs a Hub goroutine. Instances communicate via Redis pub/sub —
+a single Redis node handles this at any reasonable scale.
+
+```
+Instance 1                  Redis               Instance 2
+  User A in room X  ──publish room:X──►  ──subscribe room:X──►  User B in room X
+                    ◄─subscribe room:X──  ◄─publish room:X──────
+```
+
+**Channel naming:**
+- `room:{roomID}` — broadcast to all clients in a room (excludes sender)
+- `user:{userID}` — direct notification to a specific user (match_found, etc.)
+
+Subscriptions are managed per-instance: a room channel is subscribed when the first
+local client joins and unsubscribed when the last local client leaves.
 
 ## Database Schema
 
@@ -133,3 +154,10 @@ npm run dev
 ### Environment Variables
 
 See `api/.env.example` and `frontend/.env.example` for required configuration.
+
+## Scaling
+
+The backend is stateless with respect to WebSocket sessions — all shared state
+(queue, room membership, rate limits, auth tokens) lives in Redis. You can run
+multiple backend instances behind a load balancer with a single Redis node.
+Redis Cluster or Sentinel is only needed if Redis itself becomes a bottleneck.

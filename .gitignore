@@ -30,6 +30,7 @@ api/*.test
 api/*.out
 api/go.work
 api/.env
+api/config/config.local.yaml
 api/build-errors.log
 
 # ===== GENERAL =====

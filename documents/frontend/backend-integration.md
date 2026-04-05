@@ -1,123 +1,111 @@
-# Frontend Backend Integration
+# Frontend ↔ Backend Integration
 
-## Authentication Flow
+## Authentication
 
-### Overview
+The backend uses HTTP-only cookies — no Authorization headers needed.
+Include `credentials: "include"` on every fetch.
 
--   Backend uses HTTP-only cookies for JWT token storage
--   Frontend uses `credentials: "include"` for all API calls
--   No need to manually handle Authorization headers
+### Flow
 
-### Login Process
+1. User clicks Login → frontend redirects to `/auth/google`
+2. Google OAuth handled by backend
+3. Backend sets `access_token` + `refresh_token` cookies, redirects to `/callback`
+4. Frontend reads `temp_user_data` cookie (60 s TTL) to get user info
+5. Frontend calls `GET /user/state` for full user state
 
-1. User clicks "Login with Google"
-2. Redirected to `/auth/google` (backend)
-3. Google OAuth callback handled by backend
-4. Backend sets HTTP-only JWT cookie
-5. Redirected to frontend `/callback` page
-6. Frontend reads user data from temporary cookie
-7. User is authenticated
+### Token refresh
 
-### API Calls
+When a request returns `401 { "code": "token_expired" }`:
+- Call `POST /auth/refresh` (uses the `refresh_token` cookie automatically)
+- Backend sets a new `access_token` cookie
+- Retry the original request
 
-All authenticated API calls should include:
+---
 
-```javascript
-{
-	credentials: "include"; // Automatically includes HTTP-only JWT cookie
+## API Calls
+
+```typescript
+// All calls need credentials: "include"
+const response = await fetch(`${API_URL}/user/state`, {
+  credentials: "include",
+});
+```
+
+### Get user state
+```typescript
+GET /user/state
+// returns { user, room, messages, is_new_user }
+```
+
+### Update profile
+```typescript
+PUT /profile
+body: {
+  nickname?: string,
+  age?: number,
+  is_male?: boolean,
+  is_hidden?: boolean,
 }
 ```
 
-## API Integration
-
-### User State
-
-```javascript
-const response = await fetch("http://localhost:8080/user/state", {
-	credentials: "include",
-});
-
-if (response.ok) {
-	const userState = await response.json();
-	// userState.user contains user info
-	// userState.user.profile contains profile data
-}
+### Queue
+```typescript
+POST /queue/join   // join queue, match comes via WebSocket
+POST /queue/leave  // leave queue
 ```
 
-### Update Profile
-
-```javascript
-const response = await fetch("http://localhost:8080/profile", {
-	method: "PUT",
-	headers: {
-		"Content-Type": "application/json",
-	},
-	credentials: "include",
-	body: JSON.stringify({
-		age: 25,
-		city: "Hanoi",
-		is_male: true,
-		is_hidden: false,
-	}),
-});
+### Leave room
+```typescript
+POST /room/leave
 ```
 
 ### Logout
-
-```javascript
-const response = await fetch("http://localhost:8080/auth/logout", {
-	method: "POST",
-	credentials: "include",
-});
+```typescript
+POST /auth/logout
 ```
 
-## Components Integration
+---
 
-### Auth Context
+## WebSocket
 
--   Manages authentication state
--   Handles login/logout
--   Stores user information in client-side cookie
+Connect to `GET /ws` — the `access_token` cookie is checked on upgrade.
 
-### App Sidebar
+### Key events to handle (server → client)
 
--   Loads user data from `/user/state`
--   Handles profile visibility toggle
--   Opens settings dialog
+| Event | When |
+|-------|------|
+| `connected` | WS connection established |
+| `match_found` | Matched with a partner, contains `room_id` |
+| `room_rejoined` | Auto-rejoin after reconnect |
+| `receive_message` | New message from partner |
+| `partner_typing` | Partner started/stopped typing |
+| `partner_left` | Partner left the room |
+| `error` | e.g. `RATE_LIMIT_EXCEEDED` |
 
-### User Settings Dialog
+### Events to send (client → server)
 
--   Updates age, gender, city
--   Calls `/profile` endpoint
--   Shows success/error messages
+| Event | When |
+|-------|------|
+| `send_message` | User sends a message |
+| `typing` | User starts/stops typing |
+| `leave_room` | User leaves the room |
+| `join_room` | Explicit room join (usually not needed — auto-rejoin handles it) |
+
+---
 
 ## Error Handling
 
-### Network Errors
+| HTTP Status | Action |
+|-------------|--------|
+| 401 `no_token` | Redirect to `/login` |
+| 401 `token_expired` | Refresh token, retry |
+| 401 `account_suspended` | Show ban message, redirect to `/login` |
+| 429 | Exponential backoff, show message to user |
+| 5xx | Show generic error, log to console |
 
--   Graceful fallback to mock data
--   Console logging for debugging
--   User-friendly error messages
+---
 
-### Authentication Errors
+## CORS
 
--   Automatic logout on 401 responses
--   Redirect to login page
--   Clear local state
-
-## Development Notes
-
-### CORS
-
--   Backend configured for `http://localhost:3000`
--   Includes credentials in CORS headers
-
-### Cookies
-
--   JWT token: HTTP-only cookie (secure)
--   User info: Client-side cookie (for UI state)
-
-### Environment
-
--   Backend: `http://localhost:8080`
--   Frontend: `http://localhost:3000`
+Backend allows the configured `CLIENT_URL` with `credentials: true`.
+`SameSite=None; Secure` cookies are used in production. `SameSite=Lax` in development.

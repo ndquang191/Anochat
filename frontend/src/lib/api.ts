@@ -3,19 +3,25 @@ import type { ApiResponse, UserStateResponse, ProfileDTO, BannedWordDTO, ReportD
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
-let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;
 
-async function refreshAccessToken(): Promise<boolean> {
-	try {
-		const response = await fetch(`${API_BASE}/auth/refresh`, {
+function clearAuthCookies() {
+	const past = "Thu, 01 Jan 1970 00:00:00 UTC";
+	document.cookie = `user_info=;expires=${past};path=/;`;
+	document.cookie = `has_session=;expires=${past};path=/;`;
+}
+
+function doRefresh(): Promise<boolean> {
+	if (!refreshPromise) {
+		refreshPromise = fetch(`${API_BASE}/auth/refresh`, {
 			method: "POST",
 			credentials: "include",
-		});
-		return response.ok;
-	} catch {
-		return false;
+		})
+			.then((r) => r.ok)
+			.catch(() => false)
+			.finally(() => { refreshPromise = null; });
 	}
+	return refreshPromise;
 }
 
 async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
@@ -33,44 +39,45 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 	if (response.status === 401) {
 		const errorData = await response.json().catch(() => ({}));
 
-		if (errorData.code === "token_expired") {
-			// Prevent concurrent refresh calls
-			if (!isRefreshing) {
-				isRefreshing = true;
-				refreshPromise = refreshAccessToken();
-			}
-
-			const refreshed = await refreshPromise;
-			isRefreshing = false;
-			refreshPromise = null;
-
-			if (refreshed) {
-				// Retry original request with new access token
-				const retryResponse = await fetch(`${API_BASE}${endpoint}`, config);
-				if (retryResponse.ok) {
-					return retryResponse.json();
-				}
-			}
-
-			// Refresh failed — redirect to login
-			window.location.href = "/login";
-			throw new Error("Session expired");
-		}
-
 		if (errorData.code === "account_suspended") {
 			toast.error("Tài khoản đã bị khóa");
+			clearAuthCookies();
 			window.location.href = "/login";
-			throw new Error("Account suspended");
+			return new Promise(() => {}); // halt — page is navigating
 		}
 
-		const errorMessage = errorData.message || errorData.error || "Authentication required";
-		toast.error(errorMessage);
-		throw new Error(errorMessage);
+		const refreshed = await doRefresh();
+
+		if (refreshed) {
+			const retryResponse = await fetch(`${API_BASE}${endpoint}`, config);
+
+			if (retryResponse.ok) {
+				return retryResponse.json();
+			}
+
+			// Retry failed with another 401 — session is truly gone
+			if (retryResponse.status === 401) {
+				clearAuthCookies();
+				window.location.href = "/login";
+				return new Promise(() => {}); // halt — page is navigating
+			}
+
+			// Retry failed for a non-auth reason — surface the error normally
+			const retryError = await retryResponse.json().catch(() => ({}));
+			const retryMessage = retryError.message || `HTTP error! status: ${retryResponse.status}`;
+			toast.error(retryMessage);
+			throw new Error(retryMessage);
+		}
+
+		// Refresh failed — clear cookies and go to login
+		clearAuthCookies();
+		window.location.href = "/login";
+		return new Promise(() => {}); // halt — page is navigating
 	}
 
 	if (!response.ok) {
 		const errorData = await response.json().catch(() => ({}));
-		const errorMessage = errorData.message || `HTTP error! status: ${response.status}`;
+		const errorMessage = errorData.message || errorData.error || `HTTP error! status: ${response.status}`;
 		toast.error(errorMessage);
 		throw new Error(errorMessage);
 	}
@@ -80,27 +87,15 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 
 export const queueAPI = {
 	join: async () => {
-		try {
-			const result = await apiCall<{ message: string }>("/queue/join", {
-				method: "POST",
-			});
-			toast.success("Đã tham gia hàng chờ thành công!");
-			return result;
-		} catch (error) {
-			throw error;
-		}
+		const result = await apiCall<{ message: string }>("/queue/join", { method: "POST" });
+		toast.success("Đã tham gia hàng chờ thành công!");
+		return result;
 	},
 
 	leave: async () => {
-		try {
-			const result = await apiCall<{ message: string }>("/queue/leave", {
-				method: "POST",
-			});
-			toast.success("Đã rời khỏi hàng chờ!");
-			return result;
-		} catch (error) {
-			throw error;
-		}
+		const result = await apiCall<{ message: string }>("/queue/leave", { method: "POST" });
+		toast.success("Đã rời khỏi hàng chờ!");
+		return result;
 	},
 };
 
@@ -115,30 +110,20 @@ export const userAPI = {
 		is_male?: boolean | null;
 		is_hidden?: boolean;
 	}) => {
-		try {
-			const result = await apiCall<ProfileDTO>("/profile", {
-				method: "PUT",
-				body: JSON.stringify(data),
-			});
-			toast.success("Cập nhật thông tin thành công!");
-			return result;
-		} catch (error) {
-			throw error;
-		}
+		const result = await apiCall<ProfileDTO>("/profile", {
+			method: "PUT",
+			body: JSON.stringify(data),
+		});
+		toast.success("Cập nhật thông tin thành công!");
+		return result;
 	},
 };
 
 export const authAPI = {
 	logout: async () => {
-		try {
-			const result = await apiCall<{ message: string }>("/auth/logout", {
-				method: "POST",
-			});
-			toast.success("Đăng xuất thành công!");
-			return result;
-		} catch (error) {
-			throw error;
-		}
+		const result = await apiCall<{ message: string }>("/auth/logout", { method: "POST" });
+		toast.success("Đăng xuất thành công!");
+		return result;
 	},
 
 	getGoogleAuthUrl: () => {
@@ -173,14 +158,8 @@ export const moderationAPI = {
 
 export const roomAPI = {
 	leaveRoom: async () => {
-		try {
-			const result = await apiCall<{ success: boolean; message: string }>("/room/leave", {
-				method: "POST",
-			});
-			toast.success("Đã rời phòng chat!");
-			return result;
-		} catch (error) {
-			throw error;
-		}
+		const result = await apiCall<{ success: boolean; message: string }>("/room/leave", { method: "POST" });
+		toast.success("Đã rời phòng chat!");
+		return result;
 	},
 };

@@ -253,6 +253,8 @@
 @layer base {
 	* {
 		@apply border-border outline-ring/50;
+		scrollbar-width: thin;
+		scrollbar-color: var(--border) transparent;
 	}
 	html,
 	body {
@@ -261,4 +263,20 @@
 	body > div {
 		height: 100vh;
 	}
+}
+
+/* Webkit scrollbar — thin, rounded, theme-aware */
+::-webkit-scrollbar {
+	width: 4px;
+	height: 4px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background: var(--border);
+	border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: var(--muted-foreground);
 }

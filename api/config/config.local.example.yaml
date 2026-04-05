@@ -1,0 +1,14 @@
+# Local development overrides — copy to config.local.yaml and fill in real values
+# This file IS committed. config.local.yaml is NOT.
+
+database:
+  host: your-db-host
+  user: your-db-user
+  password: your-db-password
+  name: your-db-name
+  ssl_mode: require
+
+oauth:
+  jwt_secret: change-me-use-a-long-random-string
+  google_client_id: your-google-client-id
+  google_client_secret: your-google-client-secret

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -150,6 +149,4 @@ func TestLeaveCurrentRoom_NoActiveRoom(t *testing.T) {
 
 	err := svc.LeaveCurrentRoom(context.Background(), userID)
 	assert.Error(t, err)
-
-	_ = errors.New("") // used import
 }

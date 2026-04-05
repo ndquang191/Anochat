@@ -1,0 +1,30 @@
+server:
+  port: "8080"
+  env: development
+  client_url: http://localhost:3000
+
+database:
+  host: localhost
+  port: "5432"
+  name: anochat
+  ssl_mode: disable
+
+redis:
+  url: localhost:6379
+  db: 0
+
+oauth:
+  redirect_url: http://localhost:8080/auth/callback
+  access_token_expiry: 15m
+  refresh_token_expiry: 720h
+
+chat:
+  message_rate_limit: 10
+  max_message_length: 1000
+
+user:
+  min_age: 10
+  max_age: 99
+
+security:
+  rate_limit: 100

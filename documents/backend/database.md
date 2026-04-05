@@ -1,81 +1,99 @@
-## Anonymous Chat App – Database Schema
+# Database Schema
 
-> Thiết kế này ưu tiên đơn giản, rõ ràng, dễ mở rộng, phục vụ cho hệ thống backend NestJS sử dụng Supabase (PostgreSQL) và Drizzle ORM.
+PostgreSQL via GORM. All UUIDs default to `gen_random_uuid()`.
 
 ---
 
-### 📍 1. `users`
-
-Lưu thông tin xác thực từ Google login.
+## `users`
 
 ```sql
-id             UUID (PK)
-name           TEXT (nullable)
-email          TEXT (nullable)
-avatar_url     TEXT (nullable)
-is_active      BOOLEAN DEFAULT false
-is_deleted     BOOLEAN DEFAULT false
-created_at     TIMESTAMP DEFAULT now()
+id          UUID        PK, default gen_random_uuid()
+email       TEXT        nullable
+name        TEXT        nullable
+avatar_url  TEXT        nullable
+is_active   BOOLEAN     default true
+is_deleted  BOOLEAN     default false
+created_at  TIMESTAMP   autoCreateTime
 ```
 
 ---
 
-### 📍 2. `profiles`
+## `profiles`
 
-Thông tin ẩn danh của người dùng.
+One-to-one with `users`. Stores optional anonymous identity info.
 
 ```sql
-user_id         UUID (PK, FK -> users.id)
-is_male         BOOLEAN
-age             INTEGER (nullable)
-city            TEXT (nullable)
-is_hidden   BOOLEAN DEFAULT false
-updated_at      TIMESTAMP DEFAULT now()
+user_id    UUID        PK, FK → users.id (CASCADE)
+nickname   TEXT        nullable
+is_male    BOOLEAN     nullable
+age        INTEGER     nullable
+is_hidden  BOOLEAN     default false
+updated_at TIMESTAMP   autoUpdateTime
 ```
 
 ---
 
-### 📍 3. `rooms`
+## `rooms`
 
-Thông tin phòng chat giữa 2 người.
+A chat session between exactly two users.
 
 ```sql
-id                           UUID (PK)
-user1_id                     UUID (FK -> users.id)
-user2_id                     UUID (FK -> users.id)
-category                     TEXT DEFAULT 'polite'
-created_at                   TIMESTAMP DEFAULT now()
-ended_at                     TIMESTAMP (nullable)
-is_sensitive                 BOOLEAN DEFAULT false
-user1_last_read_message_id   UUID (nullable)
-user2_last_read_message_id   UUID (nullable)
-is_deleted                   BOOLEAN DEFAULT false
+id         UUID        PK, default gen_random_uuid()
+user1_id   UUID        FK → users.id (CASCADE)
+user2_id   UUID        FK → users.id (CASCADE)
+created_at TIMESTAMP   autoCreateTime
+ended_at   TIMESTAMP   nullable — set when either user leaves
+```
+
+A room is **active** when `ended_at IS NULL`.
+
+---
+
+## `messages`
+
+```sql
+id         UUID        PK, default gen_random_uuid()
+room_id    UUID        FK → rooms.id (CASCADE)
+sender_id  UUID        FK → users.id (CASCADE)
+content    TEXT        not null
+created_at TIMESTAMP   autoCreateTime
+```
+
+Messages are deleted by a cleanup goroutine shortly after the room ends.
+
+---
+
+## `banned_words`
+
+Words used by the moderation service to auto-report messages at send time.
+
+```sql
+id          UUID        PK
+word        TEXT        unique, not null
+category    TEXT        default 'General'
+created_by  UUID        FK → users.id
+created_at  TIMESTAMP   autoCreateTime
 ```
 
 ---
 
-### 📍 4. `messages`
+## `reports`
 
-Lưu tin nhắn của từng phòng.
+Auto-generated or user-submitted reports.
 
 ```sql
-id           UUID (PK)
-room_id      UUID (FK -> rooms.id)
-sender_id    UUID (FK -> users.id)
-content      TEXT
-created_at   TIMESTAMP DEFAULT now()
+id               UUID        PK
+reporter_id      UUID        FK → users.id
+reported_user_id UUID        FK → users.id (CASCADE)
+room_id          UUID        FK → rooms.id
+status           TEXT        default 'pending'
+created_at       TIMESTAMP   autoCreateTime
 ```
 
 ---
 
-### ✅ Ghi chú bổ sung
+## Notes
 
--   Không có bảng `queues` → hàng chờ được xử lý bằng RAM/WebSocket
--   `is_sensitive` trong `rooms` dùng để đánh dấu phòng nên được giữ lại sau khi phân tích nội dung.
--   `sensitiveKeywords` được định nghĩa trong `chat.config.ts`, không lưu trong DB.
--   Soft delete (`is_deleted`) áp dụng cho các bảng cần khả năng khôi phục hoặc lọc.
--   Enum như `status`, `category` nên định nghĩa rõ trong Drizzle bằng `pg.enum()`.
-
----
-
-Bạn có thể dùng schema này làm nền tảng để tạo Drizzle migration hoặc generate types.
+- No `queues` table — the matchmaking queue is a Redis sorted set (`queue:waiting`, score = join timestamp ms).
+- `rooms` has no `category`, `is_sensitive`, or `is_deleted` columns.
+- `profiles` has no `city` column — removed in an earlier refactor.

@@ -10,7 +10,12 @@
       "mcp__plugin_serena_serena__read_file",
       "mcp__plugin_serena_serena__find_symbol",
       "mcp__plugin_serena_serena__search_for_pattern",
-      "mcp__plugin_serena_serena__find_file"
+      "mcp__plugin_serena_serena__find_file",
+      "WebFetch(domain:github.com)",
+      "mcp__context7__resolve-library-id",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebSearch",
+      "mcp__context7__query-docs"
     ]
   }
 }

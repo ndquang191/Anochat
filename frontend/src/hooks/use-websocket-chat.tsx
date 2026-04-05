@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { getWebSocketClient, ChatMessage, WebSocketMessage } from "@/lib/websocket";
 import { useAuth } from "@/contexts/auth";
 import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
+import { playMessageSound, playLeaveSound } from "@/hooks/use-sound-notification";
 
 export interface UseWebSocketChatProps {
 	userId: string;
@@ -16,7 +17,6 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 	const [messages, setMessages] = useState<ChatMessage[]>(initialMessages ?? []);
 	const [isConnected, setIsConnected] = useState(false);
 	const [roomId, setRoomId] = useState<string | null>(null);
-	const [isPartnerTyping, setIsPartnerTyping] = useState(false);
 	const wsClient = useRef(getWebSocketClient());
 	const userIdRef = useRef(userId);
 	const onMatchFoundRef = useRef(onMatchFound);
@@ -95,7 +95,6 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 			setRoomId(room_id);
 			setMessages([]);
 			invalidateUserState();
-
 			if (onMatchFoundRef.current) {
 				onMatchFoundRef.current(room_id);
 			}
@@ -109,6 +108,9 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 
 		const handleReceiveMessage = (message: WebSocketMessage) => {
 			const chatMessage = message.payload as unknown as ChatMessage;
+			if (chatMessage.sender_id !== userIdRef.current) {
+				playMessageSound();
+			}
 			setMessages((prev) => {
 				if (prev.some((m) => m.id === chatMessage.id)) {
 					return prev;
@@ -121,19 +123,11 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 			setRoomId(null);
 			setMessages([]);
 			hasJoinedRoomRef.current = null;
+			playLeaveSound();
 			if (onPartnerLeftRef.current) {
 				onPartnerLeftRef.current();
 			}
 			invalidateUserState();
-		};
-
-		const handlePartnerTyping = (message: WebSocketMessage) => {
-			const is_typing = message.payload.is_typing as boolean;
-			setIsPartnerTyping(is_typing);
-
-			if (is_typing) {
-				setTimeout(() => setIsPartnerTyping(false), 3000);
-			}
 		};
 
 		const handleRoomLeft = () => {
@@ -149,7 +143,6 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 		client.on("room_rejoined", handleRoomRejoined);
 		client.on("receive_message", handleReceiveMessage);
 		client.on("partner_left", handlePartnerLeft);
-		client.on("partner_typing", handlePartnerTyping);
 		client.on("room_left", handleRoomLeft);
 
 		return () => {
@@ -159,7 +152,6 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 			client.off("room_rejoined", handleRoomRejoined);
 			client.off("receive_message", handleReceiveMessage);
 			client.off("partner_left", handlePartnerLeft);
-			client.off("partner_typing", handlePartnerTyping);
 			client.off("room_left", handleRoomLeft);
 		};
 	}, [userId, invalidateUserState]);
@@ -218,20 +210,6 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 		invalidateUserState();
 	}, [roomId, isConnected, invalidateUserState]);
 
-	const sendTypingIndicator = useCallback(
-		(isTyping: boolean) => {
-			if (!roomId || !isConnected) {
-				return;
-			}
-
-			const client = wsClient.current;
-			client.send("typing", {
-				is_typing: isTyping,
-			});
-		},
-		[roomId, isConnected]
-	);
-
 	return {
 		messages,
 		sendMessage,
@@ -239,7 +217,5 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 		roomId,
 		leaveRoom,
 		joinRoom,
-		isPartnerTyping,
-		sendTypingIndicator,
 	};
 }

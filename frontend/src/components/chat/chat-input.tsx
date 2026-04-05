@@ -1,58 +1,47 @@
 "use client";
 
-import { useState, useCallback, useRef, FormEvent, ChangeEvent } from "react";
+import { useState, useCallback, useRef, useEffect, FormEvent, ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { convertEmotes } from "@/lib/emotes";
 
 interface ChatInputProps {
 	onSendMessage: (message: string) => void;
-	onTypingChange: (isTyping: boolean) => void;
 	disabled: boolean;
 }
 
-const TYPING_TIMEOUT = 2000;
-
-export function ChatInput({ onSendMessage, onTypingChange, disabled }: ChatInputProps) {
+export function ChatInput({ onSendMessage, disabled }: ChatInputProps) {
 	const [message, setMessage] = useState("");
-	const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+	const inputRef = useRef<HTMLInputElement>(null);
+
+	useEffect(() => {
+		const handleFocus = () => inputRef.current?.focus();
+		window.addEventListener("focus", handleFocus);
+		return () => window.removeEventListener("focus", handleFocus);
+	}, []);
 
 	const handleSubmit = useCallback(
 		(e: FormEvent) => {
 			e.preventDefault();
 			if (message.trim() === "" || disabled) return;
 
-			onSendMessage(message);
+			onSendMessage(convertEmotes(message));
 			setMessage("");
-			onTypingChange(false);
 		},
-		[message, disabled, onSendMessage, onTypingChange]
+		[message, disabled, onSendMessage]
 	);
 
-	const handleChange = useCallback(
-		(e: ChangeEvent<HTMLInputElement>) => {
-			setMessage(e.target.value);
-
-			if (!disabled && e.target.value.length > 0) {
-				onTypingChange(true);
-
-				if (typingTimeoutRef.current) {
-					clearTimeout(typingTimeoutRef.current);
-				}
-
-				typingTimeoutRef.current = setTimeout(() => {
-					onTypingChange(false);
-				}, TYPING_TIMEOUT);
-			}
-		},
-		[disabled, onTypingChange]
-	);
+	const handleChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+		setMessage(e.target.value);
+	}, []);
 
 	return (
 		<form
 			onSubmit={handleSubmit}
-			className="absolute bottom-0 left-0 right-0 flex items-center gap-2 border-t p-4 bg-background"
+			className="flex items-center gap-2 border-t p-4 bg-background shrink-0"
 		>
 			<Input
+				ref={inputRef}
 				placeholder="Nhập tin nhắn của bạn..."
 				value={message}
 				onChange={handleChange}

@@ -9,11 +9,17 @@ import (
 )
 
 func Logger(cfg *config.Config) *zap.Logger {
-	var zapLogger *zap.Logger
+	var (
+		zapLogger *zap.Logger
+		err       error
+	)
 	if cfg.IsProduction() {
-		zapLogger, _ = zap.NewProduction()
+		zapLogger, err = zap.NewProduction()
 	} else {
-		zapLogger, _ = zap.NewDevelopment()
+		zapLogger, err = zap.NewDevelopment()
+	}
+	if err != nil {
+		panic("failed to initialize logger: " + err.Error())
 	}
 
 	slog.SetDefault(slog.New(zapslog.NewHandler(zapLogger.Core())))

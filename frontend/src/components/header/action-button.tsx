@@ -4,7 +4,6 @@ import React from "react";
 import { RotateCw, LogOut } from "lucide-react";
 import { useQueue } from "@/hooks/use-queue";
 import { useAuth } from "@/contexts/auth";
-import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
 import { toast } from "sonner";
 import { getWebSocketClient } from "@/lib/websocket";
 
@@ -17,7 +16,6 @@ interface ButtonConfig {
 
 export function ActionButton() {
 	const { room, inQueue } = useAuth();
-	const invalidateUserState = useInvalidateUserState();
 	const { isLoading, joinQueue, leaveQueue } = useQueue();
 
 	const inRoom = !!room;
@@ -29,7 +27,6 @@ export function ActionButton() {
 			if (inRoom) {
 				const client = getWebSocketClient();
 				client.send("leave_room", { room_id: room.id });
-				invalidateUserState();
 				toast.success("Đã rời phòng chat");
 				return;
 			}

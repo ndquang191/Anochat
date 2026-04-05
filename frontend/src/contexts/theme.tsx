@@ -1,12 +1,15 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { setSoundEnabled } from "@/hooks/use-sound-notification";
 
 export type Theme = "blue" | "dark" | "pink";
 
 interface ThemeContextType {
 	theme: Theme;
 	setTheme: (theme: Theme) => void;
+	soundEnabled: boolean;
+	toggleSound: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | null>(null);
@@ -20,13 +23,19 @@ function applyTheme(theme: Theme) {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
 	const [theme, setThemeState] = useState<Theme>("blue");
+	const [soundEnabled, setSoundEnabledState] = useState(true);
 
 	useEffect(() => {
 		try {
-			const saved = localStorage.getItem("theme") as Theme | null;
-			if (saved === "dark" || saved === "pink" || saved === "blue") {
-				setThemeState(saved);
-				applyTheme(saved);
+			const savedTheme = localStorage.getItem("theme") as Theme | null;
+			if (savedTheme === "dark" || savedTheme === "pink" || savedTheme === "blue") {
+				setThemeState(savedTheme);
+				applyTheme(savedTheme);
+			}
+			const savedSound = localStorage.getItem("soundEnabled");
+			if (savedSound === "false") {
+				setSoundEnabledState(false);
+				setSoundEnabled(false);
 			}
 		} catch {}
 	}, []);
@@ -37,8 +46,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 		try { localStorage.setItem("theme", t); } catch {}
 	};
 
+	const toggleSound = () => {
+		const next = !soundEnabled;
+		setSoundEnabledState(next);
+		setSoundEnabled(next);
+		try { localStorage.setItem("soundEnabled", String(next)); } catch {}
+	};
+
 	return (
-		<ThemeContext.Provider value={{ theme, setTheme }}>
+		<ThemeContext.Provider value={{ theme, setTheme, soundEnabled, toggleSound }}>
 			{children}
 		</ThemeContext.Provider>
 	);

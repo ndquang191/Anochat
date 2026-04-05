@@ -26,11 +26,6 @@ func AuthMiddleware(authService *service.AuthService, userRepo repository.UserRe
 			tokenString, _ = c.Cookie("access_token")
 		}
 
-		// Fallback to legacy cookie name for backward compatibility
-		if tokenString == "" {
-			tokenString, _ = c.Cookie("jwt_token")
-		}
-
 		if tokenString == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Bạn cần đăng nhập để tiếp tục", "code": "no_token"})
 			c.Abort()

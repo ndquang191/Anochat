@@ -2,31 +2,35 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
-	const token = request.cookies.get("access_token")?.value || request.cookies.get("jwt_token")?.value;
-	const pathname = request.nextUrl.pathname;
+    // has_session: non-HttpOnly, lives as long as refresh token (set by backend)
+    // access_token: fallback for sessions created before has_session was introduced
+    const token =
+        request.cookies.get("has_session")?.value ||
+        request.cookies.get("access_token")?.value;
+    const pathname = request.nextUrl.pathname;
 
-	const publicPaths = ["/login", "/callback", "/error"];
-	const isPublicPath = publicPaths.some((path) => pathname.startsWith(path));
+    const publicPaths = ["/login", "/callback", "/error"];
+    const isPublicPath = publicPaths.some((path) => pathname.startsWith(path));
 
-	if (token && pathname === "/login") {
-		return NextResponse.redirect(new URL("/", request.url));
-	}
+    const isLoggedIn = !!token;
 
-	if (isPublicPath) {
-		return NextResponse.next();
-	}
+    if (isLoggedIn && pathname === "/login") {
+        return NextResponse.redirect(new URL("/", request.url));
+    }
 
-	if (!token) {
-		const loginUrl = new URL("/login", request.url);
-		loginUrl.searchParams.set("redirect", pathname);
-		return NextResponse.redirect(loginUrl);
-	}
+    if (isPublicPath) {
+        return NextResponse.next();
+    }
 
-	return NextResponse.next();
+    if (!isLoggedIn) {
+        const loginUrl = new URL("/login", request.url);
+        loginUrl.searchParams.set("redirect", pathname);
+        return NextResponse.redirect(loginUrl);
+    }
+
+    return NextResponse.next();
 }
 
 export const config = {
-	matcher: [
-		"/((?!api|_next/static|_next/image|favicon.ico).*)",
-	],
+    matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };

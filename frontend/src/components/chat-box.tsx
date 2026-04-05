@@ -16,7 +16,7 @@ export default function ChatBox() {
 	const { user, messages: initialMessages } = useAuth();
 	const [connectionTimedOut, setConnectionTimedOut] = useState(false);
 
-	const { messages, sendMessage, isConnected, roomId, sendTypingIndicator } =
+	const { messages, sendMessage, isConnected, roomId } =
 		useWebSocketChat({
 			userId: user?.id || "",
 			initialMessages: initialMessages as ChatMessage[],
@@ -65,7 +65,6 @@ export default function ChatBox() {
 			<ChatMessages messages={messages} currentUserId={user.id} />
 			<ChatInput
 				onSendMessage={sendMessage}
-				onTypingChange={sendTypingIndicator}
 				disabled={!roomId}
 			/>
 		</div>

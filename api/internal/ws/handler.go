@@ -23,8 +23,6 @@ func (c *Client) handleMessage(message []byte) {
 		c.handleJoinRoom(wsMsg.Payload)
 	case "leave_room":
 		c.handleLeaveRoom(wsMsg.Payload)
-	case "typing":
-		c.handleTyping(wsMsg.Payload)
 	default:
 		slog.Warn("Unknown message type", "type", wsMsg.Type, "user_id", c.UserID)
 	}
@@ -80,7 +78,11 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 		},
 	}
 
-	msgBytes, _ := json.Marshal(broadcastMsg)
+	msgBytes, err := json.Marshal(broadcastMsg)
+	if err != nil {
+		slog.Error("Failed to marshal broadcast message", "error", err, "user_id", c.UserID, "room_id", roomID)
+		return
+	}
 	c.Hub.broadcast <- &BroadcastMessage{
 		RoomID:  roomID,
 		Message: msgBytes,
@@ -160,30 +162,4 @@ func (c *Client) handleLeaveRoom(payload map[string]interface{}) {
 	c.SendJSON(confirmation)
 
 	slog.Info("User left room", "user_id", c.UserID, "room_id", roomID)
-}
-
-func (c *Client) handleTyping(payload map[string]interface{}) {
-	if c.RoomID == nil {
-		return
-	}
-
-	isTyping, ok := payload["is_typing"].(bool)
-	if !ok {
-		return
-	}
-
-	typingMsg := WSMessage{
-		Type: "partner_typing",
-		Payload: map[string]interface{}{
-			"is_typing": isTyping,
-			"user_id":   c.UserID.String(),
-		},
-	}
-
-	msgBytes, _ := json.Marshal(typingMsg)
-	c.Hub.broadcast <- &BroadcastMessage{
-		RoomID:  *c.RoomID,
-		Message: msgBytes,
-		Exclude: c.UserID,
-	}
 }
