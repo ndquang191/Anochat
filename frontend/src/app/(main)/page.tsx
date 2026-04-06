@@ -118,7 +118,7 @@ const Page = () => {
 				<RippleEffect active={inQueue} onClick={handleCTA} />
 				<div className="text-center space-y-1">
 					<h2 className="text-sm md:text-base font-semibold">
-						{inQueue ? "Đang tìm kiếm" : "Chưa có cuộc trò chuyện"}
+						{inQueue ? "App còn mới nên bạn chịu khó đợi chút nhé" : "Chưa có cuộc trò chuyện"}
 					</h2>
 				</div>
 			</div>
