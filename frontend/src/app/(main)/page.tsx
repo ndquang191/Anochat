@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
-import Chatbox from "@/components/chat-box";
+import LocalizedChatBox from "@/components/localized-chat-box";
 import { AdminPanel } from "@/components/admin/admin-panel";
 import { useAuth } from "@/contexts/auth";
 import { useAdmin } from "@/contexts/admin";
+import { useLanguage } from "@/contexts/theme";
 import { Loader2, MessageCircle } from "lucide-react";
 import { getWebSocketClient } from "@/lib/websocket";
 import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
@@ -14,22 +15,19 @@ import { playMatchSound } from "@/hooks/use-sound-notification";
 
 function RippleEffect({ active, onClick }: { active: boolean; onClick: () => void }) {
 	return (
-		<div className="relative flex items-center justify-center w-72 h-72">
+		<div className="relative flex h-72 w-72 items-center justify-center">
 			{active ? (
 				<>
-					{/* Ping layer — fast fill pulse behind button */}
-					<div className="absolute w-16 h-16 rounded-full bg-primary/20 animate-ping" />
-					{/* Expanding border rings — start at button size */}
+					<div className="absolute h-16 w-16 rounded-full bg-primary/20 animate-ping" />
 					{[0, 1, 2, 3].map((i) => (
 						<div
 							key={i}
-							className="absolute w-16 h-16 rounded-full border border-primary/60 animate-ripple"
+							className="absolute h-16 w-16 rounded-full border border-primary/60 animate-ripple"
 							style={{ animationDelay: `${i * 0.9}s` }}
 						/>
 					))}
 				</>
 			) : (
-				/* Static radar rings */
 				<>
 					{[28, 44, 60].map((size) => (
 						<div
@@ -42,10 +40,9 @@ function RippleEffect({ active, onClick }: { active: boolean; onClick: () => voi
 			)}
 			<button
 				onClick={onClick}
-				className="relative z-10 w-16 h-16 rounded-full bg-primary hover:bg-primary/85 active:scale-95 transition-all duration-150 cursor-pointer flex items-center justify-center shadow-lg"
-				title={active ? "Huỷ tìm kiếm" : "Kết nối"}
+				className="relative z-10 flex h-16 w-16 cursor-pointer items-center justify-center rounded-full bg-primary shadow-lg transition-all duration-150 hover:bg-primary/85 active:scale-95"
 			>
-				<MessageCircle className="w-7 h-7 text-primary-foreground" />
+				<MessageCircle className="h-7 w-7 text-primary-foreground" />
 			</button>
 		</div>
 	);
@@ -54,11 +51,11 @@ function RippleEffect({ active, onClick }: { active: boolean; onClick: () => voi
 const Page = () => {
 	const { user, room, inQueue, loading: authLoading } = useAuth();
 	const { isAdminOpen } = useAdmin();
+	const { t } = useLanguage();
 	const invalidateUserState = useInvalidateUserState();
 	const isAdmin = user?.id === AdminUserID;
 	const { joinQueue, leaveQueue, isLoading: isQueueLoading } = useQueue();
 
-	// Ensure WebSocket is connected when in queue (e.g. after page refresh while inQueue=true)
 	useEffect(() => {
 		if (!user || !inQueue) return;
 		const client = getWebSocketClient();
@@ -67,7 +64,6 @@ const Page = () => {
 		}
 	}, [user, inQueue]);
 
-	// Handle match_found at page level so it works even when ChatBox is unmounted (inQueue=true)
 	useEffect(() => {
 		const client = getWebSocketClient();
 		const handleMatchFound = () => {
@@ -88,12 +84,12 @@ const Page = () => {
 
 	if (authLoading) {
 		return (
-			<div className="h-full w-full flex items-center justify-center">
-				<div className="text-center space-y-4">
+			<div className="flex h-full w-full items-center justify-center">
+				<div className="space-y-4 text-center">
 					<div className="flex justify-center">
 						<Loader2 className="h-8 w-8 animate-spin text-primary" />
 					</div>
-					<h2 className="text-sm md:text-base font-semibold">Đang tải...</h2>
+					<h2 className="text-sm font-semibold md:text-base">{t("loading")}</h2>
 				</div>
 			</div>
 		);
@@ -102,24 +98,31 @@ const Page = () => {
 	if (room) {
 		return (
 			<div className="h-full w-full">
-				<Chatbox />
+				<LocalizedChatBox />
 			</div>
 		);
 	}
 
 	const handleCTA = () => {
 		if (isQueueLoading) return;
-		inQueue ? leaveQueue() : joinQueue();
+		if (inQueue) {
+			leaveQueue();
+			return;
+		}
+		joinQueue();
 	};
 
 	return (
-		<div className="h-full w-full flex items-center justify-center">
+		<div className="flex h-full w-full items-center justify-center">
 			<div className="flex flex-col items-center gap-1">
 				<RippleEffect active={inQueue} onClick={handleCTA} />
-				<div className="text-center space-y-1">
-					<h2 className="text-sm md:text-base font-semibold">
-						{inQueue ? "App còn mới nên bạn chịu khó đợi chút nhé" : "Chưa có cuộc trò chuyện"}
+				<div className="space-y-1 text-center">
+					<h2 className="text-sm font-semibold md:text-base">
+						{inQueue ? t("queueing") : t("noChatRoom")}
 					</h2>
+					<p className="text-xs text-muted-foreground md:text-sm">
+						{inQueue ? t("leaveQueue") : t("findPartnerDescription")}
+					</p>
 				</div>
 			</div>
 		</div>

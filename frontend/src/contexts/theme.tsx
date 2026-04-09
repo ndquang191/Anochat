@@ -1,18 +1,28 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { setSoundEnabled } from "@/hooks/use-sound-notification";
+import {
+	getStoredLanguage,
+	isLanguage,
+	LANGUAGE_STORAGE_KEY,
+	type Language,
+	type TranslationKey,
+	translate,
+} from "@/lib/i18n";
 
 export type Theme = "blue" | "dark" | "pink";
 
-interface ThemeContextType {
+interface PreferencesContextType {
 	theme: Theme;
 	setTheme: (theme: Theme) => void;
 	soundEnabled: boolean;
 	toggleSound: () => void;
+	language: Language;
+	setLanguage: (language: Language) => void;
 }
 
-const ThemeContext = createContext<ThemeContextType | null>(null);
+const PreferencesContext = createContext<PreferencesContextType | null>(null);
 
 function applyTheme(theme: Theme) {
 	const root = document.documentElement;
@@ -21,9 +31,14 @@ function applyTheme(theme: Theme) {
 	else if (theme === "pink") root.classList.add("pink");
 }
 
+function applyLanguage(language: Language) {
+	document.documentElement.lang = language;
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
 	const [theme, setThemeState] = useState<Theme>("blue");
 	const [soundEnabled, setSoundEnabledState] = useState(true);
+	const [language, setLanguageState] = useState<Language>("vi");
 
 	useEffect(() => {
 		try {
@@ -32,36 +47,78 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 				setThemeState(savedTheme);
 				applyTheme(savedTheme);
 			}
+
 			const savedSound = localStorage.getItem("soundEnabled");
 			if (savedSound === "false") {
 				setSoundEnabledState(false);
 				setSoundEnabled(false);
 			}
 		} catch {}
+
+		const storedLanguage = getStoredLanguage();
+		setLanguageState(storedLanguage);
+		applyLanguage(storedLanguage);
 	}, []);
 
-	const setTheme = (t: Theme) => {
-		setThemeState(t);
-		applyTheme(t);
-		try { localStorage.setItem("theme", t); } catch {}
+	const setTheme = (value: Theme) => {
+		setThemeState(value);
+		applyTheme(value);
+		try {
+			localStorage.setItem("theme", value);
+		} catch {}
+	};
+
+	const setLanguage = (value: Language) => {
+		if (!isLanguage(value)) return;
+		setLanguageState(value);
+		applyLanguage(value);
+		try {
+			localStorage.setItem(LANGUAGE_STORAGE_KEY, value);
+		} catch {}
 	};
 
 	const toggleSound = () => {
 		const next = !soundEnabled;
 		setSoundEnabledState(next);
 		setSoundEnabled(next);
-		try { localStorage.setItem("soundEnabled", String(next)); } catch {}
+		try {
+			localStorage.setItem("soundEnabled", String(next));
+		} catch {}
 	};
 
 	return (
-		<ThemeContext.Provider value={{ theme, setTheme, soundEnabled, toggleSound }}>
+		<PreferencesContext.Provider
+			value={{
+				theme,
+				setTheme,
+				soundEnabled,
+				toggleSound,
+				language,
+				setLanguage,
+			}}
+		>
 			{children}
-		</ThemeContext.Provider>
+		</PreferencesContext.Provider>
 	);
 }
 
-export function useTheme() {
-	const ctx = useContext(ThemeContext);
+function usePreferences() {
+	const ctx = useContext(PreferencesContext);
 	if (!ctx) throw new Error("useTheme must be used within ThemeProvider");
 	return ctx;
+}
+
+export function useTheme() {
+	const { theme, setTheme, soundEnabled, toggleSound } = usePreferences();
+	return { theme, setTheme, soundEnabled, toggleSound };
+}
+
+export function useLanguage() {
+	const { language, setLanguage } = usePreferences();
+	return {
+		language,
+		setLanguage,
+		t: (key: TranslationKey, vars?: Record<string, string | number>) =>
+			translate(language, key, vars),
+	};
 }

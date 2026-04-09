@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 import type { ApiResponse, UserStateResponse, ProfileDTO, BannedWordDTO, ReportDTO, BannedUserDTO } from "@/types";
+import { translateStored } from "@/lib/i18n";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -19,7 +20,9 @@ function doRefresh(): Promise<boolean> {
 		})
 			.then((r) => r.ok)
 			.catch(() => false)
-			.finally(() => { refreshPromise = null; });
+			.finally(() => {
+				refreshPromise = null;
+			});
 	}
 	return refreshPromise;
 }
@@ -40,10 +43,10 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 		const errorData = await response.json().catch(() => ({}));
 
 		if (errorData.code === "account_suspended") {
-			toast.error("Tài khoản đã bị khóa");
+			toast.error("T�i kho?n d� b? kh�a");
 			clearAuthCookies();
 			window.location.href = "/login";
-			return new Promise(() => {}); // halt — page is navigating
+			return new Promise(() => {});
 		}
 
 		const refreshed = await doRefresh();
@@ -55,24 +58,21 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 				return retryResponse.json();
 			}
 
-			// Retry failed with another 401 — session is truly gone
 			if (retryResponse.status === 401) {
 				clearAuthCookies();
 				window.location.href = "/login";
-				return new Promise(() => {}); // halt — page is navigating
+				return new Promise(() => {});
 			}
 
-			// Retry failed for a non-auth reason — surface the error normally
 			const retryError = await retryResponse.json().catch(() => ({}));
 			const retryMessage = retryError.message || `HTTP error! status: ${retryResponse.status}`;
 			toast.error(retryMessage);
 			throw new Error(retryMessage);
 		}
 
-		// Refresh failed — clear cookies and go to login
 		clearAuthCookies();
 		window.location.href = "/login";
-		return new Promise(() => {}); // halt — page is navigating
+		return new Promise(() => {});
 	}
 
 	if (!response.ok) {
@@ -88,13 +88,13 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 export const queueAPI = {
 	join: async () => {
 		const result = await apiCall<{ message: string }>("/queue/join", { method: "POST" });
-		toast.success("Đã tham gia hàng chờ thành công!");
+		toast.success(translateStored("joinQueueSuccess"));
 		return result;
 	},
 
 	leave: async () => {
 		const result = await apiCall<{ message: string }>("/queue/leave", { method: "POST" });
-		toast.success("Đã rời khỏi hàng chờ!");
+		toast.success(translateStored("leaveQueueSuccess"));
 		return result;
 	},
 };
@@ -114,7 +114,7 @@ export const userAPI = {
 			method: "PUT",
 			body: JSON.stringify(data),
 		});
-		toast.success("Cập nhật thông tin thành công!");
+		toast.success(translateStored("profileUpdated"));
 		return result;
 	},
 };
@@ -122,7 +122,7 @@ export const userAPI = {
 export const authAPI = {
 	logout: async () => {
 		const result = await apiCall<{ message: string }>("/auth/logout", { method: "POST" });
-		toast.success("Đăng xuất thành công!");
+		toast.success(translateStored("logoutSuccess"));
 		return result;
 	},
 
@@ -159,7 +159,7 @@ export const moderationAPI = {
 export const roomAPI = {
 	leaveRoom: async () => {
 		const result = await apiCall<{ success: boolean; message: string }>("/room/leave", { method: "POST" });
-		toast.success("Đã rời phòng chat!");
+		toast.success(translateStored("leaveChatRoomSuccess"));
 		return result;
 	},
 };

@@ -1,8 +1,8 @@
 import type React from "react";
 import { cookies } from "next/headers";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
-import Header from "@/components/header";
+import { AppShellSidebar } from "@/components/app-shell-sidebar";
+import AppHeader from "@/components/app-header";
 import { AdminProvider } from "@/contexts/admin";
 
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
@@ -13,9 +13,9 @@ export default async function MainLayout({ children }: { children: React.ReactNo
 	return (
 		<SidebarProvider defaultOpen={defaultOpen}>
 			<AdminProvider>
-				<AppSidebar />
+				<AppShellSidebar />
 				<SidebarInset className="h-screen flex flex-col overflow-hidden">
-					<Header trigger={<SidebarTrigger className="-ml-1" />} />
+					<AppHeader trigger={<SidebarTrigger className="-ml-1" />} />
 					<main className="flex-1 mt-16 overflow-hidden">{children}</main>
 				</SidebarInset>
 			</AdminProvider>

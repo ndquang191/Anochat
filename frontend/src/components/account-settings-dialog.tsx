@@ -14,26 +14,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { MIN_AGE, MAX_AGE } from "@/types";
+import { useLanguage } from "@/contexts/theme";
 
-const CURRENT_YEAR = new Date().getFullYear();
-const MIN_BIRTH_YEAR = CURRENT_YEAR - MAX_AGE;
-const MAX_BIRTH_YEAR = CURRENT_YEAR - MIN_AGE;
-
-interface UserSettingsDialogProps {
+interface AccountSettingsDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	initialData: {
-		nickname: string;
-		birthYear: number | null;
+		age: number | null;
 		gender: string;
 	};
-	onSave: (data: UserSettingsDialogProps["initialData"]) => Promise<void> | void;
+	onSave: (data: AccountSettingsDialogProps["initialData"]) => Promise<void> | void;
 }
 
-export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: UserSettingsDialogProps) {
-	const [nickname, setNickname] = React.useState(initialData.nickname);
-	const [birthYear, setBirthYear] = React.useState<number | null>(initialData.birthYear);
+export function AccountSettingsDialog({
+	open,
+	onOpenChange,
+	initialData,
+	onSave,
+}: AccountSettingsDialogProps) {
+	const { t } = useLanguage();
+	const [age, setAge] = React.useState(initialData.age);
 	const [gender, setGender] = React.useState(() => {
 		const validGenders = ["male", "female"];
 		return validGenders.includes(initialData.gender) ? initialData.gender : "male";
@@ -42,28 +42,22 @@ export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: 
 
 	React.useEffect(() => {
 		if (open) {
-			setNickname(initialData.nickname);
-			setBirthYear(initialData.birthYear);
+			setAge(initialData.age);
 			const validGenders = ["male", "female"];
 			setGender(validGenders.includes(initialData.gender) ? initialData.gender : "male");
 		}
 	}, [open, initialData]);
 
 	const handleSave = async () => {
-		if (birthYear !== null && (birthYear < MIN_BIRTH_YEAR || birthYear > MAX_BIRTH_YEAR)) {
-			toast.error(`Nam sinh ph?i t? ${MIN_BIRTH_YEAR} d?n ${MAX_BIRTH_YEAR}`);
-			return;
-		}
-
 		setIsLoading(true);
+
 		try {
-			await onSave({ nickname, birthYear, gender });
-			toast.success("Thông tin dã du?c luu thành công!");
+			await onSave({ age, gender });
+			toast.success(t("userInfoSaveSuccess"));
 			onOpenChange(false);
 		} catch (error) {
-			const errorMessage =
-				error instanceof Error ? error.message : "Không th? luu thông tin. Vui lòng th? l?i.";
-			toast.error(errorMessage);
+			console.error("Error saving user settings:", error);
+			toast.error(error instanceof Error ? error.message : t("pleaseTryAgain"));
 		} finally {
 			setIsLoading(false);
 		}
@@ -73,42 +67,29 @@ export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: 
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="z-[9998] h-fit max-h-[95vh] overflow-y-auto sm:max-w-[425px]">
 				<DialogHeader>
-					<DialogTitle>Cài d?t tài kho?n</DialogTitle>
-					<DialogDescription>Thay d?i thông tin cá nhân c?a b?n t?i dây.</DialogDescription>
+					<DialogTitle>{t("accountSettings")}</DialogTitle>
+					<DialogDescription>{t("accountSettingsDescription")}</DialogDescription>
 				</DialogHeader>
 				<div className="grid gap-4 py-4">
 					<div className="grid grid-cols-4 items-center gap-4">
-						<Label htmlFor="nickname" className="text-right">
-							Nickname
+						<Label htmlFor="age" className="text-right">
+							{t("age")}
 						</Label>
 						<Input
-							id="nickname"
-							value={nickname}
-							onChange={(e) => setNickname(e.target.value)}
-							className="col-span-3"
-							placeholder="Ð? tr?ng d? dùng tên Google"
-							maxLength={32}
-						/>
-					</div>
-					<div className="grid grid-cols-4 items-center gap-4">
-						<Label htmlFor="birthYear" className="text-right">
-							Nam sinh
-						</Label>
-						<Input
-							id="birthYear"
+							id="age"
 							type="number"
-							value={birthYear ?? ""}
+							value={age || ""}
 							onChange={(e) =>
-								setBirthYear(e.target.value ? parseInt(e.target.value, 10) : null)
+								setAge(e.target.value ? parseInt(e.target.value, 10) : null)
 							}
 							className="col-span-3"
-							placeholder={`${MIN_BIRTH_YEAR} - ${MAX_BIRTH_YEAR}`}
-							min={MIN_BIRTH_YEAR}
-							max={MAX_BIRTH_YEAR}
+							placeholder={t("agePlaceholder")}
+							min="1"
+							max="120"
 						/>
 					</div>
 					<div className="grid grid-cols-4 items-center gap-4">
-						<Label className="text-right">Gi?i tính</Label>
+						<Label className="text-right">{t("gender")}</Label>
 						<div className="col-span-3 flex gap-6">
 							<div className="flex items-center space-x-2">
 								<Checkbox
@@ -118,7 +99,9 @@ export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: 
 										if (checked) setGender("male");
 									}}
 								/>
-								<Label htmlFor="male">Nam</Label>
+								<Label htmlFor="male" className="flex items-center gap-1">
+									{t("male")}
+								</Label>
 							</div>
 							<div className="flex items-center space-x-2">
 								<Checkbox
@@ -128,17 +111,23 @@ export function UserSettingsDialog({ open, onOpenChange, initialData, onSave }: 
 										if (checked) setGender("female");
 									}}
 								/>
-								<Label htmlFor="female">N?</Label>
+								<Label htmlFor="female" className="flex items-center gap-1">
+									{t("female")}
+								</Label>
 							</div>
 						</div>
 					</div>
 				</div>
 				<DialogFooter>
-					<Button variant="outline" onClick={() => onOpenChange(false)} disabled={isLoading}>
-						H?y
+					<Button
+						variant="outline"
+						onClick={() => onOpenChange(false)}
+						disabled={isLoading}
+					>
+						{t("cancel")}
 					</Button>
 					<Button onClick={handleSave} disabled={isLoading}>
-						{isLoading ? "Ðang luu..." : "Luu thay d?i"}
+						{isLoading ? t("saving") : t("saveChanges")}
 					</Button>
 				</DialogFooter>
 			</DialogContent>
