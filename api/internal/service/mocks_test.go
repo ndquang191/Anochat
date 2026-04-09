@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/chat"
 	"github.com/ndquang191/Anochat/api/internal/domain/identity"
+	"github.com/ndquang191/Anochat/api/internal/domain/matching"
 	"github.com/ndquang191/Anochat/api/internal/domain/moderation"
 	"github.com/stretchr/testify/mock"
 )
@@ -233,4 +234,12 @@ type mockMatchNotifier struct{ mock.Mock }
 
 func (m *mockMatchNotifier) NotifyMatch(user1ID, user2ID, roomID uuid.UUID) {
 	m.Called(user1ID, user2ID, roomID)
+}
+
+func (m *mockMatchNotifier) NotifyFakeMatch(session *matching.FakeSession) {
+	m.Called(session)
+}
+
+func (m *mockMatchNotifier) NotifyFakePartnerLeft(userID, roomID uuid.UUID) {
+	m.Called(userID, roomID)
 }

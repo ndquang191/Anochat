@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/ndquang191/Anochat/api/internal/domain/matching"
 )
 
 func (h *Hub) notifyPartnerLeft(roomID uuid.UUID, leaverID uuid.UUID) {
@@ -51,4 +52,69 @@ func (h *Hub) NotifyMatch(user1ID, user2ID, roomID uuid.UUID) {
 			slog.Error("Failed to publish match_found to user channel", "user_id", userID, "error", err)
 		}
 	}
+}
+
+func (h *Hub) NotifyFakeMatch(session *matching.FakeSession) {
+	matchMsg := WSMessage{
+		Type: "match_found",
+		Payload: map[string]interface{}{
+			"room_id":   session.RoomID.String(),
+			"timestamp": time.Now().Unix(),
+			"message":   "Match found! You are now connected.",
+		},
+	}
+	matchBytes, _ := json.Marshal(matchMsg)
+
+	h.mutex.RLock()
+	client := h.clients[session.UserID]
+	h.mutex.RUnlock()
+	if client == nil {
+		return
+	}
+
+	client.Send <- matchBytes
+	h.AddClientToRoom(session.UserID, session.RoomID)
+
+	greetingMsg := WSMessage{
+		Type: "receive_message",
+		Payload: map[string]interface{}{
+			"id":         session.GreetingID.String(),
+			"room_id":    session.RoomID.String(),
+			"sender_id":  session.PartnerID.String(),
+			"content":    session.Greeting,
+			"created_at": session.CreatedAt.Unix(),
+		},
+	}
+	greetingBytes, _ := json.Marshal(greetingMsg)
+	client.Send <- greetingBytes
+}
+
+func (h *Hub) NotifyFakePartnerLeft(userID, roomID uuid.UUID) {
+	notification := WSMessage{
+		Type: "partner_left",
+		Payload: map[string]interface{}{
+			"room_id":   roomID.String(),
+			"timestamp": time.Now().Unix(),
+			"message":   "Your chat partner has left the room",
+		},
+	}
+
+	msgBytes, _ := json.Marshal(notification)
+
+	h.mutex.RLock()
+	client := h.clients[userID]
+	h.mutex.RUnlock()
+	if client != nil {
+		client.RoomID = nil
+		client.Send <- msgBytes
+	}
+
+	h.roomMutex.Lock()
+	if roomUsers, exists := h.roomClients[roomID]; exists {
+		delete(roomUsers, userID)
+		if len(roomUsers) == 0 {
+			delete(h.roomClients, roomID)
+		}
+	}
+	h.roomMutex.Unlock()
 }

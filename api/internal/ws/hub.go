@@ -38,6 +38,7 @@ type Hub struct {
 	queueService      *service.QueueService
 	messageService    *service.MessageService
 	roomService       *service.RoomService
+	fakeMatchService  *service.FakeMatchService
 	moderationService *service.ModerationService
 	rdb               *redis.Client
 	pubsub            *redis.PubSub
@@ -53,8 +54,15 @@ type BroadcastMessage struct {
 	Exclude uuid.UUID
 }
 
-func NewHub(queueService *service.QueueService, messageService *service.MessageService, roomService *service.RoomService, moderationService *service.ModerationService, rdb *redis.Client) *Hub {
-	pubsub := rdb.Subscribe(context.Background()) // empty subscription; channels added dynamically
+func NewHub(
+	queueService *service.QueueService,
+	messageService *service.MessageService,
+	roomService *service.RoomService,
+	fakeMatchService *service.FakeMatchService,
+	moderationService *service.ModerationService,
+	rdb *redis.Client,
+) *Hub {
+	pubsub := rdb.Subscribe(context.Background())
 	return &Hub{
 		clients:           make(map[uuid.UUID]*Client),
 		roomClients:       make(map[uuid.UUID]map[uuid.UUID]*Client),
@@ -65,6 +73,7 @@ func NewHub(queueService *service.QueueService, messageService *service.MessageS
 		queueService:      queueService,
 		messageService:    messageService,
 		roomService:       roomService,
+		fakeMatchService:  fakeMatchService,
 		moderationService: moderationService,
 		rdb:               rdb,
 		pubsub:            pubsub,
@@ -105,7 +114,6 @@ func (h *Hub) registerClient(client *Client) {
 	h.clients[client.UserID] = client
 	h.mutex.Unlock()
 
-	// Each Hub instance subscribes to its local users' channels for direct notifications.
 	if err := h.pubsub.Subscribe(context.Background(), "user:"+client.UserID.String()); err != nil {
 		slog.Error("Failed to subscribe to user channel", "user_id", client.UserID, "error", err)
 	}
@@ -122,13 +130,24 @@ func (h *Hub) registerClient(client *Client) {
 		},
 	})
 
-	// Auto-rejoin active room if exists.
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		room, err := h.roomService.GetActiveRoomByUserID(ctx, client.UserID)
 		if err != nil || room == nil {
+			if session := h.fakeMatchService.GetByUserID(client.UserID); session != nil {
+				h.AddClientToRoom(client.UserID, session.RoomID)
+				slog.Info("Client auto-rejoined fake room", "user_id", client.UserID, "room_id", session.RoomID)
+
+				client.SendJSON(WSMessage{
+					Type: "room_rejoined",
+					Payload: map[string]interface{}{
+						"room_id":   session.RoomID.String(),
+						"timestamp": time.Now().Unix(),
+					},
+				})
+			}
 			return
 		}
 
@@ -189,7 +208,6 @@ func (h *Hub) AddClientToRoom(userID uuid.UUID, roomID uuid.UUID) {
 	client.RoomID = &roomID
 	h.roomClients[roomID][userID] = client
 
-	// Subscribe to the room channel when the first local client joins.
 	prev := h.roomLocalCount[roomID]
 	h.roomLocalCount[roomID]++
 	if prev == 0 {
@@ -212,7 +230,6 @@ func (h *Hub) removeClientFromRoom(client *Client, roomID uuid.UUID) {
 		return
 	}
 
-	// Only remove if this pointer matches (not a newer reconnection).
 	if roomUsers[client.UserID] != client {
 		return
 	}
@@ -226,15 +243,13 @@ func (h *Hub) removeClientFromRoom(client *Client, roomID uuid.UUID) {
 		if err := h.pubsub.Unsubscribe(context.Background(), "room:"+roomID.String()); err != nil {
 			slog.Error("Failed to unsubscribe from room channel", "room_id", roomID, "error", err)
 		} else {
-			slog.Info("Unsubscribed from room channel", "room_id", roomID)
+			slog.Info("Unsubscribed to room channel", "room_id", roomID)
 		}
 	}
 
 	slog.Info("Client removed from room", "user_id", client.UserID, "room_id", roomID)
 }
 
-// publishToRedis publishes a broadcast message to the Redis room channel.
-// All Hub instances subscribed to that room will receive it and deliver locally.
 func (h *Hub) publishToRedis(msg *BroadcastMessage) {
 	pub := roomPubMsg{
 		Exclude: msg.Exclude.String(),
@@ -254,7 +269,6 @@ func (h *Hub) publishToRedis(msg *BroadcastMessage) {
 	}
 }
 
-// handleRedisMessage routes an incoming Redis pub/sub message to the correct handler.
 func (h *Hub) handleRedisMessage(msg *redis.Message) {
 	switch {
 	case strings.HasPrefix(msg.Channel, "room:"):
@@ -266,7 +280,6 @@ func (h *Hub) handleRedisMessage(msg *redis.Message) {
 	}
 }
 
-// handleRoomMessage delivers a room broadcast to local clients in that room.
 func (h *Hub) handleRoomMessage(channel string, data []byte) {
 	roomIDStr := strings.TrimPrefix(channel, "room:")
 	roomID, err := uuid.Parse(roomIDStr)
@@ -315,7 +328,6 @@ func (h *Hub) handleRoomMessage(channel string, data []byte) {
 	}
 }
 
-// handleUserMessage handles direct notifications delivered to a specific user via Redis.
 func (h *Hub) handleUserMessage(channel string, data []byte) {
 	userIDStr := strings.TrimPrefix(channel, "user:")
 	userID, err := uuid.Parse(userIDStr)

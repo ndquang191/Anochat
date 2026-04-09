@@ -28,7 +28,6 @@ type Server struct {
 }
 
 func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server {
-	// Repositories
 	userRepo := repository.NewUserRepository(db)
 	profileRepo := repository.NewProfileRepository(db)
 	roomRepo := repository.NewRoomRepository(db)
@@ -40,7 +39,6 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 		metrics.TotalUsers.Set(float64(count))
 	}
 
-	// OAuth
 	oauthConfig := &oauth2.Config{
 		ClientID:     cfg.OAuth.GoogleClientID,
 		ClientSecret: cfg.OAuth.GoogleClientSecret,
@@ -49,27 +47,25 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 		Endpoint:     google.Endpoint,
 	}
 
-	// Services
 	userService := service.NewUserService(userRepo, profileRepo)
 	roomService := service.NewRoomService(roomRepo, messageRepo)
 	messageService := service.NewMessageService(messageRepo)
+	fakeMatchService := service.NewFakeMatchService()
 	authService := service.NewAuthService(userService, oauthConfig, cfg.OAuth.JWTSecret, redisClient, cfg.OAuth.AccessTokenExpiry, cfg.OAuth.RefreshTokenExpiry)
-	queueService := service.NewQueueService(roomService, roomRepo, redisClient)
+	queueService := service.NewQueueService(roomService, roomRepo, redisClient, profileRepo, fakeMatchService)
 	moderationService := service.NewModerationService(bannedWordRepo, reportRepo, userRepo)
 	if err := moderationService.LoadWords(context.Background()); err != nil {
 		slog.Warn("Failed to load banned words at startup", "error", err)
 	}
 
-	// WebSocket hub
-	wsHub := ws.NewHub(queueService, messageService, roomService, moderationService, redisClient)
+	wsHub := ws.NewHub(queueService, messageService, roomService, fakeMatchService, moderationService, redisClient)
 	go wsHub.Run()
 	slog.Info("WebSocket hub started")
 
 	queueService.SetMatchNotifier(wsHub)
 
-	// Handlers
 	authHandler := handler.NewAuthHandler(authService, oauthConfig, cfg)
-	userHandler := handler.NewUserHandler(userService, roomService, queueService, roomRepo, messageRepo, cfg)
+	userHandler := handler.NewUserHandler(userService, roomService, queueService, fakeMatchService, roomRepo, messageRepo, cfg)
 	queueHandler := handler.NewQueueHandler(queueService, cfg)
 	wsHandler := handler.NewWebSocketHandler(wsHub, authService, cfg)
 	moderationHandler := handler.NewModerationHandler(moderationService, messageRepo)
@@ -77,7 +73,6 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 
 	authMiddleware := middleware.AuthMiddleware(authService, userRepo, cfg)
 
-	// Router
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -87,7 +82,6 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	router.Use(middleware.RateLimitMiddleware(redisClient, cfg.Security.RateLimit, cfg.Security.RateLimit*2))
 	slog.Info("Rate limiting enabled", "rate", cfg.Security.RateLimit, "burst", cfg.Security.RateLimit*2)
 
-	// Routes
 	router.GET("/auth/google", authHandler.GoogleLogin)
 	router.GET("/auth/callback", authHandler.GoogleCallback)
 	router.POST("/auth/refresh", authHandler.RefreshToken)

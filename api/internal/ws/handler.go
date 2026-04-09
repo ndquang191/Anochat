@@ -114,7 +114,20 @@ func (c *Client) handleJoinRoom(payload map[string]interface{}) {
 
 	room, err := c.Hub.roomService.GetRoomByID(context.Background(), roomID)
 	if err != nil || room == nil {
-		slog.Error("Room not found", "room_id", roomID, "user_id", c.UserID)
+		if !c.Hub.fakeMatchService.IsParticipant(c.UserID, roomID) {
+			slog.Error("Room not found", "room_id", roomID, "user_id", c.UserID)
+			return
+		}
+		c.Hub.AddClientToRoom(c.UserID, roomID)
+		confirmation := WSMessage{
+			Type: "room_joined",
+			Payload: map[string]interface{}{
+				"room_id":   roomID.String(),
+				"timestamp": time.Now().Unix(),
+			},
+		}
+		c.SendJSON(confirmation)
+		slog.Info("User joined fake room via WebSocket", "user_id", c.UserID, "room_id", roomID)
 		return
 	}
 
@@ -144,7 +157,9 @@ func (c *Client) handleLeaveRoom(payload map[string]interface{}) {
 
 	roomID := *c.RoomID
 
-	if err := c.Hub.roomService.LeaveRoom(context.Background(), roomID, c.UserID); err != nil {
+	if c.Hub.fakeMatchService.IsParticipant(c.UserID, roomID) {
+		c.Hub.fakeMatchService.EndSession(c.UserID)
+	} else if err := c.Hub.roomService.LeaveRoom(context.Background(), roomID, c.UserID); err != nil {
 		slog.Error("Failed to leave room in database", "error", err, "user_id", c.UserID, "room_id", roomID)
 	}
 

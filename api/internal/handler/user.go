@@ -17,6 +17,7 @@ type UserHandler struct {
 	userService  *service.UserService
 	roomService  *service.RoomService
 	queueService *service.QueueService
+	fakeService  *service.FakeMatchService
 	roomRepo     repository.RoomRepository
 	messageRepo  repository.MessageRepository
 	config       *config.Config
@@ -26,6 +27,7 @@ func NewUserHandler(
 	userService *service.UserService,
 	roomService *service.RoomService,
 	queueService *service.QueueService,
+	fakeService *service.FakeMatchService,
 	roomRepo repository.RoomRepository,
 	messageRepo repository.MessageRepository,
 	cfg *config.Config,
@@ -34,6 +36,7 @@ func NewUserHandler(
 		userService:  userService,
 		roomService:  roomService,
 		queueService: queueService,
+		fakeService:  fakeService,
 		roomRepo:     roomRepo,
 		messageRepo:  messageRepo,
 		config:       cfg,
@@ -69,7 +72,6 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 			User2ID: room.User2ID.String(),
 		}
 
-		// Determine partner ID and fetch their profile
 		partnerID := room.User1ID
 		if room.User1ID == userID {
 			partnerID = room.User2ID
@@ -112,6 +114,33 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 			}
 		}
 	}
+	if resp.Room == nil {
+		session := h.fakeService.GetByUserID(userID)
+		if session != nil {
+			resp.Room = &dto.RoomDTO{
+				ID:      session.RoomID.String(),
+				User1ID: session.UserID.String(),
+				User2ID: session.PartnerID.String(),
+				Partner: &dto.UserDTO{
+					ID:   session.PartnerID.String(),
+					Name: &session.PartnerName,
+					Profile: &dto.ProfileDTO{
+						Age:      &session.PartnerAge,
+						IsMale:   &session.PartnerIsMale,
+						IsHidden: false,
+					},
+				},
+			}
+			resp.Messages = []dto.MessageDTO{
+				{
+					ID:        session.GreetingID.String(),
+					SenderID:  session.PartnerID.String(),
+					Content:   session.Greeting,
+					CreatedAt: session.CreatedAt.Unix(),
+				},
+			}
+		}
+	}
 
 	dto.OK(c, resp)
 }
@@ -130,7 +159,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	if req.Age != nil && (*req.Age < h.config.User.MinAge || *req.Age > h.config.User.MaxAge) {
-		dto.Fail(c, http.StatusBadRequest, fmt.Sprintf("Tuổi phải nằm trong khoảng từ %d đến %d", h.config.User.MinAge, h.config.User.MaxAge))
+		dto.Fail(c, http.StatusBadRequest, fmt.Sprintf("Tuoi phai nam trong khoang tu %d den %d", h.config.User.MinAge, h.config.User.MaxAge))
 		return
 	}
 
@@ -157,6 +186,10 @@ func (h *UserHandler) LeaveCurrentRoom(c *gin.Context) {
 
 	err := h.roomService.LeaveCurrentRoom(c.Request.Context(), userID)
 	if err != nil {
+		if h.fakeService.EndSession(userID) != nil {
+			dto.OKWithMessage(c, "Successfully left room", nil)
+			return
+		}
 		dto.FailErr(c, err)
 		return
 	}
