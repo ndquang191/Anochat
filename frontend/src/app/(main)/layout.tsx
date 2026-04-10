@@ -1,9 +1,17 @@
+import type { Metadata } from "next";
 import type React from "react";
 import { cookies } from "next/headers";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppShellSidebar } from "@/components/app-shell-sidebar";
 import AppHeader from "@/components/app-header";
 import { AdminProvider } from "@/contexts/admin";
+
+export const metadata: Metadata = {
+	robots: {
+		index: false,
+		follow: false,
+	},
+};
 
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
 	const cookieStore = await cookies();
