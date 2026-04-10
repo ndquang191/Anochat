@@ -17,6 +17,7 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 	const [messages, setMessages] = useState<ChatMessage[]>(initialMessages ?? []);
 	const [isConnected, setIsConnected] = useState(false);
 	const [roomId, setRoomId] = useState<string | null>(null);
+	const [partnerLeft, setPartnerLeft] = useState(false);
 	const wsClient = useRef(getWebSocketClient());
 	const userIdRef = useRef(userId);
 	const onMatchFoundRef = useRef(onMatchFound);
@@ -38,6 +39,7 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 	useEffect(() => {
 		if (room?.id && !roomId && !hasRehydratedRef.current) {
 			setRoomId(room.id);
+			setPartnerLeft(false);
 			hasRehydratedRef.current = true;
 		}
 	}, [room, roomId]);
@@ -93,6 +95,7 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 		const handleMatchFound = (message: WebSocketMessage) => {
 			const room_id = message.payload.room_id as string;
 			setRoomId(room_id);
+			setPartnerLeft(false);
 			setMessages([]);
 			invalidateUserState();
 			if (onMatchFoundRef.current) {
@@ -103,6 +106,7 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 		const handleRoomRejoined = (message: WebSocketMessage) => {
 			const room_id = message.payload.room_id as string;
 			setRoomId(room_id);
+			setPartnerLeft(false);
 			hasJoinedRoomRef.current = room_id;
 		};
 
@@ -121,7 +125,7 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 
 		const handlePartnerLeft = () => {
 			setRoomId(null);
-			setMessages([]);
+			setPartnerLeft(true);
 			hasJoinedRoomRef.current = null;
 			playLeaveSound();
 			if (onPartnerLeftRef.current) {
@@ -132,6 +136,7 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 
 		const handleRoomLeft = () => {
 			setRoomId(null);
+			setPartnerLeft(false);
 			setMessages([]);
 			hasJoinedRoomRef.current = null;
 			invalidateUserState();
@@ -205,6 +210,7 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 		});
 
 		setRoomId(null);
+		setPartnerLeft(false);
 		setMessages([]);
 		hasJoinedRoomRef.current = null;
 		invalidateUserState();
@@ -215,6 +221,7 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 		sendMessage,
 		isConnected,
 		roomId,
+		partnerLeft,
 		leaveRoom,
 		joinRoom,
 	};

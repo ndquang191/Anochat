@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
+import { useLanguage } from "@/contexts/theme"
 import {
   Sheet,
   SheetContent,
@@ -250,6 +251,7 @@ function SidebarTrigger({
   ...props
 }: React.ComponentProps<typeof Button>) {
   const { toggleSidebar } = useSidebar()
+  const { t } = useLanguage()
 
   return (
     <Button
@@ -257,15 +259,17 @@ function SidebarTrigger({
       data-slot="sidebar-trigger"
       variant="ghost"
       size="icon"
-      className={cn("size-7", className)}
+      className={cn("size-9 cursor-pointer", className)}
+      title={t("sidebarToggleShortcut")}
+      aria-label={t("sidebarToggleShortcut")}
       onClick={(event) => {
         onClick?.(event)
         toggleSidebar()
       }}
       {...props}
     >
-      <PanelLeftIcon />
-      <span className="sr-only">Toggle Sidebar</span>
+      <PanelLeftIcon className="size-5" />
+      <span className="sr-only">{t("sidebarToggleShortcut")}</span>
     </Button>
   )
 }

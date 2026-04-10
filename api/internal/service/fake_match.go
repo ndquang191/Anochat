@@ -12,19 +12,17 @@ import (
 )
 
 var (
-	fakeGreetings = []string{
-		"Hi",
-		"Hello",
-		"Xin chào",
-		"Chào bạn",
-		"Hey",
-	}
 	fakeMaleNames = []string{
 		"Minh", "Huy", "Nam", "Đức", "Khang", "Phúc", "Long", "Khôi", "Quân", "Tuấn",
 	}
 	fakeFemaleNames = []string{
 		"Linh", "An", "Vy", "Nhi", "Trang", "Hân", "Ngọc", "Mai", "Thảo", "Trâm",
 	}
+)
+
+const (
+	fakeReplyTimeout = 40 * time.Second
+	fakeLeaveDelay   = 1500 * time.Millisecond
 )
 
 type FakeMatchService struct {
@@ -51,6 +49,7 @@ func (s *FakeMatchService) CreateSession(userID uuid.UUID, profile *identity.Pro
 	}
 
 	partnerIsMale := s.randomPartnerGender(profile)
+	createdAt := time.Now().UTC()
 	session := &matching.FakeSession{
 		UserID:        userID,
 		RoomID:        uuid.New(),
@@ -59,8 +58,11 @@ func (s *FakeMatchService) CreateSession(userID uuid.UUID, profile *identity.Pro
 		PartnerName:   s.randomName(partnerIsMale),
 		PartnerIsMale: partnerIsMale,
 		PartnerAge:    18 + s.rng.Intn(13),
-		Greeting:      fakeGreetings[s.rng.Intn(len(fakeGreetings))],
-		CreatedAt:     time.Now().UTC(),
+		Greeting:      fakeGreetingMessages[s.rng.Intn(len(fakeGreetingMessages))],
+		PromptOrder:   s.randomPromptOrder(),
+		AwaitingReply: true,
+		CreatedAt:     createdAt,
+		EndsAt:        createdAt.Add(fakeReplyTimeout),
 	}
 
 	s.sessionsByUser[userID] = session
@@ -133,6 +135,54 @@ func (s *FakeMatchService) BuildGreetingMessage(session *matching.FakeSession) *
 	}
 }
 
+func (s *FakeMatchService) AdvanceConversation(userID, roomID uuid.UUID) *chat.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	session := s.sessionsByUser[userID]
+	if session == nil || session.RoomID != roomID || !session.AwaitingReply {
+		return nil
+	}
+
+	now := time.Now().UTC()
+
+	if session.PromptIndex >= len(session.PromptOrder) {
+		session.AwaitingReply = false
+		session.EndsAt = now.Add(fakeLeaveDelay)
+		return nil
+	}
+
+	topic := fakeChatTopic(session.PromptOrder[session.PromptIndex])
+	session.PromptIndex++
+	session.AwaitingReply = true
+	session.EndsAt = now.Add(fakeReplyTimeout)
+
+	variants := fakePromptVariants[topic]
+	if len(variants) == 0 {
+		return nil
+	}
+
+	return &chat.Message{
+		ID:        uuid.New(),
+		RoomID:    session.RoomID,
+		SenderID:  session.PartnerID,
+		Content:   variants[s.rng.Intn(len(variants))],
+		CreatedAt: now,
+	}
+}
+
+func (s *FakeMatchService) ShouldEndSession(userID, roomID uuid.UUID, now time.Time) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	session := s.sessionsByUser[userID]
+	if session == nil || session.RoomID != roomID {
+		return false
+	}
+
+	return !session.EndsAt.IsZero() && !now.Before(session.EndsAt)
+}
+
 func (s *FakeMatchService) randomPartnerGender(profile *identity.Profile) bool {
 	if profile != nil && profile.IsMale != nil {
 		return !*profile.IsMale
@@ -145,4 +195,18 @@ func (s *FakeMatchService) randomName(isMale bool) string {
 		return fakeMaleNames[s.rng.Intn(len(fakeMaleNames))]
 	}
 	return fakeFemaleNames[s.rng.Intn(len(fakeFemaleNames))]
+}
+
+func (s *FakeMatchService) randomPromptOrder() []string {
+	topics := []string{
+		string(fakeTopicName),
+		string(fakeTopicAge),
+		string(fakeTopicLocation),
+	}
+
+	s.rng.Shuffle(len(topics), func(i, j int) {
+		topics[i], topics[j] = topics[j], topics[i]
+	})
+
+	return topics
 }

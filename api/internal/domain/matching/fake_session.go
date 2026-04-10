@@ -16,5 +16,9 @@ type FakeSession struct {
 	PartnerIsMale bool
 	PartnerAge    int
 	Greeting      string
+	PromptOrder   []string
+	PromptIndex   int
+	AwaitingReply bool
+	EndsAt        time.Time
 	CreatedAt     time.Time
 }

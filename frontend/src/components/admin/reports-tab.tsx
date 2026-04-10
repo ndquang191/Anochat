@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
 import type { ReportDTO } from "@/types";
+import { useLanguage } from "@/contexts/theme";
 
 const NULL_UUID = "00000000-0000-0000-0000-000000000000";
 
@@ -85,6 +86,7 @@ export function ChatViewer({
 }
 
 export function ReportsTab() {
+	const { t } = useLanguage();
 	const queryClient = useQueryClient();
 	const [search, setSearch] = useState("");
 	const [viewing, setViewing] = useState<GroupedUser | null>(null);
@@ -103,9 +105,9 @@ export function ReportsTab() {
 			queryClient.invalidateQueries({ queryKey: ["admin", "reports"] });
 			queryClient.invalidateQueries({ queryKey: ["admin", "banned-users"] });
 			setViewing(null);
-			toast.success("User banned");
+			toast.success(t("adminUserBanned"));
 		},
-		onError: () => toast.error("Failed to ban user"),
+		onError: () => toast.error(t("adminFailedToBanUser")),
 	});
 
 	const grouped = useMemo<GroupedUser[]>(() => {

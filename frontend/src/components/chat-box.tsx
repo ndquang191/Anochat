@@ -9,25 +9,27 @@ import { ChatLoadingState } from "./chat/chat-loading-state";
 import { ChatMessages } from "./chat/chat-messages";
 import { ChatInput } from "./chat/chat-input";
 import { WifiOff } from "lucide-react";
+import { useLanguage } from "@/contexts/theme";
 
 const CONNECTION_TIMEOUT_MS = 10000;
 
 export default function ChatBox() {
 	const { user, messages: initialMessages } = useAuth();
 	const [connectionTimedOut, setConnectionTimedOut] = useState(false);
+	const { t } = useLanguage();
 
 	const { messages, sendMessage, isConnected, roomId } =
 		useWebSocketChat({
 			userId: user?.id || "",
 			initialMessages: initialMessages as ChatMessage[],
 			onMatchFound: () => {
-				toast.success("Đã tìm thấy đối tác chat!", {
-					description: `Bạn đã được kết nối với người dùng khác`,
+				toast.success(t("matchFound"), {
+					description: t("matchFoundDescription"),
 				});
 			},
 			onPartnerLeft: () => {
-				toast.info("Đối tác đã rời phòng", {
-					description: "Bạn có thể tìm kiếm đối tác mới",
+				toast.info(t("partnerLeft"), {
+					description: t("partnerLeftDescription"),
 				});
 			},
 		});

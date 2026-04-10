@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import LocalizedChatBox from "@/components/localized-chat-box";
 import { AdminPanel } from "@/components/admin/admin-panel";
 import { useAuth } from "@/contexts/auth";
@@ -55,6 +55,7 @@ const Page = () => {
 	const invalidateUserState = useInvalidateUserState();
 	const isAdmin = user?.id === AdminUserID;
 	const { joinQueue, leaveQueue, isLoading: isQueueLoading } = useQueue();
+	const [showEndedChat, setShowEndedChat] = useState(false);
 
 	useEffect(() => {
 		if (!user || !inQueue) return;
@@ -68,10 +69,23 @@ const Page = () => {
 		const client = getWebSocketClient();
 		const handleMatchFound = () => {
 			playMatchSound();
+			setShowEndedChat(false);
 			invalidateUserState();
 		};
+		const handlePartnerLeft = () => {
+			setShowEndedChat(true);
+		};
+		const handleRoomLeft = () => {
+			setShowEndedChat(false);
+		};
 		client.on("match_found", handleMatchFound);
-		return () => client.off("match_found", handleMatchFound);
+		client.on("partner_left", handlePartnerLeft);
+		client.on("room_left", handleRoomLeft);
+		return () => {
+			client.off("match_found", handleMatchFound);
+			client.off("partner_left", handlePartnerLeft);
+			client.off("room_left", handleRoomLeft);
+		};
 	}, [invalidateUserState]);
 
 	if (isAdmin && isAdminOpen) {
@@ -95,7 +109,7 @@ const Page = () => {
 		);
 	}
 
-	if (room) {
+	if (room || showEndedChat) {
 		return (
 			<div className="h-full w-full">
 				<LocalizedChatBox />
@@ -105,6 +119,7 @@ const Page = () => {
 
 	const handleCTA = () => {
 		if (isQueueLoading) return;
+		setShowEndedChat(false);
 		if (inQueue) {
 			leaveQueue();
 			return;

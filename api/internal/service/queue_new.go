@@ -199,16 +199,23 @@ func (qs *QueueService) scheduleFakeMatch(entry *matching.QueueEntry) {
 }
 
 func (qs *QueueService) finishFakeMatch(userID, roomID uuid.UUID) {
-	<-time.After(2 * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
 
-	session := qs.fakeMatchService.GetByUserID(userID)
-	if session == nil || session.RoomID != roomID {
+	for range ticker.C {
+		session := qs.fakeMatchService.GetByUserID(userID)
+		if session == nil || session.RoomID != roomID {
+			return
+		}
+		if !qs.fakeMatchService.ShouldEndSession(userID, roomID, time.Now().UTC()) {
+			continue
+		}
+
+		qs.fakeMatchService.EndSession(userID)
+		if qs.matchNotifier != nil {
+			qs.matchNotifier.NotifyFakePartnerLeft(userID, roomID)
+		}
 		return
-	}
-
-	qs.fakeMatchService.EndSession(userID)
-	if qs.matchNotifier != nil {
-		qs.matchNotifier.NotifyFakePartnerLeft(userID, roomID)
 	}
 }
 

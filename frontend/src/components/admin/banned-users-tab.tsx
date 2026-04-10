@@ -10,8 +10,10 @@ import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { ChatViewer } from "./reports-tab";
 import type { BannedUserDTO } from "@/types";
+import { useLanguage } from "@/contexts/theme";
 
 export function BannedUsersTab() {
+	const { t } = useLanguage();
 	const queryClient = useQueryClient();
 	const [search, setSearch] = useState("");
 	const [viewing, setViewing] = useState<BannedUserDTO | null>(null);
@@ -29,9 +31,9 @@ export function BannedUsersTab() {
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["admin", "banned-users"] });
 			setViewing(null);
-			toast.success("User unbanned");
+			toast.success(t("adminUserUnbanned"));
 		},
-		onError: () => toast.error("Failed to unban user"),
+		onError: () => toast.error(t("adminFailedToUnbanUser")),
 	});
 
 	const filtered = useMemo(() => {

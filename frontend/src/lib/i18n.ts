@@ -8,6 +8,16 @@ const translations = {
 	vi: {
 		accountSettings: "Cài đặt tài khoản",
 		accountSettingsDescription: "Thay đổi thông tin cá nhân của bạn tại đây.",
+		accountSuspended: "Tài khoản đã bị khóa",
+		adminFailedToAddWord: "Không thể thêm từ cấm",
+		adminFailedToBanUser: "Không thể chặn người dùng",
+		adminFailedToRemoveWord: "Không thể xóa từ cấm",
+		adminFailedToUnbanUser: "Không thể bỏ chặn người dùng",
+		adminFailedToUpdateWord: "Không thể cập nhật từ cấm",
+		adminUserBanned: "Đã chặn người dùng",
+		adminUserUnbanned: "Đã bỏ chặn người dùng",
+		adminWordAdded: "Đã thêm từ cấm",
+		adminWordUpdated: "Đã cập nhật từ cấm",
 		admin: "Admin",
 		adminPanel: "Bảng quản trị",
 		age: "Tuổi",
@@ -24,10 +34,14 @@ const translations = {
 		gender: "Giới tính",
 		interfaceLanguage: "Ngôn ngữ giao diện",
 		joinQueue: "Tham gia hàng chờ",
+		joinQueueShortcut: "Tham gia hàng chờ (Ctrl+Enter)",
 		joinQueueSuccess: "Đã tham gia hàng chờ thành công!",
 		leaveChatRoom: "Rời phòng chat",
+		leaveChatRoomShortcut: "Rời phòng chat (Ctrl+Enter)",
+		leaveChatRoomConfirmDescription: "Bạn có chắc muốn rời phòng chat này không?",
 		leaveChatRoomSuccess: "Đã rời phòng chat",
 		leaveQueue: "Nhấn để rời hàng chờ",
+		leaveQueueShortcut: "Rời hàng chờ (Ctrl+Enter)",
 		leaveQueueSuccess: "Đã rời khỏi hàng chờ!",
 		loading: "Đang tải...",
 		loadingUser: "Đang tải thông tin người dùng...",
@@ -40,6 +54,7 @@ const translations = {
 		other: "Khác",
 		partnerLeft: "Đối tác đã rời phòng",
 		partnerLeftDescription: "Bạn có thể tìm kiếm đối tác mới",
+		partnerLeftInlineNotice: "Người dùng đã rời phòng chat",
 		pleaseTryAgain: "Vui lòng thử lại",
 		pleaseWait: "Vui lòng chờ trong giây lát",
 		privateProfile: "Riêng tư",
@@ -48,15 +63,21 @@ const translations = {
 		queueing: "Đang trong hàng chờ...",
 		queueingDescription: "Vui lòng chờ trong khi chúng tôi tìm kiếm người chat cho bạn",
 		report: "Báo cáo",
+		reportDialogDescription: "Bạn có chắc muốn báo cáo người dùng này không?",
+		reportDialogTitle: "Báo cáo người dùng",
 		reportConfirmDescription: "Bạn có chắc muốn báo cáo người dùng này không?",
 		reportConfirmTitle: "Báo cáo người dùng",
 		reportSubmitted: "Đã gửi báo cáo",
 		reportUser: "Báo cáo người dùng",
 		saveChanges: "Lưu thay đổi",
+		somethingWentWrong: "Có lỗi xảy ra",
 		saving: "Đang lưu...",
 		send: "Gửi",
 		settings: "Cài đặt",
+		sidebarToggleShortcut: "Mở/đóng sidebar (Ctrl+B)",
 		theme: "Màu giao diện",
+		turnOffSound: "Tắt âm thanh",
+		turnOnSound: "Bật âm thanh",
 		user: "Người dùng",
 		userInfoSaveSuccess: "Thông tin đã được lưu thành công!",
 		vietnamese: "Tiếng Việt",
@@ -66,6 +87,16 @@ const translations = {
 	en: {
 		accountSettings: "Account settings",
 		accountSettingsDescription: "Update your personal information here.",
+		accountSuspended: "Your account has been suspended",
+		adminFailedToAddWord: "Failed to add banned word",
+		adminFailedToBanUser: "Failed to ban user",
+		adminFailedToRemoveWord: "Failed to remove banned word",
+		adminFailedToUnbanUser: "Failed to unban user",
+		adminFailedToUpdateWord: "Failed to update banned word",
+		adminUserBanned: "User banned",
+		adminUserUnbanned: "User unbanned",
+		adminWordAdded: "Banned word added",
+		adminWordUpdated: "Banned word updated",
 		admin: "Admin",
 		adminPanel: "Admin Panel",
 		age: "Age",
@@ -82,10 +113,14 @@ const translations = {
 		gender: "Gender",
 		interfaceLanguage: "Interface language",
 		joinQueue: "Join queue",
+		joinQueueShortcut: "Join queue (Ctrl+Enter)",
 		joinQueueSuccess: "Joined the queue successfully!",
 		leaveChatRoom: "Leave chat room",
+		leaveChatRoomShortcut: "Leave chat room (Ctrl+Enter)",
+		leaveChatRoomConfirmDescription: "Are you sure you want to leave this chat room?",
 		leaveChatRoomSuccess: "Left the chat room",
 		leaveQueue: "Click to leave the queue",
+		leaveQueueShortcut: "Leave queue (Ctrl+Enter)",
 		leaveQueueSuccess: "Left the queue!",
 		loading: "Loading...",
 		loadingUser: "Loading user information...",
@@ -98,6 +133,7 @@ const translations = {
 		other: "Other",
 		partnerLeft: "Your partner left the room",
 		partnerLeftDescription: "You can look for a new partner now",
+		partnerLeftInlineNotice: "The other user left the chat",
 		pleaseTryAgain: "Please try again",
 		pleaseWait: "Please wait a moment",
 		privateProfile: "Private",
@@ -106,15 +142,21 @@ const translations = {
 		queueing: "Waiting in queue...",
 		queueingDescription: "Please wait while we find someone for you to chat with",
 		report: "Report",
+		reportDialogDescription: "Are you sure you want to report this user?",
+		reportDialogTitle: "Report user",
 		reportConfirmDescription: "Are you sure you want to report this user?",
 		reportConfirmTitle: "Report user",
 		reportSubmitted: "Report submitted",
 		reportUser: "Report user",
 		saveChanges: "Save changes",
+		somethingWentWrong: "Something went wrong",
 		saving: "Saving...",
 		send: "Send",
 		settings: "Settings",
+		sidebarToggleShortcut: "Toggle sidebar (Ctrl+B)",
 		theme: "Theme color",
+		turnOffSound: "Turn off sound",
+		turnOnSound: "Turn on sound",
 		user: "User",
 		userInfoSaveSuccess: "Your information has been saved successfully!",
 		vietnamese: "Tiếng Việt",
@@ -146,22 +188,22 @@ export function translate(
 	language: Language,
 	key: TranslationKey,
 	vars?: Record<string, string | number>
-) {
+) : string {
 	const template = translations[language][key] ?? translations.vi[key];
 
 	if (!vars) {
-		return template;
+		return String(template);
 	}
 
 	return Object.entries(vars).reduce(
 		(result, [name, value]) => result.replaceAll(`{${name}}`, String(value)),
-		template
+		String(template)
 	);
 }
 
 export function translateStored(
 	key: TranslationKey,
 	vars?: Record<string, string | number>
-) {
+) : string {
 	return translate(getStoredLanguage(), key, vars);
 }

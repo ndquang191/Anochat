@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Pencil, Trash2, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import type { BannedWordDTO } from "@/types";
+import { useLanguage } from "@/contexts/theme";
 
 const DEFAULT_CATEGORY = "General";
 
@@ -18,6 +19,7 @@ interface EditingState {
 }
 
 export function BannedWordsTab() {
+	const { t } = useLanguage();
 	const queryClient = useQueryClient();
 	const [newWord, setNewWord] = useState("");
 	const [newCategory, setNewCategory] = useState("");
@@ -54,9 +56,9 @@ export function BannedWordsTab() {
 		onSuccess: () => {
 			setNewWord("");
 			queryClient.invalidateQueries({ queryKey: ["admin", "words"] });
-			toast.success("Word added");
+			toast.success(t("adminWordAdded"));
 		},
-		onError: () => toast.error("Failed to add word"),
+		onError: () => toast.error(t("adminFailedToAddWord")),
 	});
 
 	const updateMutation = useMutation({
@@ -65,15 +67,15 @@ export function BannedWordsTab() {
 		onSuccess: () => {
 			setEditing(null);
 			queryClient.invalidateQueries({ queryKey: ["admin", "words"] });
-			toast.success("Word updated");
+			toast.success(t("adminWordUpdated"));
 		},
-		onError: () => toast.error("Failed to update word"),
+		onError: () => toast.error(t("adminFailedToUpdateWord")),
 	});
 
 	const deleteMutation = useMutation({
 		mutationFn: (id: string) => moderationAPI.deleteWord(id),
 		onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "words"] }),
-		onError: () => toast.error("Failed to remove word"),
+		onError: () => toast.error(t("adminFailedToRemoveWord")),
 	});
 
 	const handleAddKeyDown = (e: React.KeyboardEvent) => {

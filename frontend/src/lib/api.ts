@@ -43,7 +43,7 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 		const errorData = await response.json().catch(() => ({}));
 
 		if (errorData.code === "account_suspended") {
-			toast.error("Tài kho?n dã b? khóa");
+			toast.error(translateStored("accountSuspended"));
 			clearAuthCookies();
 			window.location.href = "/login";
 			return new Promise(() => {});

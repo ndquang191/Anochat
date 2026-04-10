@@ -66,6 +66,7 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 	msgID := uuid.New()
 	now := time.Now().UTC()
 	roomID := *c.RoomID
+	isFakeRoom := c.Hub.fakeMatchService.IsParticipant(c.UserID, roomID)
 
 	broadcastMsg := WSMessage{
 		Type: "receive_message",
@@ -87,6 +88,13 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 		RoomID:  roomID,
 		Message: msgBytes,
 		Exclude: c.UserID,
+	}
+
+	if isFakeRoom {
+		reply := c.Hub.fakeMatchService.AdvanceConversation(c.UserID, roomID)
+		c.Hub.NotifyFakeMessage(c.UserID, reply)
+		slog.Info("Fake room message handled", "user_id", c.UserID, "room_id", roomID)
+		return
 	}
 
 	go func() {

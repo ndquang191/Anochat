@@ -6,6 +6,7 @@ import { useQueue } from "@/hooks/use-queue";
 import { useAuth } from "@/contexts/auth";
 import { toast } from "sonner";
 import { getWebSocketClient } from "@/lib/websocket";
+import { useLanguage } from "@/contexts/theme";
 
 interface ButtonConfig {
 	bgColor: string;
@@ -17,6 +18,7 @@ interface ButtonConfig {
 export function ActionButton() {
 	const { room, inQueue } = useAuth();
 	const { isLoading, joinQueue, leaveQueue } = useQueue();
+	const { t } = useLanguage();
 
 	const inRoom = !!room;
 
@@ -27,7 +29,7 @@ export function ActionButton() {
 			if (inRoom) {
 				const client = getWebSocketClient();
 				client.send("leave_room", { room_id: room.id });
-				toast.success("Đã rời phòng chat");
+				toast.success(t("leaveChatRoomSuccess"));
 				return;
 			}
 
@@ -38,8 +40,8 @@ export function ActionButton() {
 			}
 		} catch (error) {
 			console.error("Operation failed:", error);
-			toast.error("Có lỗi xảy ra", {
-				description: error instanceof Error ? error.message : "Vui lòng thử lại",
+			toast.error(t("somethingWentWrong"), {
+				description: error instanceof Error ? error.message : t("pleaseTryAgain"),
 			});
 		}
 	};
@@ -49,7 +51,7 @@ export function ActionButton() {
 			return {
 				bgColor: "bg-primary hover:bg-primary/90",
 				icon: <LogOut size={18} />,
-				title: "Rời phòng chat",
+				title: t("leaveChatRoom"),
 				spinning: false,
 			};
 		}
@@ -57,14 +59,14 @@ export function ActionButton() {
 			return {
 				bgColor: "bg-primary hover:bg-primary/90 opacity-70",
 				icon: <RotateCw size={18} />,
-				title: "Nhấn để rời hàng chờ",
+				title: t("leaveQueue"),
 				spinning: true,
 			};
 		}
 		return {
 			bgColor: "bg-primary hover:bg-primary/90",
 			icon: <RotateCw size={18} />,
-			title: "Tham gia hàng chờ",
+			title: t("joinQueue"),
 			spinning: false,
 		};
 	};

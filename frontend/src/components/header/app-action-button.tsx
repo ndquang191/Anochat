@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useCallback, useEffect } from "react";
 import { RotateCw, LogOut } from "lucide-react";
 import { useQueue } from "@/hooks/use-queue";
 import { useAuth } from "@/contexts/auth";
@@ -8,6 +8,7 @@ import { useLanguage } from "@/contexts/theme";
 import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
 import { toast } from "sonner";
 import { getWebSocketClient } from "@/lib/websocket";
+import { useAlertDialogContext } from "@/contexts/alert-dialog";
 
 interface ButtonConfig {
 	bgColor: string;
@@ -21,18 +22,34 @@ export function AppActionButton() {
 	const { t } = useLanguage();
 	const invalidateUserState = useInvalidateUserState();
 	const { isLoading, joinQueue, leaveQueue } = useQueue();
+	const alertDialog = useAlertDialogContext();
 
 	const inRoom = !!room;
 
-	const handleClick = async () => {
+	const leaveRoom = useCallback(async () => {
+		if (!room) return;
+
+		const confirmed = await alertDialog.open({
+			title: t("leaveChatRoom"),
+			description: t("leaveChatRoomConfirmDescription"),
+			confirmText: t("leaveChatRoom"),
+			cancelText: t("cancel"),
+		});
+
+		if (!confirmed) return;
+
+		const client = getWebSocketClient();
+		client.send("leave_room", { room_id: room.id });
+		invalidateUserState();
+		toast.success(t("leaveChatRoomSuccess"));
+	}, [alertDialog, invalidateUserState, room, t]);
+
+	const handleClick = useCallback(async () => {
 		if (isLoading) return;
 
 		try {
 			if (inRoom) {
-				const client = getWebSocketClient();
-				client.send("leave_room", { room_id: room.id });
-				invalidateUserState();
-				toast.success(t("leaveChatRoomSuccess"));
+				await leaveRoom();
 				return;
 			}
 
@@ -47,14 +64,27 @@ export function AppActionButton() {
 				description: error instanceof Error ? error.message : t("pleaseTryAgain"),
 			});
 		}
-	};
+	}, [inQueue, inRoom, isLoading, joinQueue, leaveQueue, leaveRoom, t]);
+
+	useEffect(() => {
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (!(event.ctrlKey && event.key === "Enter")) return;
+			if (event.repeat) return;
+
+			event.preventDefault();
+			void handleClick();
+		};
+
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [handleClick]);
 
 	const getButtonConfig = (): ButtonConfig => {
 		if (inRoom) {
 			return {
 				bgColor: "bg-primary hover:bg-primary/90",
 				icon: <LogOut size={18} />,
-				title: t("leaveChatRoom"),
+				title: t("leaveChatRoomShortcut"),
 				spinning: false,
 			};
 		}
@@ -62,14 +92,14 @@ export function AppActionButton() {
 			return {
 				bgColor: "bg-primary hover:bg-primary/90",
 				icon: <RotateCw size={18} />,
-				title: t("leaveQueue"),
+				title: t("leaveQueueShortcut"),
 				spinning: true,
 			};
 		}
 		return {
 			bgColor: "bg-primary hover:bg-primary/90",
 			icon: <RotateCw size={18} />,
-			title: t("joinQueue"),
+			title: t("joinQueueShortcut"),
 			spinning: false,
 		};
 	};

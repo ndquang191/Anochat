@@ -14,7 +14,7 @@ export default function LocalizedChatBox() {
 	const { user, messages: initialMessages } = useAuth();
 	const { t } = useLanguage();
 
-	const { messages, sendMessage, isConnected, roomId, sendTypingIndicator } =
+	const { messages, sendMessage, isConnected, roomId, partnerLeft } =
 		useWebSocketChat({
 			userId: user?.id || "",
 			initialMessages: initialMessages as ChatMessage[],
@@ -38,7 +38,7 @@ export default function LocalizedChatBox() {
 		return <ChatLoadingState message={t("connectingWebSocket")} />;
 	}
 
-	if (!roomId) {
+	if (!roomId && !partnerLeft) {
 		return (
 			<ChatEmptyState
 				title={t("noChatRoom")}
@@ -50,9 +50,13 @@ export default function LocalizedChatBox() {
 	return (
 		<div className="relative flex h-full flex-col bg-card text-card-foreground shadow-sm">
 			<ChatMessages messages={messages} currentUserId={user.id} />
+			{partnerLeft && (
+				<div className="border-t bg-muted/35 px-4 py-3 text-center text-sm text-muted-foreground">
+					{t("partnerLeftInlineNotice")}
+				</div>
+			)}
 			<ChatInput
 				onSendMessage={sendMessage}
-				onTypingChange={sendTypingIndicator}
 				disabled={!roomId}
 			/>
 		</div>

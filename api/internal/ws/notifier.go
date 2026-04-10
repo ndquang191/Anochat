@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/ndquang191/Anochat/api/internal/domain/chat"
 	"github.com/ndquang191/Anochat/api/internal/domain/matching"
 )
 
@@ -117,4 +118,34 @@ func (h *Hub) NotifyFakePartnerLeft(userID, roomID uuid.UUID) {
 		}
 	}
 	h.roomMutex.Unlock()
+}
+
+func (h *Hub) NotifyFakeMessage(userID uuid.UUID, message *chat.Message) {
+	if message == nil {
+		return
+	}
+
+	payload := WSMessage{
+		Type: "receive_message",
+		Payload: map[string]interface{}{
+			"id":         message.ID.String(),
+			"room_id":    message.RoomID.String(),
+			"sender_id":  message.SenderID.String(),
+			"content":    message.Content,
+			"created_at": message.CreatedAt.Unix(),
+		},
+	}
+
+	msgBytes, err := json.Marshal(payload)
+	if err != nil {
+		slog.Error("Failed to marshal fake receive_message", "error", err, "user_id", userID)
+		return
+	}
+
+	h.mutex.RLock()
+	client := h.clients[userID]
+	h.mutex.RUnlock()
+	if client != nil {
+		client.Send <- msgBytes
+	}
 }
