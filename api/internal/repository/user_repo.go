@@ -105,6 +105,7 @@ func userModelToDomain(m *model.User) *identity.User {
 		Name:      m.Name,
 		AvatarURL: m.AvatarURL,
 		IsActive:  m.IsActive,
+		IsAdmin:   m.IsAdmin,
 		IsDeleted: m.IsDeleted,
 		CreatedAt: m.CreatedAt,
 	}
@@ -121,6 +122,7 @@ func userDomainToModel(u *identity.User) *model.User {
 		Name:      u.Name,
 		AvatarURL: u.AvatarURL,
 		IsActive:  u.IsActive,
+		IsAdmin:   u.IsAdmin,
 		IsDeleted: u.IsDeleted,
 		CreatedAt: u.CreatedAt,
 	}

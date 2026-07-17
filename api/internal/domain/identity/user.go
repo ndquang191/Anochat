@@ -13,6 +13,7 @@ type User struct {
 	Name      *string
 	AvatarURL *string
 	IsActive  bool
+	IsAdmin   bool
 	IsDeleted bool
 	CreatedAt time.Time
 	Profile   *Profile

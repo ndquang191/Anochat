@@ -203,12 +203,11 @@ frontend/src/
 - Edge cases identified
 - Performance testing guidelines provided
 
-### Automated Testing ⚠️ (Optional)
-- Unit tests: Not implemented (optional)
-- Integration tests: Not implemented (optional)
-- E2E tests: Not implemented (optional)
-
-**Note:** Automated tests are optional enhancements and do not block production deployment.
+### Automated Testing ✅
+- Backend unit tests run with `go test ./...`
+- Frontend unit tests run with Bun's built-in test runner
+- CI runs tests, linting, static analysis, production builds, and container validation
+- E2E browser tests remain a future enhancement
 
 ---
 
@@ -254,23 +253,35 @@ frontend/src/
 **Backend (.env):**
 ```bash
 # Server
-PORT=8080
-CLIENT_URL=http://localhost:3000
+SERVER_PORT=8080
+SERVER_ENV=production
+SERVER_CLIENT_URL=https://example.com
 
 # Database
-DATABASE_URL=postgresql://user:pass@localhost:5432/anochat_db
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_USER=anochat
+DATABASE_PASSWORD=change-me
+DATABASE_NAME=anochat
+DATABASE_SSL_MODE=require
+
+# Redis
+REDIS_URL=localhost:6379
+REDIS_PASSWORD=
+REDIS_DB=0
 
 # OAuth
-GOOGLE_CLIENT_ID=your_client_id
-GOOGLE_CLIENT_SECRET=your_client_secret
-REDIRECT_URL=http://localhost:8080/auth/callback
+OAUTH_GOOGLE_CLIENT_ID=your_client_id
+OAUTH_GOOGLE_CLIENT_SECRET=your_client_secret
+OAUTH_REDIRECT_URL=https://api.example.com/auth/callback
 
 # JWT
-JWT_SECRET=your_secret_key
+OAUTH_JWT_SECRET=your_long_random_secret
 
 # Rate Limiting
-RATE_LIMIT=100
-MESSAGE_RATE_LIMIT=10
+SECURITY_RATE_LIMIT=100
+CHAT_MESSAGE_RATE_LIMIT=10
+CHAT_MAX_MESSAGE_LENGTH=1000
 ```
 
 **Frontend (.env.local):**
@@ -295,8 +306,8 @@ NEXT_PUBLIC_API_URL=http://localhost:8080
 3. **Frontend Deployment**
    ```bash
    cd frontend
-   npm run build
-   npm start
+   bun run build
+   bun run start
    ```
 
 4. **Database Migration**
@@ -335,7 +346,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8080
 - [ ] Read receipts
 - [ ] User blocking/reporting
 - [ ] Profile pictures
-- [ ] Automated testing suite
+- [ ] E2E browser testing suite
 
 ### Medium-term (3-6 months)
 - [ ] Redis-based queue for horizontal scaling
@@ -401,11 +412,12 @@ The remaining 5% consists of optional enhancements that can be implemented post-
 ```bash
 # Backend
 cd api
-go run cmd/server/main.go
+cp .env.example .env
+go run ./cmd/server
 
 # Frontend
 cd frontend
-npm run dev
+bun run dev
 ```
 
 ### Production

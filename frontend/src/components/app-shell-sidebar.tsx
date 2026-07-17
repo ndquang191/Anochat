@@ -25,7 +25,6 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AdminUserID } from "@/types";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { AuroraText } from "@/components/aurora-text";
@@ -96,7 +95,7 @@ export function AppShellSidebar({
 	const invalidateUserState = useInvalidateUserState();
 	const alertDialog = useAlertDialogContext();
 
-	const isAdmin = user?.id === AdminUserID;
+	const isAdmin = user?.is_admin === true;
 	const partner = room?.partner;
 	const derived = deriveUserData(user, data);
 	const userData = { ...derived, ...localOverrides };

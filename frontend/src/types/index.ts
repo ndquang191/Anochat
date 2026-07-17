@@ -4,6 +4,7 @@ export interface UserDTO {
 	name?: string;
 	nickname?: string;
 	avatar_url?: string;
+	is_admin?: boolean;
 	profile?: ProfileDTO;
 }
 
@@ -34,6 +35,7 @@ export interface UserStateResponse {
 	room?: RoomDTO;
 	messages?: MessageDTO[];
 	in_queue?: boolean;
+	is_admin: boolean;
 }
 
 export interface ApiResponse<T> {
@@ -42,8 +44,6 @@ export interface ApiResponse<T> {
 	error?: string;
 	message?: string;
 }
-
-export const AdminUserID = "8d2e7280-bdc8-47b2-8508-8911b5c9f796";
 
 export interface BannedWordDTO {
 	id: string;

@@ -1,24 +1,26 @@
 package config
 
 import (
-	"log/slog"
+	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	Port      string
-	Env       string
-	ClientURL string
-	Database  DatabaseConfig
-	OAuth     OAuthConfig
-	Chat      ChatConfig
-	User      UserConfig
-	Security  SecurityConfig
-	Redis     RedisConfig
+	Port               string
+	Env                string
+	ClientURL          string
+	AllowDatabaseReset bool
+	Database           DatabaseConfig
+	OAuth              OAuthConfig
+	Chat               ChatConfig
+	User               UserConfig
+	Security           SecurityConfig
+	Redis              RedisConfig
 }
 
 type DatabaseConfig struct {
@@ -60,115 +62,170 @@ type RedisConfig struct {
 	DB       int
 }
 
-func Load() *Config {
-	v := viper.New()
-	v.SetConfigType("yaml")
-	v.AddConfigPath("./config")
-	v.AddConfigPath(".")
-
-	// Base config (committed)
-	v.SetConfigName("config")
-	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			slog.Error("Failed to read config.yaml", "error", err)
-			os.Exit(1)
-		}
-		slog.Warn("config.yaml not found")
-	} else {
-		slog.Info("Loaded config", "file", v.ConfigFileUsed())
+// Load reads local development values from .env when present, then builds the
+// configuration from environment variables. Existing environment variables
+// always win over values in .env.
+func Load() (*Config, error) {
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("load .env: %w", err)
 	}
 
-	// Local overrides (gitignored — secrets + local env values)
-	v.SetConfigName("config.local")
-	if err := v.MergeInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			slog.Error("Failed to read config.local.yaml", "error", err)
-			os.Exit(1)
-		}
-		// No local file is fine in Docker/production
-	} else {
-		slog.Info("Merged local config", "file", v.ConfigFileUsed())
+	accessTokenExpiry, err := durationEnv("OAUTH_ACCESS_TOKEN_EXPIRY", 15*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	refreshTokenExpiry, err := durationEnv("OAUTH_REFRESH_TOKEN_EXPIRY", 30*24*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+	messageRateLimit, err := intEnv("CHAT_MESSAGE_RATE_LIMIT", 10)
+	if err != nil {
+		return nil, err
+	}
+	maxMessageLength, err := intEnv("CHAT_MAX_MESSAGE_LENGTH", 1000)
+	if err != nil {
+		return nil, err
+	}
+	minAge, err := intEnv("USER_MIN_AGE", 10)
+	if err != nil {
+		return nil, err
+	}
+	maxAge, err := intEnv("USER_MAX_AGE", 99)
+	if err != nil {
+		return nil, err
+	}
+	rateLimit, err := intEnv("SECURITY_RATE_LIMIT", 100)
+	if err != nil {
+		return nil, err
+	}
+	redisDB, err := intEnv("REDIS_DB", 0)
+	if err != nil {
+		return nil, err
+	}
+	allowDatabaseReset, err := boolEnv("ALLOW_DATABASE_RESET", false)
+	if err != nil {
+		return nil, err
 	}
 
-	// Docker / production: allow env var overrides for a handful of fields
-	// that differ between environments (hostnames, secrets injected at runtime).
-	// Env var names mirror the YAML path with "." → "_" and uppercased.
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
-
+	clientURL := envOrDefault("SERVER_CLIENT_URL", "http://localhost:3000")
 	cfg := &Config{
-		Port:      v.GetString("server.port"),
-		Env:       v.GetString("server.env"),
-		ClientURL: v.GetString("server.client_url"),
-
+		Port:               envOrDefault("SERVER_PORT", "8080"),
+		Env:                strings.ToLower(envOrDefault("SERVER_ENV", "development")),
+		ClientURL:          clientURL,
+		AllowDatabaseReset: allowDatabaseReset,
 		Database: DatabaseConfig{
-			Host:     v.GetString("database.host"),
-			Port:     v.GetString("database.port"),
-			User:     v.GetString("database.user"),
-			Password: v.GetString("database.password"),
-			Name:     v.GetString("database.name"),
-			SSLMode:  v.GetString("database.ssl_mode"),
+			Host:     envOrDefault("DATABASE_HOST", "localhost"),
+			Port:     envOrDefault("DATABASE_PORT", "5432"),
+			User:     os.Getenv("DATABASE_USER"),
+			Password: os.Getenv("DATABASE_PASSWORD"),
+			Name:     envOrDefault("DATABASE_NAME", "anochat"),
+			SSLMode:  envOrDefault("DATABASE_SSL_MODE", "disable"),
 		},
-
 		OAuth: OAuthConfig{
-			GoogleClientID:     v.GetString("oauth.google_client_id"),
-			GoogleClientSecret: v.GetString("oauth.google_client_secret"),
-			RedirectURL:        v.GetString("oauth.redirect_url"),
-			JWTSecret:          v.GetString("oauth.jwt_secret"),
-			AccessTokenExpiry:  v.GetDuration("oauth.access_token_expiry"),
-			RefreshTokenExpiry: v.GetDuration("oauth.refresh_token_expiry"),
+			GoogleClientID:     os.Getenv("OAUTH_GOOGLE_CLIENT_ID"),
+			GoogleClientSecret: os.Getenv("OAUTH_GOOGLE_CLIENT_SECRET"),
+			RedirectURL:        envOrDefault("OAUTH_REDIRECT_URL", "http://localhost:8080/auth/callback"),
+			JWTSecret:          os.Getenv("OAUTH_JWT_SECRET"),
+			AccessTokenExpiry:  accessTokenExpiry,
+			RefreshTokenExpiry: refreshTokenExpiry,
 		},
-
 		Chat: ChatConfig{
-			MessageRateLimit: v.GetInt("chat.message_rate_limit"),
-			MaxMessageLength: v.GetInt("chat.max_message_length"),
+			MessageRateLimit: messageRateLimit,
+			MaxMessageLength: maxMessageLength,
 		},
-
 		User: UserConfig{
-			MinAge: v.GetInt("user.min_age"),
-			MaxAge: v.GetInt("user.max_age"),
+			MinAge: minAge,
+			MaxAge: maxAge,
 		},
-
 		Security: SecurityConfig{
-			CORSOrigins: []string{v.GetString("server.client_url")},
-			RateLimit:   v.GetInt("security.rate_limit"),
+			CORSOrigins: []string{clientURL},
+			RateLimit:   rateLimit,
 		},
-
 		Redis: RedisConfig{
-			URL:      v.GetString("redis.url"),
-			Password: v.GetString("redis.password"),
-			DB:       v.GetInt("redis.db"),
+			URL:      envOrDefault("REDIS_URL", "localhost:6379"),
+			Password: os.Getenv("REDIS_PASSWORD"),
+			DB:       redisDB,
 		},
 	}
 
-	cfg.validate()
-	return cfg
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
-func (c *Config) validate() {
-	if c.Database.Host == "" {
-		slog.Error("database.host is required")
-		os.Exit(1)
+func envOrDefault(key, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func intEnv(key string, fallback int) (int, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer: %w", key, err)
+	}
+	return parsed, nil
+}
+
+func boolEnv(key string, fallback bool) (bool, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be true or false: %w", key, err)
+	}
+	return parsed, nil
+}
+
+func durationEnv(key string, fallback time.Duration) (time.Duration, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a duration such as 15m or 720h: %w", key, err)
+	}
+	return parsed, nil
+}
+
+func (c *Config) validate() error {
+	if c.Env != "development" && c.Env != "test" && c.Env != "production" {
+		return fmt.Errorf("SERVER_ENV must be development, test, or production")
 	}
 	if c.Database.User == "" {
-		slog.Error("database.user is required")
-		os.Exit(1)
+		return fmt.Errorf("DATABASE_USER is required")
 	}
 	if c.Database.Password == "" {
-		slog.Error("database.password is required")
-		os.Exit(1)
-	}
-	if c.Database.Name == "" {
-		slog.Error("database.name is required")
-		os.Exit(1)
+		return fmt.Errorf("DATABASE_PASSWORD is required")
 	}
 	if c.OAuth.JWTSecret == "" {
-		slog.Error("oauth.jwt_secret is required")
-		os.Exit(1)
+		return fmt.Errorf("OAUTH_JWT_SECRET is required")
 	}
-	if c.OAuth.GoogleClientID == "" {
-		slog.Warn("oauth.google_client_id not set — OAuth will be disabled")
+	if c.Chat.MessageRateLimit <= 0 {
+		return fmt.Errorf("CHAT_MESSAGE_RATE_LIMIT must be greater than zero")
 	}
+	if c.Chat.MaxMessageLength <= 0 {
+		return fmt.Errorf("CHAT_MAX_MESSAGE_LENGTH must be greater than zero")
+	}
+	if c.User.MinAge <= 0 || c.User.MaxAge < c.User.MinAge {
+		return fmt.Errorf("USER_MIN_AGE and USER_MAX_AGE define an invalid range")
+	}
+	if c.Security.RateLimit <= 0 {
+		return fmt.Errorf("SECURITY_RATE_LIMIT must be greater than zero")
+	}
+	if c.Redis.DB < 0 {
+		return fmt.Errorf("REDIS_DB must be zero or greater")
+	}
+	return nil
 }
 
 func (c *Config) IsProduction() bool {

@@ -13,6 +13,7 @@ type User struct {
 	Name      *string   `gorm:"type:text" json:"name"`
 	AvatarURL *string   `gorm:"type:text;column:avatar_url" json:"avatar_url"`
 	IsActive  bool      `gorm:"default:false" json:"is_active"`
+	IsAdmin   bool      `gorm:"default:false;not null" json:"is_admin"`
 	IsDeleted bool      `gorm:"default:false" json:"is_deleted"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 

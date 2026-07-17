@@ -3,6 +3,7 @@ package initialize
 import (
 	"context"
 	"log/slog"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -58,7 +59,16 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 		slog.Warn("Failed to load banned words at startup", "error", err)
 	}
 
-	wsHub := ws.NewHub(queueService, messageService, roomService, fakeMatchService, moderationService, redisClient)
+	wsHub := ws.NewHub(
+		queueService,
+		messageService,
+		roomService,
+		fakeMatchService,
+		moderationService,
+		redisClient,
+		cfg.Chat.MessageRateLimit,
+		cfg.Chat.MaxMessageLength,
+	)
 	go wsHub.Run()
 	slog.Info("WebSocket hub started")
 
@@ -69,7 +79,6 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	queueHandler := handler.NewQueueHandler(queueService, cfg)
 	wsHandler := handler.NewWebSocketHandler(wsHub, authService, cfg)
 	moderationHandler := handler.NewModerationHandler(moderationService, messageRepo)
-	devHandler := handler.NewDevHandler(db)
 
 	authMiddleware := middleware.AuthMiddleware(authService, userRepo, cfg)
 
@@ -115,11 +124,6 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 		}
 	}
 
-	if !cfg.IsProduction() {
-		router.POST("/dev/reset", devHandler.ResetDB)
-		slog.Info("Dev routes enabled: POST /dev/reset")
-	}
-
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	router.GET("/healthz", healthHandler())
 
@@ -130,24 +134,35 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 }
 
 func healthHandler() gin.HandlerFunc {
+	return healthHandlerWithChecks(database.HealthCheck, cache.HealthCheck)
+}
+
+func healthHandlerWithChecks(databaseCheck, redisCheck func() error) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if err := database.HealthCheck(); err != nil {
-			c.JSON(503, gin.H{
-				"status":  "error",
-				"message": "Database connection failed",
-				"error":   err.Error(),
-			})
+		status := gin.H{
+			"database": "connected",
+			"redis":    "connected",
+		}
+		healthy := true
+
+		if err := databaseCheck(); err != nil {
+			healthy = false
+			status["database"] = "unavailable"
+			slog.Warn("Database health check failed", "error", err)
+		}
+		if err := redisCheck(); err != nil {
+			healthy = false
+			status["redis"] = "unavailable"
+			slog.Warn("Redis health check failed", "error", err)
+		}
+
+		if !healthy {
+			status["status"] = "error"
+			c.JSON(http.StatusServiceUnavailable, status)
 			return
 		}
-		redisStatus := "connected"
-		if err := cache.HealthCheck(); err != nil {
-			redisStatus = "error: " + err.Error()
-		}
-		c.JSON(200, gin.H{
-			"status":   "ok",
-			"message":  "Anonymous Chat API is running",
-			"database": "connected",
-			"redis":    redisStatus,
-		})
+
+		status["status"] = "ok"
+		c.JSON(http.StatusOK, status)
 	}
 }

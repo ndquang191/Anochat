@@ -1,3 +1,6 @@
+# Local development stack. Production uses docker-compose.prod.yml.
+name: anochat-dev
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -6,7 +9,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: anochat
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +21,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -30,20 +33,26 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
-    volumes:
-      - ./api/config/config.yaml:/app/config/config.yaml:ro
+      - "127.0.0.1:8080:8080"
     environment:
-      # Override config.yaml values for Docker networking
+      SERVER_ENV: development
+      SERVER_CLIENT_URL: http://localhost:3000
       DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
       DATABASE_USER: postgres
       DATABASE_PASSWORD: postgres
       DATABASE_NAME: anochat
+      DATABASE_SSL_MODE: disable
       REDIS_URL: redis:6379
-      # Secrets — set these in your shell before running docker compose
-      OAUTH_JWT_SECRET: ${OAUTH_JWT_SECRET:-dev-secret-change-in-production}
+      # Secrets are supplied by the shell or a root .env file used by Compose.
+      OAUTH_JWT_SECRET: ${OAUTH_JWT_SECRET:?set OAUTH_JWT_SECRET before starting Compose}
       OAUTH_GOOGLE_CLIENT_ID: ${OAUTH_GOOGLE_CLIENT_ID:-}
       OAUTH_GOOGLE_CLIENT_SECRET: ${OAUTH_GOOGLE_CLIENT_SECRET:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,22 +62,23 @@ services:
   prometheus:
     image: prom/prometheus:v3.4.0
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=7d"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
   grafana:
     image: grafana/grafana:12.0.0
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana

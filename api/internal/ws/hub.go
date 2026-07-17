@@ -42,6 +42,8 @@ type Hub struct {
 	moderationService *service.ModerationService
 	rdb               *redis.Client
 	pubsub            *redis.PubSub
+	messageRateLimit  int
+	maxMessageLength  int
 
 	mutex          sync.RWMutex
 	roomMutex      sync.RWMutex
@@ -61,6 +63,8 @@ func NewHub(
 	fakeMatchService *service.FakeMatchService,
 	moderationService *service.ModerationService,
 	rdb *redis.Client,
+	messageRateLimit int,
+	maxMessageLength int,
 ) *Hub {
 	pubsub := rdb.Subscribe(context.Background())
 	return &Hub{
@@ -77,6 +81,8 @@ func NewHub(
 		moderationService: moderationService,
 		rdb:               rdb,
 		pubsub:            pubsub,
+		messageRateLimit:  messageRateLimit,
+		maxMessageLength:  maxMessageLength,
 		roomLocalCount:    make(map[uuid.UUID]int),
 	}
 }
@@ -397,5 +403,5 @@ func (h *Hub) CheckMessageRateLimit(userID uuid.UUID) bool {
 		h.rdb.Expire(ctx, key, time.Second)
 	}
 
-	return count <= 10
+	return count <= int64(h.messageRateLimit)
 }

@@ -1,0 +1,80 @@
+name: anochat
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    environment:
+      SERVER_ENV: production
+      SERVER_PORT: "8080"
+      SERVER_CLIENT_URL: ${SERVER_CLIENT_URL:?set SERVER_CLIENT_URL}
+      ALLOW_DATABASE_RESET: "false"
+      DATABASE_HOST: ${DATABASE_HOST:?set DATABASE_HOST}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DATABASE_USER: ${DATABASE_USER:?set DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?set DATABASE_PASSWORD}
+      DATABASE_NAME: ${DATABASE_NAME:-anochat}
+      DATABASE_SSL_MODE: ${DATABASE_SSL_MODE:-require}
+      REDIS_URL: ${REDIS_URL:?set REDIS_URL}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      OAUTH_GOOGLE_CLIENT_ID: ${OAUTH_GOOGLE_CLIENT_ID:?set OAUTH_GOOGLE_CLIENT_ID}
+      OAUTH_GOOGLE_CLIENT_SECRET: ${OAUTH_GOOGLE_CLIENT_SECRET:?set OAUTH_GOOGLE_CLIENT_SECRET}
+      OAUTH_REDIRECT_URL: ${OAUTH_REDIRECT_URL:?set OAUTH_REDIRECT_URL}
+      OAUTH_JWT_SECRET: ${OAUTH_JWT_SECRET:?set OAUTH_JWT_SECRET}
+      OAUTH_ACCESS_TOKEN_EXPIRY: ${OAUTH_ACCESS_TOKEN_EXPIRY:-15m}
+      OAUTH_REFRESH_TOKEN_EXPIRY: ${OAUTH_REFRESH_TOKEN_EXPIRY:-720h}
+      CHAT_MESSAGE_RATE_LIMIT: ${CHAT_MESSAGE_RATE_LIMIT:-10}
+      CHAT_MAX_MESSAGE_LENGTH: ${CHAT_MAX_MESSAGE_LENGTH:-1000}
+      USER_MIN_AGE: ${USER_MIN_AGE:-10}
+      USER_MAX_AGE: ${USER_MAX_AGE:-99}
+      SECURITY_RATE_LIMIT: ${SECURITY_RATE_LIMIT:-100}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  prometheus:
+    image: prom/prometheus:v3.4.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:12.0.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus_data:
+  grafana_data:

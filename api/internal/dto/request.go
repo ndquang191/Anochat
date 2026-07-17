@@ -32,6 +32,7 @@ type UserStateResponse struct {
 	Room     *RoomDTO     `json:"room"`
 	Messages []MessageDTO `json:"messages"`
 	InQueue  bool         `json:"in_queue"`
+	IsAdmin  bool         `json:"is_admin"`
 }
 
 // UserDTO is the user data in API responses.
@@ -41,6 +42,7 @@ type UserDTO struct {
 	Name     *string     `json:"name"`
 	Nickname *string     `json:"nickname,omitempty"`
 	Profile  *ProfileDTO `json:"profile,omitempty"`
+	IsAdmin  bool        `json:"is_admin,omitempty"`
 }
 
 // ProfileDTO is the profile data in API responses.

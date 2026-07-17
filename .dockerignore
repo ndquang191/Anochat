@@ -1,0 +1,17 @@
+.git
+.gitignore
+.dockerignore
+
+# Local secrets and generated backend artifacts
+api/.env
+api/bin
+api/dist
+api/tmp
+api/main
+api/reset
+api/server
+
+# Not required by the backend image
+frontend
+documents
+monitoring

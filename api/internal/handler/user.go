@@ -54,6 +54,7 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 
 	resp := dto.UserStateResponse{
 		InQueue: h.queueService.IsInQueue(userID),
+		IsAdmin: c.GetBool("is_admin"),
 	}
 	if profile != nil {
 		resp.Profile = &dto.ProfileDTO{

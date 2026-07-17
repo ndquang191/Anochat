@@ -59,10 +59,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}, [logout]);
 
 	const isAuthenticated = hasCookie && !isError && !!data;
+	const user = userFromCookie
+		? { ...userFromCookie, is_admin: data?.is_admin ?? false }
+		: null;
 
 	const value: AuthContextType = {
 		isAuthenticated,
-		user: userFromCookie,
+		user,
 		room: data?.room ?? null,
 		messages: data?.messages ?? [],
 		inQueue: data?.in_queue ?? false,

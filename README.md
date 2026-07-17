@@ -129,8 +129,8 @@ Users ──┐     Profiles (1:1)
 
 ### Prerequisites
 
-- Go 1.24+
-- Node.js 20+
+- Go 1.26.5
+- Bun 1.3+
 - PostgreSQL
 - Redis
 
@@ -147,13 +147,57 @@ go run ./cmd/server
 ```bash
 cd frontend
 cp .env.example .env.local
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 ### Environment Variables
 
-See `api/.env.example` and `frontend/.env.example` for required configuration.
+See `api/.env.example` and `frontend/.env.example` for the complete schemas.
+The backend loads `api/.env` for local development; deployed environments should
+inject the same variables through their secret/configuration manager.
+
+### Docker Compose
+
+`docker-compose.yml` is the local development stack and binds all service ports
+to localhost. Start it with:
+
+```bash
+OAUTH_JWT_SECRET=local-development-secret docker compose up --build
+```
+
+Production uses external PostgreSQL and Redis services:
+
+```bash
+cp .env.production.example .env.production
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+```
+
+Add `--profile monitoring` to the production command to enable Prometheus and
+Grafana. Production services bind only the API and optional Grafana ports to
+localhost for a reverse proxy.
+
+### Reset the Local Database
+
+Database reset is available only as a local CLI command. Set
+`SERVER_ENV=development` and `ALLOW_DATABASE_RESET=true` in `api/.env`, then run:
+
+```bash
+./reset-db.sh
+```
+
+There is no HTTP endpoint for resetting the database.
+
+### Grant Administrator Access
+
+Administrator access is stored in the database. After the user has signed in at
+least once, grant the role explicitly:
+
+```sql
+UPDATE users SET is_admin = true WHERE email = 'admin@example.com';
+```
+
+Reload the application after changing the role.
 
 ## Scaling
 

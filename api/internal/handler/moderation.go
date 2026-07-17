@@ -9,8 +9,6 @@ import (
 	"github.com/ndquang191/Anochat/api/pkg/apperr"
 )
 
-const AdminUserID = "8d2e7280-bdc8-47b2-8508-8911b5c9f796"
-
 type ModerationHandler struct {
 	moderationService *service.ModerationService
 	messageRepo       repository.MessageRepository
@@ -21,8 +19,7 @@ func NewModerationHandler(moderationService *service.ModerationService, messageR
 }
 
 func (h *ModerationHandler) requireAdmin(c *gin.Context) bool {
-	id := getUserID(c)
-	if id.String() != AdminUserID {
+	if !c.GetBool("is_admin") {
 		dto.FailErr(c, apperr.ErrForbidden)
 		c.Abort()
 		return false

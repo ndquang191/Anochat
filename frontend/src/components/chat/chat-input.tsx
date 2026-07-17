@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { convertEmotes } from "@/lib/emotes";
 import { useLanguage } from "@/contexts/theme";
+import { MAX_MESSAGE_LENGTH } from "@/types";
 
 interface ChatInputProps {
 	onSendMessage: (message: string) => void;
@@ -78,6 +79,7 @@ export function ChatInput({ onSendMessage, onTypingChange, disabled }: ChatInput
 				placeholder={t("yourMessagePlaceholder")}
 				value={message}
 				onChange={handleChange}
+				maxLength={MAX_MESSAGE_LENGTH}
 				className="flex-1"
 				disabled={disabled}
 			/>

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -35,7 +37,17 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 	}
 
 	content, ok := payload["content"].(string)
-	if !ok || content == "" {
+	if !ok || strings.TrimSpace(content) == "" {
+		return
+	}
+	if messageExceedsLimit(content, c.Hub.maxMessageLength) {
+		c.SendJSON(WSMessage{
+			Type: "error",
+			Payload: map[string]interface{}{
+				"message": "Message is too long.",
+				"code":    "MESSAGE_TOO_LONG",
+			},
+		})
 		return
 	}
 
@@ -106,6 +118,10 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 	}()
 
 	slog.Info("Message sent", "user_id", c.UserID, "room_id", roomID, "message_id", msgID)
+}
+
+func messageExceedsLimit(content string, maxLength int) bool {
+	return utf8.RuneCountInString(content) > maxLength
 }
 
 func (c *Client) handleJoinRoom(payload map[string]interface{}) {

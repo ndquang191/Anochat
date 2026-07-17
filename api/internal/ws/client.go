@@ -11,9 +11,11 @@ import (
 )
 
 const (
-	pongWait   = 60 * time.Second
-	pingPeriod = 54 * time.Second
-	writeWait  = 10 * time.Second
+	pongWait                        = 60 * time.Second
+	pingPeriod                      = 54 * time.Second
+	writeWait                       = 10 * time.Second
+	maxJSONBytesPerMessageCharacter = 6
+	webSocketPayloadOverhead        = 1024
 )
 
 type WSMessage struct {
@@ -64,6 +66,7 @@ func (c *Client) ReadPump() {
 		c.Conn.Close()
 	}()
 
+	c.Conn.SetReadLimit(maxInboundMessageSize(c.Hub.maxMessageLength))
 	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.Conn.SetPongHandler(func(string) error {
 		c.Conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -82,6 +85,10 @@ func (c *Client) ReadPump() {
 		c.LastActivity = time.Now()
 		c.handleMessage(message)
 	}
+}
+
+func maxInboundMessageSize(maxMessageLength int) int64 {
+	return int64(maxMessageLength*maxJSONBytesPerMessageCharacter + webSocketPayloadOverhead)
 }
 
 func (c *Client) WritePump() {

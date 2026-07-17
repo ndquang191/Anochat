@@ -65,6 +65,7 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 		"email":      *result.User.Email,
 		"name":       *result.User.Name,
 		"avatar_url": *result.User.AvatarURL,
+		"is_admin":   result.User.IsAdmin,
 	}
 	userDataJSON, err := json.Marshal(userData)
 	if err != nil {

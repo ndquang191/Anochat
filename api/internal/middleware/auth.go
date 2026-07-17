@@ -52,6 +52,7 @@ func AuthMiddleware(authService *service.AuthService, userRepo repository.UserRe
 
 		c.Set("user_id", claims.UserID)
 		c.Set("user_email", claims.Email)
+		c.Set("is_admin", user.IsAdmin)
 		c.Next()
 	}
 }

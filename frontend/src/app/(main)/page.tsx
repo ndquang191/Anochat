@@ -9,7 +9,6 @@ import { useLanguage } from "@/contexts/theme";
 import { Loader2, MessageCircle } from "lucide-react";
 import { getWebSocketClient } from "@/lib/websocket";
 import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
-import { AdminUserID } from "@/types";
 import { useQueue } from "@/hooks/use-queue";
 import { playMatchSound } from "@/hooks/use-sound-notification";
 
@@ -53,7 +52,7 @@ const Page = () => {
 	const { isAdminOpen } = useAdmin();
 	const { t } = useLanguage();
 	const invalidateUserState = useInvalidateUserState();
-	const isAdmin = user?.id === AdminUserID;
+	const isAdmin = user?.is_admin === true;
 	const { joinQueue, leaveQueue, isLoading: isQueueLoading } = useQueue();
 	const [showEndedChat, setShowEndedChat] = useState(false);
 
