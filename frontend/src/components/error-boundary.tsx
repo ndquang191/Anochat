@@ -29,7 +29,6 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
 	private handleSignOut = () => {
 		const past = "Thu, 01 Jan 1970 00:00:00 UTC";
-		document.cookie = `user_info=;expires=${past};path=/;`;
 		document.cookie = `has_session=;expires=${past};path=/;`;
 		window.location.href = "/login";
 	};

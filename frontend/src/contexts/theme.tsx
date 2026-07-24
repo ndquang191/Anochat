@@ -3,13 +3,13 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { setSoundEnabled } from "@/hooks/use-sound-notification";
 import {
-	getStoredLanguage,
 	isLanguage,
 	LANGUAGE_STORAGE_KEY,
 	type Language,
 	type TranslationKey,
 	translate,
 } from "@/lib/i18n";
+import { setCookie } from "@/lib/cookies";
 
 export type Theme = "blue" | "dark" | "pink";
 
@@ -35,10 +35,16 @@ function applyLanguage(language: Language) {
 	document.documentElement.lang = language;
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
+export function ThemeProvider({
+	children,
+	initialLanguage,
+}: {
+	children: ReactNode;
+	initialLanguage: Language;
+}) {
 	const [theme, setThemeState] = useState<Theme>("blue");
 	const [soundEnabled, setSoundEnabledState] = useState(true);
-	const [language, setLanguageState] = useState<Language>("vi");
+	const [language, setLanguageState] = useState<Language>(initialLanguage);
 
 	useEffect(() => {
 		try {
@@ -55,9 +61,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 			}
 		} catch {}
 
-		const storedLanguage = getStoredLanguage();
-		setLanguageState(storedLanguage);
-		applyLanguage(storedLanguage);
 	}, []);
 
 	const setTheme = (value: Theme) => {
@@ -72,6 +75,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 		if (!isLanguage(value)) return;
 		setLanguageState(value);
 		applyLanguage(value);
+		setCookie(LANGUAGE_STORAGE_KEY, value, 365);
 		try {
 			localStorage.setItem(LANGUAGE_STORAGE_KEY, value);
 		} catch {}

@@ -90,10 +90,9 @@ func bannedWordDomainToModel(w *moderation.BannedWord) *model.BannedWord {
 // ReportRepository defines data access for moderation reports.
 type ReportRepository interface {
 	CreateWithSnapshot(ctx context.Context, report *moderation.Report, triggerMessage *chat.Message, limit int, requireRoom bool) error
-	FindAll(ctx context.Context) ([]*moderation.Report, error)
+	FindGroupedPage(ctx context.Context, status, query string, before *moderation.ReportGroupCursor, limit int) ([]*moderation.ReportGroup, error)
 	FindMessages(ctx context.Context, reportID uuid.UUID) ([]*moderation.ReportMessage, error)
 	MarkReviewedByUser(ctx context.Context, reportedUserID uuid.UUID) error
-	FindLatestRoomForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error)
 	FindLatestReportForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error)
 }
 
@@ -186,17 +185,71 @@ func (r *reportRepo) CreateWithSnapshot(
 	return nil
 }
 
-func (r *reportRepo) FindAll(ctx context.Context) ([]*moderation.Report, error) {
-	var models []model.Report
-	if err := r.db.WithContext(ctx).
-		Preload("ReportedUser").
-		Order("created_at DESC").
-		Find(&models).Error; err != nil {
+func (r *reportRepo) FindGroupedPage(
+	ctx context.Context,
+	status, query string,
+	before *moderation.ReportGroupCursor,
+	limit int,
+) ([]*moderation.ReportGroup, error) {
+	type row struct {
+		ReportedUserID   uuid.UUID
+		ReportedUserName *string
+		ReportCount      int64
+		AutoCount        int64
+		ManualCount      int64
+		LatestReportID   uuid.UUID
+	}
+
+	sql := `
+		WITH grouped_reports AS (
+			SELECT
+				r.reported_user_id,
+				u.name AS reported_user_name,
+				COUNT(*) AS report_count,
+				COUNT(*) FILTER (WHERE r.reporter_id = ?) AS auto_count,
+				COUNT(*) FILTER (WHERE r.reporter_id <> ?) AS manual_count,
+				(ARRAY_AGG(r.id ORDER BY r.created_at DESC, r.id DESC))[1] AS latest_report_id
+			FROM reports r
+			JOIN users u ON u.id = r.reported_user_id
+			WHERE r.status = ?
+			  AND u.is_deleted = false`
+	args := []any{uuid.Nil, uuid.Nil, status}
+	if query != "" {
+		sql += `
+			  AND (u.name ILIKE ? OR r.reported_user_id::text ILIKE ?)`
+		pattern := "%" + query + "%"
+		args = append(args, pattern, pattern)
+	}
+	sql += `
+			GROUP BY r.reported_user_id, u.name
+		)
+		SELECT *
+		FROM grouped_reports`
+	if before != nil {
+		sql += `
+		WHERE report_count < ?
+		   OR (report_count = ? AND reported_user_id < ?)`
+		args = append(args, before.ReportCount, before.ReportCount, before.ReportedUserID)
+	}
+	sql += `
+		ORDER BY report_count DESC, reported_user_id DESC
+		LIMIT ?`
+	args = append(args, limit)
+
+	var rows []row
+	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	result := make([]*moderation.Report, len(models))
-	for i := range models {
-		result[i] = reportModelToDomain(&models[i])
+	result := make([]*moderation.ReportGroup, len(rows))
+	for i := range rows {
+		result[i] = &moderation.ReportGroup{
+			ReportedUserID:   rows[i].ReportedUserID,
+			ReportedUserName: rows[i].ReportedUserName,
+			ReportCount:      rows[i].ReportCount,
+			AutoCount:        rows[i].AutoCount,
+			ManualCount:      rows[i].ManualCount,
+			LatestReportID:   rows[i].LatestReportID,
+		}
 	}
 	return result, nil
 }
@@ -217,31 +270,6 @@ func (r *reportRepo) FindMessages(ctx context.Context, reportID uuid.UUID) ([]*m
 	return result, nil
 }
 
-func (r *reportRepo) FindLatestRoomForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
-	if len(userIDs) == 0 {
-		return map[uuid.UUID]uuid.UUID{}, nil
-	}
-	type row struct {
-		ReportedUserID uuid.UUID
-		RoomID         uuid.UUID
-	}
-	var rows []row
-	err := r.db.WithContext(ctx).Raw(`
-		SELECT DISTINCT ON (reported_user_id) reported_user_id, room_id
-		FROM reports
-		WHERE reported_user_id = ANY(?)
-		ORDER BY reported_user_id, created_at DESC
-	`, userIDs).Scan(&rows).Error
-	if err != nil {
-		return nil, err
-	}
-	result := make(map[uuid.UUID]uuid.UUID, len(rows))
-	for _, row := range rows {
-		result[row.ReportedUserID] = row.RoomID
-	}
-	return result, nil
-}
-
 func (r *reportRepo) FindLatestReportForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
 	if len(userIDs) == 0 {
 		return map[uuid.UUID]uuid.UUID{}, nil
@@ -255,7 +283,7 @@ func (r *reportRepo) FindLatestReportForUsers(ctx context.Context, userIDs []uui
 		SELECT DISTINCT ON (reported_user_id) reported_user_id, id AS report_id
 		FROM reports
 		WHERE reported_user_id = ANY(?)
-		ORDER BY reported_user_id, created_at DESC
+		ORDER BY reported_user_id, created_at DESC, id DESC
 	`, userIDs).Scan(&rows).Error
 	if err != nil {
 		return nil, err

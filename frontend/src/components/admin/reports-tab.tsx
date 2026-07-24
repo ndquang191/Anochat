@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useDeferredValue, useMemo, useState } from "react";
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { moderationAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,10 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
-import type { ReportDTO } from "@/types";
+import type { ReportGroupDTO, ReportGroupPageDTO } from "@/types";
 import { useLanguage } from "@/contexts/theme";
-
-const NULL_UUID = "00000000-0000-0000-0000-000000000000";
 
 interface ChatMessage {
 	id: string;
@@ -22,14 +20,7 @@ interface ChatMessage {
 	created_at: number;
 }
 
-export interface GroupedUser {
-	reported_user_id: string;
-	reported_user_name?: string;
-	report_count: number;
-	auto_count: number;
-	manual_count: number;
-	latest_report: ReportDTO;
-}
+export type GroupedUser = ReportGroupDTO;
 
 export function ChatViewer({
 	reportId,
@@ -92,14 +83,31 @@ export function ReportsTab() {
 	const queryClient = useQueryClient();
 	const [search, setSearch] = useState("");
 	const [viewing, setViewing] = useState<GroupedUser | null>(null);
+	const deferredSearch = useDeferredValue(search.trim());
 
-	const { data: reports = [], isLoading } = useQuery({
-		queryKey: ["admin", "reports"],
-		queryFn: async () => {
-			const res = await moderationAPI.listReports();
-			return (res.data as ReportDTO[]) ?? [];
+	const {
+		data,
+		isLoading,
+		fetchNextPage,
+		hasNextPage,
+		isFetchingNextPage,
+	} = useInfiniteQuery({
+		queryKey: ["admin", "reports", deferredSearch],
+		initialPageParam: undefined as string | undefined,
+		queryFn: async ({ pageParam }) => {
+			const res = await moderationAPI.listReports({
+				before: pageParam,
+				query: deferredSearch || undefined,
+			});
+			return res.data ?? { groups: [], has_more: false };
 		},
+		getNextPageParam: (lastPage: ReportGroupPageDTO) =>
+			lastPage.has_more ? lastPage.next_cursor : undefined,
 	});
+	const groups = useMemo(
+		() => data?.pages.flatMap((page) => page.groups) ?? [],
+		[data]
+	);
 
 	const banMutation = useMutation({
 		mutationFn: (userId: string) => moderationAPI.banUser(userId),
@@ -111,43 +119,6 @@ export function ReportsTab() {
 		},
 		onError: () => toast.error(t("adminFailedToBanUser")),
 	});
-
-	const grouped = useMemo<GroupedUser[]>(() => {
-		const pending = reports.filter((r) => r.status === "pending");
-		const map = new Map<string, GroupedUser>();
-		for (const r of pending) {
-			const isAuto = r.reporter_id === NULL_UUID;
-			const existing = map.get(r.reported_user_id);
-			if (!existing) {
-				map.set(r.reported_user_id, {
-					reported_user_id: r.reported_user_id,
-					reported_user_name: r.reported_user_name,
-					report_count: 1,
-					auto_count: isAuto ? 1 : 0,
-					manual_count: isAuto ? 0 : 1,
-					latest_report: r,
-				});
-			} else {
-				existing.report_count++;
-				if (isAuto) existing.auto_count++;
-				else existing.manual_count++;
-				if (r.created_at > existing.latest_report.created_at) {
-					existing.latest_report = r;
-				}
-			}
-		}
-		return Array.from(map.values()).sort((a, b) => b.report_count - a.report_count);
-	}, [reports]);
-
-	const filtered = useMemo(() => {
-		if (!search.trim()) return grouped;
-		const q = search.toLowerCase();
-		return grouped.filter(
-			(g) =>
-				g.reported_user_name?.toLowerCase().includes(q) ||
-				g.reported_user_id.toLowerCase().includes(q)
-		);
-	}, [grouped, search]);
 
 	return (
 		<>
@@ -162,14 +133,14 @@ export function ReportsTab() {
 			</div>
 
 			{isLoading && <p className="text-sm text-muted-foreground">{t("loading")}</p>}
-			{!isLoading && filtered.length === 0 && (
+			{!isLoading && groups.length === 0 && (
 				<p className="text-sm text-muted-foreground">
-					{grouped.length === 0 ? t("adminNoPendingReports") : t("adminNoResults")}
+					{deferredSearch ? t("adminNoResults") : t("adminNoPendingReports")}
 				</p>
 			)}
 
 			<div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-				{filtered.map((g) => (
+				{groups.map((g) => (
 					<button
 						key={g.reported_user_id}
 						onClick={() => setViewing(g)}
@@ -196,6 +167,16 @@ export function ReportsTab() {
 					</button>
 				))}
 			</div>
+			{hasNextPage && (
+				<Button
+					variant="outline"
+					className="mt-4 w-full"
+					onClick={() => fetchNextPage()}
+					disabled={isFetchingNextPage}
+				>
+					{isFetchingNextPage ? t("loading") : t("loadMore")}
+				</Button>
+			)}
 
 			<Dialog open={!!viewing} onOpenChange={(open) => !open && setViewing(null)}>
 				<DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
@@ -208,7 +189,7 @@ export function ReportsTab() {
 					{viewing && (
 						<>
 							<ChatViewer
-								reportId={viewing.latest_report.id}
+								reportId={viewing.latest_report_id}
 								reportedUserId={viewing.reported_user_id}
 							/>
 							<div className="pt-2 border-t">

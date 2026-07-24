@@ -14,14 +14,30 @@ import { GenericErrorState } from "@/components/generic-error-state";
 const CONNECTION_TIMEOUT_MS = 10000;
 
 export default function ChatBox() {
-	const { user, messages: initialMessages } = useAuth();
+	const {
+		user,
+		messages: initialMessages,
+		messagesNextCursor,
+		messagesHasMore,
+	} = useAuth();
 	const [connectionTimedOut, setConnectionTimedOut] = useState(false);
 	const { t } = useLanguage();
 
-	const { messages, sendMessage, isConnected, roomId } =
+	const {
+		messages,
+		sendMessage,
+		isConnected,
+		roomId,
+		hasMoreMessages,
+		isLoadingOlder,
+		loadOlderError,
+		loadOlderMessages,
+	} =
 		useWebSocketChat({
 			userId: user?.id || "",
 			initialMessages: initialMessages as ChatMessage[],
+			initialNextCursor: messagesNextCursor,
+			initialHasMore: messagesHasMore,
 			onMatchFound: () => {
 				toast.success(t("matchFound"), {
 					description: t("matchFoundDescription"),
@@ -56,7 +72,14 @@ export default function ChatBox() {
 
 	return (
 		<div className="flex flex-col bg-card text-card-foreground shadow-sm h-full relative">
-			<ChatMessages messages={messages} currentUserId={user.id} />
+			<ChatMessages
+				messages={messages}
+				currentUserId={user.id}
+				hasMore={hasMoreMessages}
+				isLoadingOlder={isLoadingOlder}
+				loadOlderError={loadOlderError}
+				onLoadOlder={loadOlderMessages}
+			/>
 			<ChatInput
 				onSendMessage={sendMessage}
 				disabled={!roomId}

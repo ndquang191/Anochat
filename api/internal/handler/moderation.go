@@ -1,8 +1,16 @@
 package handler
 
 import (
+	"encoding/base64"
+	"encoding/binary"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/ndquang191/Anochat/api/internal/domain/identity"
+	"github.com/ndquang191/Anochat/api/internal/domain/moderation"
 	"github.com/ndquang191/Anochat/api/internal/dto"
 	"github.com/ndquang191/Anochat/api/internal/service"
 	"github.com/ndquang191/Anochat/api/pkg/apperr"
@@ -116,34 +124,67 @@ func (h *ModerationHandler) ListReports(c *gin.Context) {
 	if !h.requireAdmin(c) {
 		return
 	}
-	reports, err := h.moderationService.ListReports(c.Request.Context())
+	limit, err := parseAdminPageSize(c.Query("limit"))
+	if err != nil {
+		dto.FailErr(c, err)
+		return
+	}
+	before, err := decodeReportGroupCursor(c.Query("before"))
+	if err != nil {
+		dto.FailErr(c, err)
+		return
+	}
+	status := c.DefaultQuery("status", "pending")
+	if status != "pending" && status != "reviewed" {
+		dto.FailErr(c, apperr.ErrInvalidBody)
+		return
+	}
+	query := strings.TrimSpace(c.Query("query"))
+	if len(query) > 100 {
+		dto.FailErr(c, apperr.ErrInvalidBody)
+		return
+	}
+	page, err := h.moderationService.ListReportGroups(
+		c.Request.Context(),
+		status,
+		query,
+		before,
+		limit,
+	)
 	if err != nil {
 		dto.FailErr(c, err)
 		return
 	}
 
-	type reportDTO struct {
-		ID               string  `json:"id"`
-		ReporterID       string  `json:"reporter_id"`
+	type reportGroupDTO struct {
 		ReportedUserID   string  `json:"reported_user_id"`
 		ReportedUserName *string `json:"reported_user_name"`
-		RoomID           string  `json:"room_id"`
-		Status           string  `json:"status"`
-		CreatedAt        int64   `json:"created_at"`
+		ReportCount      int64   `json:"report_count"`
+		AutoCount        int64   `json:"auto_count"`
+		ManualCount      int64   `json:"manual_count"`
+		LatestReportID   string  `json:"latest_report_id"`
 	}
-	result := make([]reportDTO, len(reports))
-	for i, r := range reports {
-		result[i] = reportDTO{
-			ID:               r.ID.String(),
-			ReporterID:       r.ReporterID.String(),
-			ReportedUserID:   r.ReportedUserID.String(),
-			ReportedUserName: r.ReportedUserName,
-			RoomID:           r.RoomID.String(),
-			Status:           r.Status,
-			CreatedAt:        r.CreatedAt.Unix(),
+	groups := make([]reportGroupDTO, len(page.Groups))
+	for i, group := range page.Groups {
+		groups[i] = reportGroupDTO{
+			ReportedUserID:   group.ReportedUserID.String(),
+			ReportedUserName: group.ReportedUserName,
+			ReportCount:      group.ReportCount,
+			AutoCount:        group.AutoCount,
+			ManualCount:      group.ManualCount,
+			LatestReportID:   group.LatestReportID.String(),
 		}
 	}
-	dto.OK(c, result)
+	var nextCursor *string
+	if page.NextCursor != nil {
+		encoded := encodeReportGroupCursor(page.NextCursor)
+		nextCursor = &encoded
+	}
+	dto.OK(c, gin.H{
+		"groups":      groups,
+		"next_cursor": nextCursor,
+		"has_more":    page.HasMore,
+	})
 }
 
 func (h *ModerationHandler) BanUser(c *gin.Context) {
@@ -198,23 +239,35 @@ func (h *ModerationHandler) ListBannedUsers(c *gin.Context) {
 	if !h.requireAdmin(c) {
 		return
 	}
-	users, err := h.moderationService.ListBannedUsers(c.Request.Context())
+	limit, err := parseAdminPageSize(c.Query("limit"))
+	if err != nil {
+		dto.FailErr(c, err)
+		return
+	}
+	before, err := decodeBannedUserCursor(c.Query("before"))
+	if err != nil {
+		dto.FailErr(c, err)
+		return
+	}
+	query := strings.TrimSpace(c.Query("query"))
+	if len(query) > 100 {
+		dto.FailErr(c, apperr.ErrInvalidBody)
+		return
+	}
+	page, err := h.moderationService.ListBannedUsers(c.Request.Context(), query, before, limit)
 	if err != nil {
 		dto.FailErr(c, err)
 		return
 	}
 
-	userIDs := make([]uuid.UUID, len(users))
-	for i, u := range users {
+	userIDs := make([]uuid.UUID, len(page.Users))
+	for i, u := range page.Users {
 		userIDs[i] = u.ID
-	}
-	roomMap, err := h.moderationService.GetLatestRoomsForUsers(c.Request.Context(), userIDs)
-	if err != nil {
-		roomMap = map[uuid.UUID]uuid.UUID{} // non-fatal
 	}
 	reportMap, err := h.moderationService.GetLatestReportsForUsers(c.Request.Context(), userIDs)
 	if err != nil {
-		reportMap = map[uuid.UUID]uuid.UUID{} // non-fatal
+		dto.FailErr(c, err)
+		return
 	}
 
 	type bannedUserDTO struct {
@@ -226,20 +279,12 @@ func (h *ModerationHandler) ListBannedUsers(c *gin.Context) {
 		BanCount           int     `json:"ban_count"`
 		ReviewRequestCount int     `json:"review_request_count"`
 		ReviewRequested    bool    `json:"review_requested"`
-		ReviewRequestedAt  *int64  `json:"review_requested_at"`
-		LastRoomID         *string `json:"last_room_id"`
 		LastReportID       *string `json:"last_report_id"`
 	}
-	result := make([]bannedUserDTO, len(users))
-	for i, u := range users {
-		var lastRoomID *string
+	users := make([]bannedUserDTO, len(page.Users))
+	for i, u := range page.Users {
 		var lastReportID *string
 		var bannedAt *int64
-		var reviewRequestedAt *int64
-		if rid, ok := roomMap[u.ID]; ok {
-			s := rid.String()
-			lastRoomID = &s
-		}
 		if rid, ok := reportMap[u.ID]; ok {
 			s := rid.String()
 			lastReportID = &s
@@ -248,11 +293,7 @@ func (h *ModerationHandler) ListBannedUsers(c *gin.Context) {
 			ts := u.BannedAt.Unix()
 			bannedAt = &ts
 		}
-		if u.ReviewRequestedAt != nil {
-			ts := u.ReviewRequestedAt.Unix()
-			reviewRequestedAt = &ts
-		}
-		result[i] = bannedUserDTO{
+		users[i] = bannedUserDTO{
 			ID:                 u.ID.String(),
 			Name:               u.Name,
 			Email:              u.Email,
@@ -261,12 +302,20 @@ func (h *ModerationHandler) ListBannedUsers(c *gin.Context) {
 			BanCount:           u.BanCount,
 			ReviewRequestCount: u.ReviewRequestCount,
 			ReviewRequested:    u.ReviewRequested,
-			ReviewRequestedAt:  reviewRequestedAt,
-			LastRoomID:         lastRoomID,
 			LastReportID:       lastReportID,
 		}
 	}
-	dto.OK(c, result)
+	var nextCursor *string
+	if page.NextCursor != nil {
+		encoded := encodeBannedUserCursor(page.NextCursor)
+		nextCursor = &encoded
+	}
+	dto.OK(c, gin.H{
+		"users":       users,
+		"next_cursor": nextCursor,
+		"has_more":    page.HasMore,
+		"total":       page.Total,
+	})
 }
 
 func (h *ModerationHandler) UnbanUser(c *gin.Context) {
@@ -324,4 +373,77 @@ func (h *ModerationHandler) CreateReport(c *gin.Context) {
 		return
 	}
 	dto.OKWithMessage(c, "Report submitted", nil)
+}
+
+func parseAdminPageSize(raw string) (int, error) {
+	if raw == "" {
+		return service.DefaultAdminPageSize, nil
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit < 1 || limit > service.MaxAdminPageSize {
+		return 0, apperr.ErrInvalidPageSize
+	}
+	return limit, nil
+}
+
+func encodeReportGroupCursor(cursor *moderation.ReportGroupCursor) string {
+	buf := make([]byte, 24)
+	binary.BigEndian.PutUint64(buf[:8], uint64(cursor.ReportCount))
+	copy(buf[8:], cursor.ReportedUserID[:])
+	return base64.RawURLEncoding.EncodeToString(buf)
+}
+
+func decodeReportGroupCursor(raw string) (*moderation.ReportGroupCursor, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	buf, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil || len(buf) != 24 {
+		return nil, apperr.ErrInvalidCursor
+	}
+	reportCount := binary.BigEndian.Uint64(buf[:8])
+	if reportCount > uint64(^uint64(0)>>1) {
+		return nil, apperr.ErrInvalidCursor
+	}
+	id, err := uuid.FromBytes(buf[8:])
+	if err != nil || id == uuid.Nil {
+		return nil, apperr.ErrInvalidCursor
+	}
+	return &moderation.ReportGroupCursor{
+		ReportCount:    int64(reportCount),
+		ReportedUserID: id,
+	}, nil
+}
+
+func encodeBannedUserCursor(cursor *identity.BannedUserCursor) string {
+	buf := make([]byte, 25)
+	if cursor.ReviewRequested {
+		buf[0] = 1
+	}
+	binary.BigEndian.PutUint64(buf[1:9], uint64(cursor.SortAt.UnixNano()))
+	copy(buf[9:], cursor.ID[:])
+	return base64.RawURLEncoding.EncodeToString(buf)
+}
+
+func decodeBannedUserCursor(raw string) (*identity.BannedUserCursor, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	buf, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil || len(buf) != 25 || buf[0] > 1 {
+		return nil, apperr.ErrInvalidCursor
+	}
+	id, err := uuid.FromBytes(buf[9:])
+	if err != nil || id == uuid.Nil {
+		return nil, apperr.ErrInvalidCursor
+	}
+	sortAt := time.Unix(0, int64(binary.BigEndian.Uint64(buf[1:9]))).UTC()
+	if sortAt.IsZero() {
+		return nil, apperr.ErrInvalidCursor
+	}
+	return &identity.BannedUserCursor{
+		ReviewRequested: buf[0] == 1,
+		SortAt:          sortAt,
+		ID:              id,
+	}, nil
 }

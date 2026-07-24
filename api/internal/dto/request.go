@@ -28,9 +28,12 @@ type UpdateProfileRequest struct {
 
 // UserStateResponse is returned by GET /user/state.
 type UserStateResponse struct {
+	User               *UserDTO     `json:"user,omitempty"`
 	Profile            *ProfileDTO  `json:"profile,omitempty"`
 	Room               *RoomDTO     `json:"room"`
 	Messages           []MessageDTO `json:"messages"`
+	MessagesNextCursor *string      `json:"messages_next_cursor,omitempty"`
+	MessagesHasMore    bool         `json:"messages_has_more"`
 	InQueue            bool         `json:"in_queue"`
 	IsAdmin            bool         `json:"is_admin"`
 	IsBanned           bool         `json:"is_banned"`
@@ -41,12 +44,13 @@ type UserStateResponse struct {
 
 // UserDTO is the user data in API responses.
 type UserDTO struct {
-	ID       string      `json:"id"`
-	Email    *string     `json:"email"`
-	Name     *string     `json:"name"`
-	Nickname *string     `json:"nickname,omitempty"`
-	Profile  *ProfileDTO `json:"profile,omitempty"`
-	IsAdmin  bool        `json:"is_admin,omitempty"`
+	ID        string      `json:"id"`
+	Email     *string     `json:"email,omitempty"`
+	Name      *string     `json:"name,omitempty"`
+	AvatarURL *string     `json:"avatar_url,omitempty"`
+	Nickname  *string     `json:"nickname,omitempty"`
+	Profile   *ProfileDTO `json:"profile,omitempty"`
+	IsAdmin   bool        `json:"is_admin,omitempty"`
 }
 
 // ProfileDTO is the profile data in API responses.
@@ -72,4 +76,11 @@ type MessageDTO struct {
 	SenderID  string `json:"sender_id"`
 	Content   string `json:"content"`
 	CreatedAt int64  `json:"created_at"`
+}
+
+// MessagePageResponse is returned by the cursor-based room history endpoint.
+type MessagePageResponse struct {
+	Messages   []MessageDTO `json:"messages"`
+	NextCursor *string      `json:"next_cursor,omitempty"`
+	HasMore    bool         `json:"has_more"`
 }

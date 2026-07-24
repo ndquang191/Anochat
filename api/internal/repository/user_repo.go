@@ -18,7 +18,8 @@ type UserRepository interface {
 	Create(ctx context.Context, user *identity.User) error
 	Update(ctx context.Context, user *identity.User) error
 	Count(ctx context.Context) (int64, error)
-	FindBanned(ctx context.Context) ([]*identity.User, error)
+	FindBannedPage(ctx context.Context, query string, before *identity.BannedUserCursor, limit int) ([]*identity.User, error)
+	CountBanned(ctx context.Context, query string) (int64, error)
 }
 
 type userRepo struct{ db *gorm.DB }
@@ -81,12 +82,49 @@ func (r *userRepo) Count(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-func (r *userRepo) FindBanned(ctx context.Context) ([]*identity.User, error) {
+func (r *userRepo) FindBannedPage(
+	ctx context.Context,
+	query string,
+	before *identity.BannedUserCursor,
+	limit int,
+) ([]*identity.User, error) {
 	var models []model.User
-	if err := r.db.WithContext(ctx).
+	db := r.db.WithContext(ctx).
+		Select("id", "email", "name", "is_active", "ban_count", "review_request_count",
+			"review_requested", "banned_at", "review_requested_at", "created_at").
 		Where("is_active = false AND is_deleted = false").
-		Order("review_requested DESC, review_requested_at DESC NULLS LAST, banned_at DESC NULLS LAST, created_at DESC").
-		Find(&models).Error; err != nil {
+		Order("review_requested DESC").
+		Order("COALESCE(review_requested_at, banned_at, created_at) DESC").
+		Order("id DESC")
+	if query != "" {
+		pattern := "%" + query + "%"
+		db = db.Where("name ILIKE ? OR email ILIKE ? OR id::text ILIKE ?", pattern, pattern, pattern)
+	}
+	if before != nil {
+		reviewRequestedRank := 0
+		if before.ReviewRequested {
+			reviewRequestedRank = 1
+		}
+		db = db.Where(`
+			CASE WHEN review_requested THEN 1 ELSE 0 END < ?
+			OR (
+				CASE WHEN review_requested THEN 1 ELSE 0 END = ?
+				AND (
+					COALESCE(review_requested_at, banned_at, created_at) < ?
+					OR (
+						COALESCE(review_requested_at, banned_at, created_at) = ?
+						AND id < ?
+					)
+				)
+			)`,
+			reviewRequestedRank,
+			reviewRequestedRank,
+			before.SortAt,
+			before.SortAt,
+			before.ID,
+		)
+	}
+	if err := db.Limit(limit).Find(&models).Error; err != nil {
 		return nil, err
 	}
 	result := make([]*identity.User, len(models))
@@ -94,6 +132,18 @@ func (r *userRepo) FindBanned(ctx context.Context) ([]*identity.User, error) {
 		result[i] = userModelToDomain(&models[i])
 	}
 	return result, nil
+}
+
+func (r *userRepo) CountBanned(ctx context.Context, query string) (int64, error) {
+	db := r.db.WithContext(ctx).Model(&model.User{}).
+		Where("is_active = false AND is_deleted = false")
+	if query != "" {
+		pattern := "%" + query + "%"
+		db = db.Where("name ILIKE ? OR email ILIKE ? OR id::text ILIKE ?", pattern, pattern, pattern)
+	}
+	var count int64
+	err := db.Count(&count).Error
+	return count, err
 }
 
 // --- mapping helpers ---

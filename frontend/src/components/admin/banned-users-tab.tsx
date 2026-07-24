@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useDeferredValue, useMemo, useState } from "react";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { moderationAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Search, Scale } from "lucide-react";
 import { toast } from "sonner";
 import { ChatViewer } from "./reports-tab";
-import type { BannedUserDTO } from "@/types";
+import type { BannedUserDTO, BannedUserPageDTO } from "@/types";
 import { useLanguage } from "@/contexts/theme";
 
 export function BannedUsersTab() {
@@ -18,14 +18,32 @@ export function BannedUsersTab() {
 	const queryClient = useQueryClient();
 	const [search, setSearch] = useState("");
 	const [viewing, setViewing] = useState<BannedUserDTO | null>(null);
+	const deferredSearch = useDeferredValue(search.trim());
 
-	const { data: users = [], isLoading } = useQuery({
-		queryKey: ["admin", "banned-users"],
-		queryFn: async () => {
-			const res = await moderationAPI.listBannedUsers();
-			return (res.data as BannedUserDTO[]) ?? [];
+	const {
+		data,
+		isLoading,
+		fetchNextPage,
+		hasNextPage,
+		isFetchingNextPage,
+	} = useInfiniteQuery({
+		queryKey: ["admin", "banned-users", deferredSearch],
+		initialPageParam: undefined as string | undefined,
+		queryFn: async ({ pageParam }) => {
+			const res = await moderationAPI.listBannedUsers({
+				before: pageParam,
+				query: deferredSearch || undefined,
+			});
+			return res.data ?? { users: [], has_more: false, total: 0 };
 		},
+		getNextPageParam: (lastPage: BannedUserPageDTO) =>
+			lastPage.has_more ? lastPage.next_cursor : undefined,
 	});
+	const users = useMemo(
+		() => data?.pages.flatMap((page) => page.users) ?? [],
+		[data]
+	);
+	const total = data?.pages[0]?.total ?? 0;
 
 	const unbanMutation = useMutation({
 		mutationFn: (userId: string) => moderationAPI.unbanUser(userId),
@@ -36,17 +54,6 @@ export function BannedUsersTab() {
 		},
 		onError: () => toast.error(t("adminFailedToUnbanUser")),
 	});
-
-	const filtered = useMemo(() => {
-		if (!search.trim()) return users;
-		const q = search.toLowerCase();
-		return users.filter(
-			(u) =>
-				u.name?.toLowerCase().includes(q) ||
-				u.email?.toLowerCase().includes(q) ||
-				u.id.toLowerCase().includes(q)
-		);
-	}, [users, search]);
 
 	return (
 		<div className="flex flex-col">
@@ -62,19 +69,19 @@ export function BannedUsersTab() {
 				</div>
 				<span className="shrink-0 text-xs text-muted-foreground">
 					{t("adminUsersCount", {
-						count: filtered.length.toLocaleString(locale),
+						count: total.toLocaleString(locale),
 					})}
 				</span>
 			</div>
 
 			{isLoading && <p className="text-sm text-muted-foreground">{t("loading")}</p>}
-			{!isLoading && filtered.length === 0 && (
+			{!isLoading && users.length === 0 && (
 				<p className="text-sm text-muted-foreground">
-					{users.length === 0 ? t("adminNoBannedUsers") : t("adminNoResults")}
+					{deferredSearch ? t("adminNoResults") : t("adminNoBannedUsers")}
 				</p>
 			)}
 
-			{filtered.length > 0 && (
+			{users.length > 0 && (
 				<div className="hidden grid-cols-12 gap-3 border-b px-3 pb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground md:grid">
 					<span className="col-span-5">{t("adminUserColumn")}</span>
 					<span className="col-span-3">{t("adminStatus")}</span>
@@ -83,8 +90,8 @@ export function BannedUsersTab() {
 				</div>
 			)}
 
-			<div className={`divide-y overflow-hidden rounded-lg border bg-card ${filtered.length === 0 ? "hidden" : ""}`}>
-				{filtered.map((u) => (
+			<div className={`divide-y overflow-hidden rounded-lg border bg-card ${users.length === 0 ? "hidden" : ""}`}>
+				{users.map((u) => (
 					<button
 						key={u.id}
 						onClick={() => setViewing(u)}
@@ -139,6 +146,16 @@ export function BannedUsersTab() {
 					</button>
 				))}
 			</div>
+			{hasNextPage && (
+				<Button
+					variant="outline"
+					className="mt-4 w-full"
+					onClick={() => fetchNextPage()}
+					disabled={isFetchingNextPage}
+				>
+					{isFetchingNextPage ? t("loading") : t("loadMore")}
+				</Button>
+			)}
 
 			<Dialog open={!!viewing} onOpenChange={(open) => !open && setViewing(null)}>
 				<DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col overflow-hidden">

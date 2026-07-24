@@ -279,3 +279,50 @@ func TestRequestBanReviewIsIdempotentForCurrentBan(t *testing.T) {
 	assert.NoError(t, err)
 	userRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 }
+
+func TestListReportGroupsReturnsCursorForNextPage(t *testing.T) {
+	reportRepo := new(mockReportRepo)
+	svc := newModerationService(new(mockBannedWordRepo), reportRepo, new(mockUserRepo))
+	groups := []*moderation.ReportGroup{
+		{ReportedUserID: uuid.New(), ReportCount: 5},
+		{ReportedUserID: uuid.New(), ReportCount: 3},
+		{ReportedUserID: uuid.New(), ReportCount: 1},
+	}
+	reportRepo.On("FindGroupedPage", mock.Anything, "pending", "alice", (*moderation.ReportGroupCursor)(nil), 3).
+		Return(groups, nil)
+
+	page, err := svc.ListReportGroups(context.Background(), "pending", " alice ", nil, 2)
+
+	assert.NoError(t, err)
+	assert.Len(t, page.Groups, 2)
+	assert.True(t, page.HasMore)
+	assert.Equal(t, groups[1].ReportCount, page.NextCursor.ReportCount)
+	assert.Equal(t, groups[1].ReportedUserID, page.NextCursor.ReportedUserID)
+	reportRepo.AssertExpectations(t)
+}
+
+func TestListBannedUsersReturnsCursorAndTotal(t *testing.T) {
+	userRepo := new(mockUserRepo)
+	svc := newModerationService(new(mockBannedWordRepo), new(mockReportRepo), userRepo)
+	now := time.Now().UTC()
+	bannedAt := now.Add(-time.Hour)
+	reviewedAt := now
+	users := []*identity.User{
+		{ID: uuid.New(), ReviewRequested: true, ReviewRequestedAt: &reviewedAt, CreatedAt: now.Add(-2 * time.Hour)},
+		{ID: uuid.New(), BannedAt: &bannedAt, CreatedAt: now.Add(-3 * time.Hour)},
+		{ID: uuid.New(), CreatedAt: now.Add(-4 * time.Hour)},
+	}
+	userRepo.On("CountBanned", mock.Anything, "bob").Return(int64(7), nil)
+	userRepo.On("FindBannedPage", mock.Anything, "bob", (*identity.BannedUserCursor)(nil), 3).
+		Return(users, nil)
+
+	page, err := svc.ListBannedUsers(context.Background(), " bob ", nil, 2)
+
+	assert.NoError(t, err)
+	assert.Len(t, page.Users, 2)
+	assert.True(t, page.HasMore)
+	assert.Equal(t, int64(7), page.Total)
+	assert.Equal(t, users[1].ID, page.NextCursor.ID)
+	assert.Equal(t, bannedAt, page.NextCursor.SortAt)
+	userRepo.AssertExpectations(t)
+}

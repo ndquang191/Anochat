@@ -24,6 +24,12 @@ type User struct {
 	Profile            *Profile
 }
 
+type BannedUserCursor struct {
+	ReviewRequested bool
+	SortAt          time.Time
+	ID              uuid.UUID
+}
+
 // Profile represents user demographic information.
 type Profile struct {
 	UserID            uuid.UUID

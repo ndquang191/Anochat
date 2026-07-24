@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import type { AdminOverviewDTO, ApiResponse, UserDTO, UserStateResponse, ProfileDTO, BannedWordDTO, ReportDTO, BannedUserDTO } from "@/types";
+import type { AdminOverviewDTO, ApiResponse, UserStateResponse, ProfileDTO, BannedWordDTO, ReportGroupPageDTO, BannedUserPageDTO, MessagePageDTO } from "@/types";
 import { translateStored } from "@/lib/i18n";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -8,7 +8,6 @@ let refreshPromise: Promise<boolean> | null = null;
 
 function clearAuthCookies() {
 	const past = "Thu, 01 Jan 1970 00:00:00 UTC";
-	document.cookie = `user_info=;expires=${past};path=/;`;
 	document.cookie = `has_session=;expires=${past};path=/;`;
 }
 
@@ -37,7 +36,12 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 		},
 	};
 
-	const response = await fetch(`${API_BASE}${endpoint}`, config);
+	let response: Response;
+	try {
+		response = await fetch(`${API_BASE}${endpoint}`, config);
+	} catch {
+		throw new Error(translateStored("apiUnavailable"));
+	}
 
 	if (response.status === 401) {
 		const errorData = await response.json().catch(() => ({}));
@@ -121,7 +125,7 @@ export const userAPI = {
 };
 
 export const authAPI = {
-	devLogin: (user: "a" | "b") => apiCall<UserDTO>("/auth/dev", { method: "POST", body: JSON.stringify({ user }) }),
+	devLogin: (user: "a" | "b") => apiCall<void>("/auth/dev", { method: "POST", body: JSON.stringify({ user }) }),
 	logout: async () => {
 		const result = await apiCall<{ message: string }>("/auth/logout", { method: "POST" });
 		toast.success(translateStored("logoutSuccess"));
@@ -141,7 +145,15 @@ export const moderationAPI = {
 		apiCall<void>(`/admin/words/${id}`, { method: "PUT", body: JSON.stringify({ word, category }) }),
 	deleteWord: (id: string) =>
 		apiCall<void>(`/admin/words/${id}`, { method: "DELETE" }),
-	listReports: () => apiCall<ReportDTO[]>("/admin/reports"),
+	listReports: (options: { before?: string; query?: string; limit?: number } = {}) => {
+		const params = new URLSearchParams({
+			status: "pending",
+			limit: String(options.limit ?? 20),
+		});
+		if (options.before) params.set("before", options.before);
+		if (options.query) params.set("query", options.query);
+		return apiCall<ReportGroupPageDTO>(`/admin/reports?${params.toString()}`);
+	},
 	banUser: (userId: string) =>
 		apiCall<void>(`/admin/users/${userId}/ban`, { method: "POST" }),
 	createReport: (reportedUserId: string, roomId: string) =>
@@ -153,7 +165,12 @@ export const moderationAPI = {
 		apiCall<{ id: string; sender_id: string; content: string; created_at: number }[]>(
 			`/admin/reports/${reportId}/messages`
 		),
-	listBannedUsers: () => apiCall<BannedUserDTO[]>("/admin/users/banned"),
+	listBannedUsers: (options: { before?: string; query?: string; limit?: number } = {}) => {
+		const params = new URLSearchParams({ limit: String(options.limit ?? 20) });
+		if (options.before) params.set("before", options.before);
+		if (options.query) params.set("query", options.query);
+		return apiCall<BannedUserPageDTO>(`/admin/users/banned?${params.toString()}`);
+	},
 	unbanUser: (userId: string) =>
 		apiCall<void>(`/admin/users/${userId}/unban`, { method: "POST" }),
 };
@@ -163,6 +180,11 @@ export const adminAPI = {
 };
 
 export const roomAPI = {
+	getMessages: (roomId: string, before?: string, limit: number = 50) => {
+		const params = new URLSearchParams({ limit: String(limit) });
+		if (before) params.set("before", before);
+		return apiCall<MessagePageDTO>(`/rooms/${roomId}/messages?${params.toString()}`);
+	},
 	leaveRoom: async () => {
 		const result = await apiCall<{ success: boolean; message: string }>("/room/leave", { method: "POST" });
 		toast.success(translateStored("leaveChatRoomSuccess"));

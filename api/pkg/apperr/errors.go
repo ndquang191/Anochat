@@ -23,10 +23,10 @@ var (
 	ErrUserSuspended       = &AppError{HTTPStatus: http.StatusForbidden, Message: "Tài khoản của bạn đã bị khóa"}
 
 	// User
-	ErrUserNotFound    = &AppError{HTTPStatus: http.StatusNotFound, Message: "Không tìm thấy người dùng"}
-	ErrProfileNotFound = &AppError{HTTPStatus: http.StatusNotFound, Message: "Hồ sơ không tồn tại hoặc đã bị ẩn"}
-	ErrUnauthenticated = &AppError{HTTPStatus: http.StatusUnauthorized, Message: "Bạn cần đăng nhập để thực hiện thao tác này"}
-	ErrInvalidDisplayName = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Tên hiển thị phải có từ 2 đến 32 ký tự"}
+	ErrUserNotFound        = &AppError{HTTPStatus: http.StatusNotFound, Message: "Không tìm thấy người dùng"}
+	ErrProfileNotFound     = &AppError{HTTPStatus: http.StatusNotFound, Message: "Hồ sơ không tồn tại hoặc đã bị ẩn"}
+	ErrUnauthenticated     = &AppError{HTTPStatus: http.StatusUnauthorized, Message: "Bạn cần đăng nhập để thực hiện thao tác này"}
+	ErrInvalidDisplayName  = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Tên hiển thị phải có từ 2 đến 32 ký tự"}
 	ErrDisplayNameCooldown = &AppError{HTTPStatus: http.StatusTooManyRequests, Message: "Tên hiển thị chỉ có thể thay đổi một lần trong 30 ngày"}
 
 	// Room
@@ -39,7 +39,9 @@ var (
 	ErrNotInQueue     = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Bạn không có trong hàng chờ"}
 
 	// Input / general
-	ErrInvalidBody = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Dữ liệu gửi lên không hợp lệ"}
-	ErrInvalidID   = &AppError{HTTPStatus: http.StatusBadRequest, Message: "ID không hợp lệ"}
-	ErrForbidden   = &AppError{HTTPStatus: http.StatusForbidden, Message: "Bạn không có quyền thực hiện thao tác này"}
+	ErrInvalidBody     = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Dữ liệu gửi lên không hợp lệ"}
+	ErrInvalidID       = &AppError{HTTPStatus: http.StatusBadRequest, Message: "ID không hợp lệ"}
+	ErrInvalidCursor   = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Cursor phân trang không hợp lệ"}
+	ErrInvalidPageSize = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Giới hạn phân trang phải từ 1 đến 100"}
+	ErrForbidden       = &AppError{HTTPStatus: http.StatusForbidden, Message: "Bạn không có quyền thực hiện thao tác này"}
 )

@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ShineBorder } from "@/components/ui/shine-border";
 import { useState } from "react";
 import { authAPI } from "@/lib/api";
@@ -10,6 +10,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { useAuth } from "@/contexts/auth";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/contexts/theme";
+import { toast } from "sonner";
 
 function GoogleIcon() {
 	return (
@@ -43,29 +44,33 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
 	const handleDevLogin = async (user: "a" | "b") => {
 		setIsLoading(true);
 		try {
-			const response = await authAPI.devLogin(user);
-			if (!response.data) throw new Error("Dev login returned no user");
-			login(response.data);
-			router.push("/");
+			await authAPI.devLogin(user);
+			await login();
+			router.replace("/");
 		} catch (error) {
-			console.error("Lỗi đăng nhập local:", error);
+			toast.error(error instanceof Error ? error.message : t("apiUnavailable"));
 			setIsLoading(false);
 		}
 	};
 
 	return (
 		<div className={cn("flex flex-col gap-6", className)} {...props}>
-			<Card className="relative overflow-hidden">
+			<Card className="relative gap-5 overflow-hidden py-7">
 				<ShineBorder shineColor={["hsl(var(--primary))", "hsl(var(--aurora-1))", "hsl(var(--aurora-3))"]} duration={10} />
-				<CardHeader className="items-center text-center">
-					<BrandLogo />
-					<CardDescription className="mt-1">
+				<CardHeader className="flex flex-col items-center gap-2 px-8 py-2 text-center">
+					<div className="flex items-center justify-center gap-3">
+						<BrandLogo showSlogan={false} iconClassName="size-12" />
+						<h1 className="text-4xl leading-none tracking-tight text-primary [font-family:var(--font-changa-one)]">
+							AnoChat
+						</h1>
+					</div>
+					<p className="text-sm leading-relaxed text-muted-foreground">
 						{t("signInDescription")}
-					</CardDescription>
+					</p>
 				</CardHeader>
-				<CardContent>
+				<CardContent className="px-8">
 					<form onSubmit={handleGoogleLogin} className="space-y-3">
-						<Button type="submit" className="w-full" disabled={isLoading}>
+						<Button type="submit" className="h-11 w-full" disabled={isLoading}>
 							{isLoading ? (
 								t("signingIn")
 							) : (

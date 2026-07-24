@@ -15,6 +15,7 @@ type MessageRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*chat.Message, error)
 	FindByRoomID(ctx context.Context, roomID uuid.UUID) ([]*chat.Message, error)
 	FindByRoomIDWithLimit(ctx context.Context, roomID uuid.UUID, limit, offset int) ([]*chat.Message, error)
+	FindPageByRoomID(ctx context.Context, roomID uuid.UUID, before *chat.MessageCursor, limit int) ([]*chat.Message, error)
 	Create(ctx context.Context, msg *chat.Message) error
 	DeleteByID(ctx context.Context, id uuid.UUID) error
 	DeleteByRoomID(ctx context.Context, roomID uuid.UUID) error
@@ -55,6 +56,33 @@ func (r *messageRepo) FindByRoomIDWithLimit(ctx context.Context, roomID uuid.UUI
 		Order("created_at DESC").
 		Limit(limit).
 		Offset(offset).
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+	return messageModelsToDomain(models), nil
+}
+
+func (r *messageRepo) FindPageByRoomID(
+	ctx context.Context,
+	roomID uuid.UUID,
+	before *chat.MessageCursor,
+	limit int,
+) ([]*chat.Message, error) {
+	var models []model.Message
+	query := r.db.WithContext(ctx).
+		Where("room_id = ?", roomID)
+	if before != nil {
+		query = query.Where(
+			"(created_at < ?) OR (created_at = ? AND id < ?)",
+			before.CreatedAt,
+			before.CreatedAt,
+			before.ID,
+		)
+	}
+	if err := query.
+		Order("created_at DESC").
+		Order("id DESC").
+		Limit(limit).
 		Find(&models).Error; err != nil {
 		return nil, err
 	}

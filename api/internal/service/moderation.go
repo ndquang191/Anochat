@@ -15,7 +15,24 @@ import (
 	"github.com/ndquang191/Anochat/api/pkg/apperr"
 )
 
-const reportSnapshotMessageLimit = 50
+const (
+	reportSnapshotMessageLimit = 50
+	DefaultAdminPageSize       = 20
+	MaxAdminPageSize           = 100
+)
+
+type ReportGroupPage struct {
+	Groups     []*moderation.ReportGroup
+	NextCursor *moderation.ReportGroupCursor
+	HasMore    bool
+}
+
+type BannedUserPage struct {
+	Users      []*identity.User
+	NextCursor *identity.BannedUserCursor
+	HasMore    bool
+	Total      int64
+}
 
 type ModerationService struct {
 	bannedWordRepo repository.BannedWordRepository
@@ -157,9 +174,35 @@ func (s *ModerationService) createReportWithSnapshot(
 	return s.reportRepo.CreateWithSnapshot(ctx, r, triggerMessage, reportSnapshotMessageLimit, requireRoom)
 }
 
-// ListReports returns all reports ordered by newest first.
-func (s *ModerationService) ListReports(ctx context.Context) ([]*moderation.Report, error) {
-	return s.reportRepo.FindAll(ctx)
+func (s *ModerationService) ListReportGroups(
+	ctx context.Context,
+	status, query string,
+	before *moderation.ReportGroupCursor,
+	limit int,
+) (*ReportGroupPage, error) {
+	if limit <= 0 {
+		limit = DefaultAdminPageSize
+	}
+	if limit > MaxAdminPageSize {
+		limit = MaxAdminPageSize
+	}
+	groups, err := s.reportRepo.FindGroupedPage(ctx, status, strings.TrimSpace(query), before, limit+1)
+	if err != nil {
+		return nil, err
+	}
+	hasMore := len(groups) > limit
+	if hasMore {
+		groups = groups[:limit]
+	}
+	var nextCursor *moderation.ReportGroupCursor
+	if hasMore {
+		last := groups[len(groups)-1]
+		nextCursor = &moderation.ReportGroupCursor{
+			ReportCount:    last.ReportCount,
+			ReportedUserID: last.ReportedUserID,
+		}
+	}
+	return &ReportGroupPage{Groups: groups, NextCursor: nextCursor, HasMore: hasMore}, nil
 }
 
 func (s *ModerationService) GetReportMessages(ctx context.Context, reportID uuid.UUID) ([]*moderation.ReportMessage, error) {
@@ -219,14 +262,53 @@ func (s *ModerationService) RequestBanReview(ctx context.Context, userID uuid.UU
 	return s.userRepo.Update(ctx, user)
 }
 
-// ListBannedUsers returns all users with is_active = false.
-func (s *ModerationService) ListBannedUsers(ctx context.Context) ([]*identity.User, error) {
-	return s.userRepo.FindBanned(ctx)
-}
-
-// GetLatestRoomsForUsers returns a map of userID -> latest roomID from reports.
-func (s *ModerationService) GetLatestRoomsForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
-	return s.reportRepo.FindLatestRoomForUsers(ctx, userIDs)
+func (s *ModerationService) ListBannedUsers(
+	ctx context.Context,
+	query string,
+	before *identity.BannedUserCursor,
+	limit int,
+) (*BannedUserPage, error) {
+	if limit <= 0 {
+		limit = DefaultAdminPageSize
+	}
+	if limit > MaxAdminPageSize {
+		limit = MaxAdminPageSize
+	}
+	query = strings.TrimSpace(query)
+	total, err := s.userRepo.CountBanned(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	users, err := s.userRepo.FindBannedPage(ctx, query, before, limit+1)
+	if err != nil {
+		return nil, err
+	}
+	hasMore := len(users) > limit
+	if hasMore {
+		users = users[:limit]
+	}
+	var nextCursor *identity.BannedUserCursor
+	if hasMore {
+		last := users[len(users)-1]
+		sortAt := last.CreatedAt
+		if last.BannedAt != nil {
+			sortAt = *last.BannedAt
+		}
+		if last.ReviewRequestedAt != nil {
+			sortAt = *last.ReviewRequestedAt
+		}
+		nextCursor = &identity.BannedUserCursor{
+			ReviewRequested: last.ReviewRequested,
+			SortAt:          sortAt,
+			ID:              last.ID,
+		}
+	}
+	return &BannedUserPage{
+		Users:      users,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Total:      total,
+	}, nil
 }
 
 func (s *ModerationService) GetLatestReportsForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {

@@ -54,12 +54,22 @@ func (m *mockUserRepo) Count(ctx context.Context) (int64, error) {
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *mockUserRepo) FindBanned(ctx context.Context) ([]*identity.User, error) {
-	args := m.Called(ctx)
+func (m *mockUserRepo) FindBannedPage(
+	ctx context.Context,
+	query string,
+	before *identity.BannedUserCursor,
+	limit int,
+) ([]*identity.User, error) {
+	args := m.Called(ctx, query, before, limit)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]*identity.User), args.Error(1)
+}
+
+func (m *mockUserRepo) CountBanned(ctx context.Context, query string) (int64, error) {
+	args := m.Called(ctx, query)
+	return args.Get(0).(int64), args.Error(1)
 }
 
 // --- ProfileRepository mock ---
@@ -139,12 +149,17 @@ func (m *mockReportRepo) CreateWithSnapshot(
 	return args.Error(0)
 }
 
-func (m *mockReportRepo) FindAll(ctx context.Context) ([]*moderation.Report, error) {
-	args := m.Called(ctx)
+func (m *mockReportRepo) FindGroupedPage(
+	ctx context.Context,
+	status, query string,
+	before *moderation.ReportGroupCursor,
+	limit int,
+) ([]*moderation.ReportGroup, error) {
+	args := m.Called(ctx, status, query, before, limit)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]*moderation.Report), args.Error(1)
+	return args.Get(0).([]*moderation.ReportGroup), args.Error(1)
 }
 
 func (m *mockReportRepo) FindMessages(ctx context.Context, reportID uuid.UUID) ([]*moderation.ReportMessage, error) {
@@ -158,14 +173,6 @@ func (m *mockReportRepo) FindMessages(ctx context.Context, reportID uuid.UUID) (
 func (m *mockReportRepo) MarkReviewedByUser(ctx context.Context, reportedUserID uuid.UUID) error {
 	args := m.Called(ctx, reportedUserID)
 	return args.Error(0)
-}
-
-func (m *mockReportRepo) FindLatestRoomForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
-	args := m.Called(ctx, userIDs)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(map[uuid.UUID]uuid.UUID), args.Error(1)
 }
 
 func (m *mockReportRepo) FindLatestReportForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
@@ -238,6 +245,14 @@ func (m *mockMessageRepo) FindByRoomID(ctx context.Context, roomID uuid.UUID) ([
 
 func (m *mockMessageRepo) FindByRoomIDWithLimit(ctx context.Context, roomID uuid.UUID, limit, offset int) ([]*chat.Message, error) {
 	args := m.Called(ctx, roomID, limit, offset)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*chat.Message), args.Error(1)
+}
+
+func (m *mockMessageRepo) FindPageByRoomID(ctx context.Context, roomID uuid.UUID, before *chat.MessageCursor, limit int) ([]*chat.Message, error) {
+	args := m.Called(ctx, roomID, before, limit)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

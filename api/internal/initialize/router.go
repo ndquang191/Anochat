@@ -75,7 +75,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	queueService.SetMatchNotifier(wsHub)
 
 	authHandler := handler.NewAuthHandler(authService, oauthConfig, cfg)
-	userHandler := handler.NewUserHandler(userService, roomService, queueService, roomRepo, messageRepo, cfg)
+	userHandler := handler.NewUserHandler(userService, roomService, messageService, queueService, roomRepo, cfg)
 	queueHandler := handler.NewQueueHandler(queueService, cfg)
 	wsHandler := handler.NewWebSocketHandler(wsHub, authService, cfg)
 	moderationHandler := handler.NewModerationHandler(moderationService)
@@ -89,6 +89,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	router := gin.Default()
 
 	router.Use(middleware.CORSMiddleware(cfg.ClientURL))
+	router.Use(middleware.CSRFMiddleware(cfg.ClientURL))
 	router.Use(middleware.RateLimitMiddleware(redisClient, cfg.Security.RateLimit, cfg.Security.RateLimit*2))
 	slog.Info("Rate limiting enabled", "rate", cfg.Security.RateLimit, "burst", cfg.Security.RateLimit*2)
 
@@ -110,8 +111,10 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 		active := protected.Group("/")
 		active.Use(middleware.RequireActive())
 		{
+			active.GET("/metrics", middleware.RequireAdmin(), gin.WrapH(promhttp.Handler()))
 			active.PUT("/profile", userHandler.UpdateProfile)
 			active.POST("/room/leave", userHandler.LeaveCurrentRoom)
+			active.GET("/rooms/:id/messages", userHandler.GetRoomMessages)
 
 			active.POST("/queue/join", queueHandler.JoinQueue)
 			active.POST("/queue/leave", queueHandler.LeaveQueue)
@@ -136,7 +139,6 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 		}
 	}
 
-	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	router.GET("/healthz", healthHandler())
 
 	return &Server{

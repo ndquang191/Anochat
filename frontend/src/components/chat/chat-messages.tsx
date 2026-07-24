@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useEffect, useCallback, useMemo } from "react";
+import { useRef, useEffect, useLayoutEffect, useCallback, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { Loader2 } from "lucide-react";
 import { ChatMessage } from "./chat-message";
 import { useLanguage } from "@/contexts/theme";
 import type { Language } from "@/lib/i18n";
@@ -16,6 +17,10 @@ interface Message {
 interface ChatMessagesProps {
 	messages: Message[];
 	currentUserId: string;
+	hasMore?: boolean;
+	isLoadingOlder?: boolean;
+	loadOlderError?: boolean;
+	onLoadOlder?: () => Promise<boolean>;
 }
 
 type Row =
@@ -78,12 +83,26 @@ function buildRows(
 }
 
 const SCROLL_THRESHOLD = 150;
+const LOAD_OLDER_THRESHOLD = 80;
 
-export function ChatMessages({ messages, currentUserId }: ChatMessagesProps) {
+export function ChatMessages({
+	messages,
+	currentUserId,
+	hasMore = false,
+	isLoadingOlder = false,
+	loadOlderError = false,
+	onLoadOlder,
+}: ChatMessagesProps) {
 	const { language, t } = useLanguage();
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const isAtBottomRef = useRef(true);
 	const prevMessageCountRef = useRef(0);
+	const prependAnchorRef = useRef<{
+		firstMessageId: string;
+		scrollHeight: number;
+		scrollTop: number;
+	} | null>(null);
+	const loadOlderInFlightRef = useRef(false);
 
 	const todayLabel = t("today");
 	const yesterdayLabel = t("yesterday");
@@ -99,12 +118,58 @@ export function ChatMessages({ messages, currentUserId }: ChatMessagesProps) {
 		overscan: 5,
 	});
 
+	const loadOlder = useCallback(async () => {
+		const el = scrollContainerRef.current;
+		if (
+			!el ||
+			!onLoadOlder ||
+			!hasMore ||
+			isLoadingOlder ||
+			loadOlderInFlightRef.current
+		) {
+			return;
+		}
+
+		loadOlderInFlightRef.current = true;
+		prependAnchorRef.current = {
+			firstMessageId: messages[0]?.id ?? "",
+			scrollHeight: el.scrollHeight,
+			scrollTop: el.scrollTop,
+		};
+		try {
+			const loaded = await onLoadOlder();
+			if (!loaded) {
+				prependAnchorRef.current = null;
+			}
+		} finally {
+			loadOlderInFlightRef.current = false;
+		}
+	}, [hasMore, isLoadingOlder, messages, onLoadOlder]);
+
 	const handleScroll = useCallback(() => {
 		const el = scrollContainerRef.current;
 		if (!el) return;
 		const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
 		isAtBottomRef.current = distanceFromBottom < SCROLL_THRESHOLD;
-	}, []);
+		if (el.scrollTop <= LOAD_OLDER_THRESHOLD) {
+			void loadOlder();
+		}
+	}, [loadOlder]);
+
+	useLayoutEffect(() => {
+		const anchor = prependAnchorRef.current;
+		const el = scrollContainerRef.current;
+		if (!anchor || !el || messages[0]?.id === anchor.firstMessageId) return;
+
+		virtualizer.measure();
+		requestAnimationFrame(() => {
+			const current = scrollContainerRef.current;
+			if (!current) return;
+			current.scrollTop =
+				anchor.scrollTop + (current.scrollHeight - anchor.scrollHeight);
+			prependAnchorRef.current = null;
+		});
+	}, [messages, virtualizer]);
 
 	useEffect(() => {
 		const prevCount = prevMessageCountRef.current;
@@ -117,7 +182,11 @@ export function ChatMessages({ messages, currentUserId }: ChatMessagesProps) {
 			return;
 		}
 
-		if (nextCount > prevCount && isAtBottomRef.current) {
+		if (
+			nextCount > prevCount &&
+			isAtBottomRef.current &&
+			!prependAnchorRef.current
+		) {
 			requestAnimationFrame(() => {
 				const el = scrollContainerRef.current;
 				if (el) el.scrollTop = el.scrollHeight;
@@ -144,6 +213,23 @@ export function ChatMessages({ messages, currentUserId }: ChatMessagesProps) {
 			onScroll={handleScroll}
 			className="flex-1 min-h-0 overflow-y-auto overscroll-none px-2 pt-2"
 		>
+				{(isLoadingOlder || loadOlderError) && (
+					<div className="pointer-events-none sticky top-2 z-10 flex h-0 justify-center">
+						{isLoadingOlder ? (
+							<span className="rounded-full border bg-background/95 p-2 shadow-sm">
+								<Loader2 className="size-4 animate-spin text-muted-foreground" />
+							</span>
+						) : (
+							<button
+								type="button"
+								onClick={() => void loadOlder()}
+								className="pointer-events-auto rounded-full border bg-background/95 px-3 py-1 text-xs text-muted-foreground shadow-sm hover:text-foreground"
+							>
+								{t("pleaseTryAgain")}
+							</button>
+						)}
+					</div>
+				)}
 				<div
 					style={{
 						height: virtualizer.getTotalSize(),

@@ -3,7 +3,6 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -57,17 +56,7 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 	}
 
 	h.setSessionCookies(c, result)
-	userData := sessionUserData(result)
-	userDataJSON, err := json.Marshal(userData)
-	if err != nil {
-		// Non-fatal: redirect will still work; frontend won't have pre-filled data.
-		c.Redirect(http.StatusTemporaryRedirect, h.config.ClientURL+"/callback")
-		return
-	}
-	c.SetCookie("temp_user_data", string(userDataJSON), 60, "/", "", h.config.IsProduction(), false)
-
-	frontendURL := h.config.ClientURL + "/callback"
-	c.Redirect(http.StatusTemporaryRedirect, frontendURL)
+	c.Redirect(http.StatusTemporaryRedirect, h.config.ClientURL+"/callback")
 }
 
 func (h *AuthHandler) DevLogin(c *gin.Context) {
@@ -102,27 +91,13 @@ func (h *AuthHandler) DevLogin(c *gin.Context) {
 	}
 
 	h.setSessionCookies(c, result)
-	dto.OK(c, sessionUserData(result))
+	dto.OKWithMessage(c, "Development session created", nil)
 }
 
 func (h *AuthHandler) setSessionCookies(c *gin.Context, result *service.OAuthResult) {
 	h.setAccessTokenCookie(c, result.AccessToken)
 	h.setRefreshTokenCookie(c, result.RefreshToken)
 	h.setSessionCookie(c)
-}
-
-func sessionUserData(result *service.OAuthResult) gin.H {
-	data := gin.H{"id": result.User.ID, "is_admin": result.User.IsAdmin}
-	if result.User.Email != nil {
-		data["email"] = *result.User.Email
-	}
-	if result.User.Name != nil {
-		data["name"] = *result.User.Name
-	}
-	if result.User.AvatarURL != nil {
-		data["avatar_url"] = *result.User.AvatarURL
-	}
-	return data
 }
 
 func (h *AuthHandler) RefreshToken(c *gin.Context) {

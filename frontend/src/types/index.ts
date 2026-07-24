@@ -32,15 +32,24 @@ export interface MessageDTO {
 }
 
 export interface UserStateResponse {
+	user: UserDTO;
 	profile?: ProfileDTO;
 	room?: RoomDTO;
 	messages?: MessageDTO[];
+	messages_next_cursor?: string;
+	messages_has_more: boolean;
 	in_queue?: boolean;
 	is_admin: boolean;
 	is_banned: boolean;
 	ban_count: number;
 	review_request_count: number;
 	review_requested: boolean;
+}
+
+export interface MessagePageDTO {
+	messages: MessageDTO[];
+	next_cursor?: string;
+	has_more: boolean;
 }
 
 export interface ApiResponse<T> {
@@ -57,28 +66,38 @@ export interface BannedWordDTO {
 	created_at: number;
 }
 
-export interface ReportDTO {
-	id: string;
-	reporter_id: string;
+export interface ReportGroupDTO {
 	reported_user_id: string;
-	reported_user_name?: string;
-	room_id: string;
-	status: "pending" | "reviewed";
-	created_at: number;
+	reported_user_name?: string | null;
+	report_count: number;
+	auto_count: number;
+	manual_count: number;
+	latest_report_id: string;
+}
+
+export interface ReportGroupPageDTO {
+	groups: ReportGroupDTO[];
+	next_cursor?: string;
+	has_more: boolean;
 }
 
 export interface BannedUserDTO {
 	id: string;
-	name?: string;
-	email?: string;
+	name?: string | null;
+	email?: string | null;
 	created_at: number;
 	banned_at?: number;
 	ban_count: number;
 	review_request_count: number;
 	review_requested: boolean;
-	review_requested_at?: number;
-	last_room_id?: string;
 	last_report_id?: string;
+}
+
+export interface BannedUserPageDTO {
+	users: BannedUserDTO[];
+	next_cursor?: string;
+	has_more: boolean;
+	total: number;
 }
 
 export interface AdminOverviewDTO {

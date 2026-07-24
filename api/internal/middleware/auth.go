@@ -73,3 +73,16 @@ func RequireActive() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// RequireAdmin restricts a route to authenticated administrators. It must run
+// after AuthMiddleware, which populates the is_admin context value.
+func RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !c.GetBool("is_admin") {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Bạn không có quyền thực hiện thao tác này", "code": "admin_required"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}

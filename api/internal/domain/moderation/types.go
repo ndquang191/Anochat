@@ -33,3 +33,18 @@ type ReportMessage struct {
 	Content           string
 	CreatedAt         time.Time
 }
+
+// ReportGroup is the compact admin projection for reports about one user.
+type ReportGroup struct {
+	ReportedUserID   uuid.UUID
+	ReportedUserName *string
+	ReportCount      int64
+	AutoCount        int64
+	ManualCount      int64
+	LatestReportID   uuid.UUID
+}
+
+type ReportGroupCursor struct {
+	ReportCount    int64
+	ReportedUserID uuid.UUID
+}

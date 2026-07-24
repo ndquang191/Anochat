@@ -5,19 +5,36 @@ import { getWebSocketClient, ChatMessage, WebSocketMessage } from "@/lib/websock
 import { useAuth } from "@/contexts/auth";
 import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
 import { playMessageSound, playLeaveSound } from "@/hooks/use-sound-notification";
+import { roomAPI } from "@/lib/api";
+import { prependUniqueMessages } from "@/lib/message-history";
 
 export interface UseWebSocketChatProps {
 	userId: string;
 	initialMessages?: ChatMessage[];
+	initialNextCursor?: string | null;
+	initialHasMore?: boolean;
 	onMatchFound?: (roomId: string) => void;
 	onPartnerLeft?: () => void;
 }
 
-export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPartnerLeft }: UseWebSocketChatProps) {
+export function useWebSocketChat({
+	userId,
+	initialMessages,
+	initialNextCursor,
+	initialHasMore = false,
+	onMatchFound,
+	onPartnerLeft,
+}: UseWebSocketChatProps) {
 	const [messages, setMessages] = useState<ChatMessage[]>(initialMessages ?? []);
 	const [isConnected, setIsConnected] = useState(false);
 	const [roomId, setRoomId] = useState<string | null>(null);
 	const [partnerLeft, setPartnerLeft] = useState(false);
+	const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor ?? null);
+	const [hasMoreMessages, setHasMoreMessages] = useState(
+		initialHasMore && !!initialNextCursor
+	);
+	const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+	const [loadOlderError, setLoadOlderError] = useState(false);
 	const wsClient = useRef(getWebSocketClient());
 	const userIdRef = useRef(userId);
 	const onMatchFoundRef = useRef(onMatchFound);
@@ -26,6 +43,9 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 	const invalidateUserState = useInvalidateUserState();
 	const hasRehydratedRef = useRef(false);
 	const hasJoinedRoomRef = useRef<string | null>(null);
+	const paginationRoomRef = useRef<string | null>(null);
+	const isLoadingOlderRef = useRef(false);
+	const activeRoomIdRef = useRef<string | null>(null);
 
 	useEffect(() => {
 		onMatchFoundRef.current = onMatchFound;
@@ -38,11 +58,30 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 
 	useEffect(() => {
 		if (room?.id && !roomId && !hasRehydratedRef.current) {
+			activeRoomIdRef.current = room.id;
 			setRoomId(room.id);
 			setPartnerLeft(false);
 			hasRehydratedRef.current = true;
 		}
 	}, [room, roomId]);
+
+	useEffect(() => {
+		if (!roomId) {
+			paginationRoomRef.current = null;
+			setNextCursor(null);
+			setHasMoreMessages(false);
+			setLoadOlderError(false);
+			return;
+		}
+		if (room?.id !== roomId || paginationRoomRef.current === roomId) {
+			return;
+		}
+
+		paginationRoomRef.current = roomId;
+		setNextCursor(initialNextCursor ?? null);
+		setHasMoreMessages(initialHasMore && !!initialNextCursor);
+		setLoadOlderError(false);
+	}, [room?.id, roomId, initialNextCursor, initialHasMore]);
 
 	useEffect(() => {
 		if (!initialMessages?.length) return;
@@ -94,9 +133,14 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 
 		const handleMatchFound = (message: WebSocketMessage) => {
 			const room_id = message.payload.room_id as string;
+			activeRoomIdRef.current = room_id;
 			setRoomId(room_id);
 			setPartnerLeft(false);
 			setMessages([]);
+			paginationRoomRef.current = null;
+			setNextCursor(null);
+			setHasMoreMessages(false);
+			setLoadOlderError(false);
 			invalidateUserState();
 			if (onMatchFoundRef.current) {
 				onMatchFoundRef.current(room_id);
@@ -105,6 +149,7 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 
 		const handleRoomRejoined = (message: WebSocketMessage) => {
 			const room_id = message.payload.room_id as string;
+			activeRoomIdRef.current = room_id;
 			setRoomId(room_id);
 			setPartnerLeft(false);
 			hasJoinedRoomRef.current = room_id;
@@ -124,8 +169,11 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 		};
 
 		const handlePartnerLeft = () => {
+			activeRoomIdRef.current = null;
 			setRoomId(null);
 			setPartnerLeft(true);
+			setNextCursor(null);
+			setHasMoreMessages(false);
 			hasJoinedRoomRef.current = null;
 			playLeaveSound();
 			if (onPartnerLeftRef.current) {
@@ -135,9 +183,12 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 		};
 
 		const handleRoomLeft = () => {
+			activeRoomIdRef.current = null;
 			setRoomId(null);
 			setPartnerLeft(false);
 			setMessages([]);
+			setNextCursor(null);
+			setHasMoreMessages(false);
 			hasJoinedRoomRef.current = null;
 			invalidateUserState();
 		};
@@ -160,6 +211,52 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 			client.off("room_left", handleRoomLeft);
 		};
 	}, [userId, invalidateUserState]);
+
+	const loadOlderMessages = useCallback(async (): Promise<boolean> => {
+		if (
+			!roomId ||
+			!nextCursor ||
+			!hasMoreMessages ||
+			isLoadingOlderRef.current
+		) {
+			return false;
+		}
+
+		isLoadingOlderRef.current = true;
+		setIsLoadingOlder(true);
+		setLoadOlderError(false);
+		const requestedRoomId = roomId;
+
+		try {
+			const response = await roomAPI.getMessages(requestedRoomId, nextCursor);
+			if (activeRoomIdRef.current !== requestedRoomId) {
+				return false;
+			}
+			if (!response.data) {
+				throw new Error("Missing message page data");
+			}
+			const page = response.data;
+
+			setMessages((current) =>
+				prependUniqueMessages(current, page.messages, requestedRoomId)
+			);
+			setNextCursor(page.next_cursor ?? null);
+			setHasMoreMessages(
+				page.has_more && !!page.next_cursor
+			);
+			return true;
+		} catch (error) {
+			if (activeRoomIdRef.current !== requestedRoomId) {
+				return false;
+			}
+			console.error("Failed to load older messages:", error);
+			setLoadOlderError(true);
+			return false;
+		} finally {
+			isLoadingOlderRef.current = false;
+			setIsLoadingOlder(false);
+		}
+	}, [roomId, nextCursor, hasMoreMessages]);
 
 	const sendMessage = useCallback(
 		(content: string) => {
@@ -209,9 +306,12 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 			room_id: roomId,
 		});
 
+		activeRoomIdRef.current = null;
 		setRoomId(null);
 		setPartnerLeft(false);
 		setMessages([]);
+		setNextCursor(null);
+		setHasMoreMessages(false);
 		hasJoinedRoomRef.current = null;
 		invalidateUserState();
 	}, [roomId, isConnected, invalidateUserState]);
@@ -222,6 +322,10 @@ export function useWebSocketChat({ userId, initialMessages, onMatchFound, onPart
 		isConnected,
 		roomId,
 		partnerLeft,
+		hasMoreMessages,
+		isLoadingOlder,
+		loadOlderError,
+		loadOlderMessages,
 		leaveRoom,
 		joinRoom,
 	};

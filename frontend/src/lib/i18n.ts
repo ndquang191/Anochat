@@ -1,5 +1,7 @@
 "use client";
 
+import { getCookie } from "@/lib/cookies";
+
 export type Language = "vi" | "en";
 
 export const LANGUAGE_STORAGE_KEY = "language";
@@ -9,6 +11,7 @@ const translations = {
 		accountSettings: "Cài đặt tài khoản",
 		accountSettingsDescription: "Thay đổi thông tin cá nhân của bạn tại đây.",
 		accountSuspended: "Tài khoản đã bị khóa",
+		apiUnavailable: "Không thể kết nối API. Hãy kiểm tra backend đang chạy ở localhost:8080.",
 		banNoticeDescription: "Nếu bạn thấy quyết định này chưa thỏa đáng, hãy gửi yêu cầu để chúng tôi xem xét lại.",
 		banNoticeTitle: "Bạn đã bị cấm sử dụng AnoChat",
 		banReviewRequested: "Đã gửi yêu cầu xem xét",
@@ -93,7 +96,7 @@ const translations = {
 		displayNamePlaceholder: "Nhập tên hiển thị",
 		english: "English",
 		female: "Nữ",
-		findPartnerDescription: "Vui lòng tham gia hàng chờ để tìm đối tác chat",
+		findPartnerDescription: "Vui lòng tham gia hàng chờ để tìm bạn chat",
 		gender: "Giới tính",
 		interfaceLanguage: "Ngôn ngữ giao diện",
 		joinQueue: "Tham gia hàng chờ",
@@ -107,9 +110,13 @@ const translations = {
 		leaveQueueShortcut: "Rời hàng chờ (Ctrl+Enter)",
 		leaveQueueSuccess: "Đã rời khỏi hàng chờ!",
 		loading: "Đang tải...",
+		loadMore: "Tải thêm",
 		loadingApplication: "Vui lòng chờ trong khi ứng dụng đang tải",
 		loadingUser: "Đang tải thông tin người dùng...",
 		logout: "Đăng xuất",
+		loggingOut: "Đang đăng xuất...",
+		logoutConfirmDescription: "Bạn có chắc muốn đăng xuất khỏi tài khoản này không?",
+		logoutConfirmTitle: "Xác nhận đăng xuất",
 		logoutSuccess: "Đăng xuất thành công!",
 		male: "Nam",
 		matchFound: "Đã tìm thấy đối tác chat!",
@@ -164,6 +171,7 @@ const translations = {
 		accountSettings: "Account settings",
 		accountSettingsDescription: "Update your personal information here.",
 		accountSuspended: "Your account has been suspended",
+		apiUnavailable: "Cannot connect to the API. Check that the backend is running at localhost:8080.",
 		banNoticeDescription: "If you believe this decision is not appropriate, ask us to review it.",
 		banNoticeTitle: "You have been banned from AnoChat",
 		banReviewRequested: "Review request submitted",
@@ -262,9 +270,13 @@ const translations = {
 		leaveQueueShortcut: "Leave queue (Ctrl+Enter)",
 		leaveQueueSuccess: "Left the queue!",
 		loading: "Loading...",
+		loadMore: "Load more",
 		loadingApplication: "Please wait while we load the application",
 		loadingUser: "Loading user information...",
 		logout: "Log out",
+		loggingOut: "Logging out...",
+		logoutConfirmDescription: "Are you sure you want to log out of this account?",
+		logoutConfirmTitle: "Confirm logout",
 		logoutSuccess: "Logged out successfully!",
 		male: "Male",
 		matchFound: "Chat partner found!",
@@ -329,6 +341,11 @@ export function getStoredLanguage(): Language {
 	}
 
 	try {
+		const cookieLanguage = getCookie(LANGUAGE_STORAGE_KEY);
+		if (isLanguage(cookieLanguage)) {
+			return cookieLanguage;
+		}
+
 		const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
 		return isLanguage(stored) ? stored : "vi";
 	} catch {

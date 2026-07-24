@@ -7,14 +7,16 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { AuthProvider } from "./auth";
 import { AlertDialogProvider } from "./alert-dialog";
 import { ThemeProvider } from "./theme";
+import type { Language } from "@/lib/i18n";
 
 interface AppProviderProps {
 	children: ReactNode;
+	initialLanguage: Language;
 }
 
-export function AppProvider({ children }: AppProviderProps) {
+export function AppProvider({ children, initialLanguage }: AppProviderProps) {
 	return (
-		<ThemeProvider>
+		<ThemeProvider initialLanguage={initialLanguage}>
 			<QueryClientProvider client={queryClient}>
 				<ErrorBoundary>
 					<AuthProvider>

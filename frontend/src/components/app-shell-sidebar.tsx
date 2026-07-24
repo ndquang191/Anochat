@@ -28,7 +28,6 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "@/components/brand-logo";
 import { useAuth } from "@/contexts/auth";
@@ -110,7 +109,6 @@ export function AppShellSidebar({
 	const [localOverrides, setLocalOverrides] = React.useState<Partial<UserData>>({});
 	const { language, setLanguage, t } = useLanguage();
 	const { theme, setTheme, soundEnabled, toggleSound } = useTheme();
-	const router = useRouter();
 	const { logout, user, room } = useAuth();
 	const { data, isLoading } = useUserState();
 	const invalidateUserState = useInvalidateUserState();
@@ -126,8 +124,16 @@ export function AppShellSidebar({
 	}, [room?.id]);
 
 	const handleLogout = async () => {
+		const confirmed = await alertDialog.open({
+			title: t("logoutConfirmTitle"),
+			description: t("logoutConfirmDescription"),
+			confirmText: t("logout"),
+			cancelText: t("cancel"),
+		});
+
+		if (!confirmed) return;
+
 		await logout();
-		router.push("/login");
 	};
 
 	const cycleTheme = (origin: HTMLElement) => {
