@@ -1,3 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-tmux kill-session -t anochat-dev 2>/dev/null && echo "Stopped." || echo "Not running."
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+docker compose --project-directory "$repo_dir" stop postgres redis

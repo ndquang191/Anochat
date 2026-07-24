@@ -54,6 +54,27 @@ type OAuthResult struct {
 	RefreshToken string
 }
 
+// CreateDevSession creates a normal application session without contacting an
+// OAuth provider. The caller is responsible for exposing this only in local
+// development.
+func (s *AuthService) CreateDevSession(ctx context.Context, email, name string) (*OAuthResult, error) {
+	user, err := s.userService.GetOrCreateUser(ctx, email, name, "")
+	if err != nil {
+		return nil, err
+	}
+
+	accessToken, err := s.generateJWT(user.ID, email)
+	if err != nil {
+		return nil, err
+	}
+	refreshToken, err := s.generateRefreshToken(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &OAuthResult{User: user, AccessToken: accessToken, RefreshToken: refreshToken}, nil
+}
+
 func (s *AuthService) ProcessOAuthCallback(ctx context.Context, code string) (*OAuthResult, error) {
 	token, err := s.oauthConfig.Exchange(ctx, code)
 	if err != nil {
@@ -244,13 +265,6 @@ func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshToken strin
 	if err != nil {
 		return "", apperr.ErrUserNotFound
 	}
-	if !user.IsActive {
-		if err := s.rdb.Del(ctx, key).Err(); err != nil {
-			slog.Warn("Failed to revoke refresh token for suspended user", "error", err, "user_id", userID)
-		}
-		return "", apperr.ErrUserSuspended
-	}
-
 	if user.Email == nil {
 		return "", fmt.Errorf("user email is nil")
 	}

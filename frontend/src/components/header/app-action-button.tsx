@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect } from "react";
-import { RotateCw, LogOut } from "lucide-react";
+import { DoorOpen, RotateCw } from "lucide-react";
 import { useQueue } from "@/hooks/use-queue";
 import { useAuth } from "@/contexts/auth";
 import { useLanguage } from "@/contexts/theme";
@@ -60,9 +60,7 @@ export function AppActionButton() {
 			}
 		} catch (error) {
 			console.error("Operation failed:", error);
-			toast.error(t("pleaseTryAgain"), {
-				description: error instanceof Error ? error.message : t("pleaseTryAgain"),
-			});
+			toast.error(t("somethingWentWrong"));
 		}
 	}, [inQueue, inRoom, isLoading, joinQueue, leaveQueue, leaveRoom, t]);
 
@@ -83,7 +81,7 @@ export function AppActionButton() {
 		if (inRoom) {
 			return {
 				bgColor: "bg-primary hover:bg-primary/90",
-				icon: <LogOut size={18} />,
+				icon: <DoorOpen size={18} />,
 				title: t("leaveChatRoomShortcut"),
 				spinning: false,
 			};
@@ -113,6 +111,7 @@ export function AppActionButton() {
 			className={`relative h-10 w-10 rounded-full transform transition-all duration-300 ease-in-out ${
 				isLoading ? "cursor-not-allowed opacity-70" : "hover:scale-110"
 			} ${config.bgColor}`}
+			aria-label={config.title}
 			title={config.title}
 		>
 			<div

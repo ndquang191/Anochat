@@ -6,7 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/
 import { ShineBorder } from "@/components/ui/shine-border";
 import { useState } from "react";
 import { authAPI } from "@/lib/api";
-import { AuroraText } from "@/components/aurora-text";
+import { BrandLogo } from "@/components/brand-logo";
+import { useAuth } from "@/contexts/auth";
+import { useRouter } from "next/navigation";
+import { useLanguage } from "@/contexts/theme";
 
 function GoogleIcon() {
 	return (
@@ -21,6 +24,10 @@ function GoogleIcon() {
 
 export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
 	const [isLoading, setIsLoading] = useState(false);
+	const { login } = useAuth();
+	const { t } = useLanguage();
+	const router = useRouter();
+	const devLoginEnabled = process.env.NEXT_PUBLIC_DEV_AUTH_ENABLED === "true";
 
 	const handleGoogleLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -33,28 +40,51 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
 		}
 	};
 
+	const handleDevLogin = async (user: "a" | "b") => {
+		setIsLoading(true);
+		try {
+			const response = await authAPI.devLogin(user);
+			if (!response.data) throw new Error("Dev login returned no user");
+			login(response.data);
+			router.push("/");
+		} catch (error) {
+			console.error("Lỗi đăng nhập local:", error);
+			setIsLoading(false);
+		}
+	};
+
 	return (
 		<div className={cn("flex flex-col gap-6", className)} {...props}>
 			<Card className="relative overflow-hidden">
 				<ShineBorder shineColor={["hsl(var(--primary))", "hsl(var(--aurora-1))", "hsl(var(--aurora-3))"]} duration={10} />
 				<CardHeader className="items-center text-center">
-					<div style={{ fontFamily: "var(--font-changa-one)" }}>
-						<AuroraText className="text-4xl tracking-widest">ANOCHAT</AuroraText>
-					</div>
-					<CardDescription className="mt-1">Đăng nhập để bắt đầu trò chuyện ẩn danh</CardDescription>
+					<BrandLogo />
+					<CardDescription className="mt-1">
+						{t("signInDescription")}
+					</CardDescription>
 				</CardHeader>
 				<CardContent>
-					<form onSubmit={handleGoogleLogin}>
+					<form onSubmit={handleGoogleLogin} className="space-y-3">
 						<Button type="submit" className="w-full" disabled={isLoading}>
 							{isLoading ? (
-								"Đang đăng nhập..."
+								t("signingIn")
 							) : (
 								<>
 									<GoogleIcon />
-									<span>Đăng nhập với Google</span>
+									<span>{t("signInGoogle")}</span>
 								</>
 							)}
 						</Button>
+						{devLoginEnabled && (
+							<div className="grid grid-cols-2 gap-2">
+								<Button type="button" variant="outline" disabled={isLoading} onClick={() => handleDevLogin("a")}>
+									Dev A
+								</Button>
+								<Button type="button" variant="outline" disabled={isLoading} onClick={() => handleDevLogin("b")}>
+									Dev B
+								</Button>
+							</div>
+						)}
 					</form>
 				</CardContent>
 			</Card>

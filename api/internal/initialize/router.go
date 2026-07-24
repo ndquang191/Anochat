@@ -35,6 +35,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	messageRepo := repository.NewMessageRepository(db)
 	bannedWordRepo := repository.NewBannedWordRepository(db)
 	reportRepo := repository.NewReportRepository(db)
+	adminStatsRepo := repository.NewAdminStatsRepository(db)
 
 	if count, err := userRepo.Count(context.Background()); err == nil {
 		metrics.TotalUsers.Set(float64(count))
@@ -51,10 +52,10 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	userService := service.NewUserService(userRepo, profileRepo)
 	roomService := service.NewRoomService(roomRepo, messageRepo)
 	messageService := service.NewMessageService(messageRepo)
-	fakeMatchService := service.NewFakeMatchService()
 	authService := service.NewAuthService(userService, oauthConfig, cfg.OAuth.JWTSecret, redisClient, cfg.OAuth.AccessTokenExpiry, cfg.OAuth.RefreshTokenExpiry)
-	queueService := service.NewQueueService(roomService, roomRepo, redisClient, profileRepo, fakeMatchService)
-	moderationService := service.NewModerationService(bannedWordRepo, reportRepo, userRepo)
+	queueService := service.NewQueueService(roomService, roomRepo, redisClient)
+	moderationService := service.NewModerationService(bannedWordRepo, reportRepo, userRepo, roomRepo)
+	adminStatsService := service.NewAdminStatsService(adminStatsRepo, redisClient)
 	if err := moderationService.LoadWords(context.Background()); err != nil {
 		slog.Warn("Failed to load banned words at startup", "error", err)
 	}
@@ -63,7 +64,6 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 		queueService,
 		messageService,
 		roomService,
-		fakeMatchService,
 		moderationService,
 		redisClient,
 		cfg.Chat.MessageRateLimit,
@@ -75,10 +75,11 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	queueService.SetMatchNotifier(wsHub)
 
 	authHandler := handler.NewAuthHandler(authService, oauthConfig, cfg)
-	userHandler := handler.NewUserHandler(userService, roomService, queueService, fakeMatchService, roomRepo, messageRepo, cfg)
+	userHandler := handler.NewUserHandler(userService, roomService, queueService, roomRepo, messageRepo, cfg)
 	queueHandler := handler.NewQueueHandler(queueService, cfg)
 	wsHandler := handler.NewWebSocketHandler(wsHub, authService, cfg)
-	moderationHandler := handler.NewModerationHandler(moderationService, messageRepo)
+	moderationHandler := handler.NewModerationHandler(moderationService)
+	adminStatsHandler := handler.NewAdminStatsHandler(adminStatsService)
 
 	authMiddleware := middleware.AuthMiddleware(authService, userRepo, cfg)
 
@@ -93,6 +94,10 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 
 	router.GET("/auth/google", authHandler.GoogleLogin)
 	router.GET("/auth/callback", authHandler.GoogleCallback)
+	if cfg.DevAuthEnabled {
+		router.POST("/auth/dev", authHandler.DevLogin)
+		slog.Warn("Development login is enabled")
+	}
 	router.POST("/auth/refresh", authHandler.RefreshToken)
 	router.POST("/auth/logout", authHandler.Logout)
 
@@ -100,27 +105,34 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	protected.Use(authMiddleware)
 	{
 		protected.GET("/user/state", userHandler.GetUserState)
-		protected.PUT("/profile", userHandler.UpdateProfile)
-		protected.POST("/room/leave", userHandler.LeaveCurrentRoom)
+		protected.POST("/user/ban-review", moderationHandler.RequestBanReview)
 
-		protected.POST("/queue/join", queueHandler.JoinQueue)
-		protected.POST("/queue/leave", queueHandler.LeaveQueue)
-
-		protected.GET("/ws", wsHandler.HandleWebSocket)
-
-		protected.POST("/report", moderationHandler.CreateReport)
-
-		admin := protected.Group("/admin")
+		active := protected.Group("/")
+		active.Use(middleware.RequireActive())
 		{
-			admin.GET("/words", moderationHandler.ListWords)
-			admin.POST("/words", moderationHandler.AddWord)
-			admin.PUT("/words/:id", moderationHandler.UpdateWord)
-			admin.DELETE("/words/:id", moderationHandler.DeleteWord)
-			admin.GET("/reports", moderationHandler.ListReports)
-			admin.POST("/users/:id/ban", moderationHandler.BanUser)
-			admin.POST("/users/:id/unban", moderationHandler.UnbanUser)
-			admin.GET("/users/banned", moderationHandler.ListBannedUsers)
-			admin.GET("/rooms/:id/messages", moderationHandler.ListRoomMessages)
+			active.PUT("/profile", userHandler.UpdateProfile)
+			active.POST("/room/leave", userHandler.LeaveCurrentRoom)
+
+			active.POST("/queue/join", queueHandler.JoinQueue)
+			active.POST("/queue/leave", queueHandler.LeaveQueue)
+
+			active.GET("/ws", wsHandler.HandleWebSocket)
+
+			active.POST("/report", moderationHandler.CreateReport)
+
+			admin := active.Group("/admin")
+			{
+				admin.GET("/overview", adminStatsHandler.GetOverview)
+				admin.GET("/words", moderationHandler.ListWords)
+				admin.POST("/words", moderationHandler.AddWord)
+				admin.PUT("/words/:id", moderationHandler.UpdateWord)
+				admin.DELETE("/words/:id", moderationHandler.DeleteWord)
+				admin.GET("/reports", moderationHandler.ListReports)
+				admin.POST("/users/:id/ban", moderationHandler.BanUser)
+				admin.POST("/users/:id/unban", moderationHandler.UnbanUser)
+				admin.GET("/users/banned", moderationHandler.ListBannedUsers)
+				admin.GET("/reports/:id/messages", moderationHandler.ListReportMessages)
+			}
 		}
 	}
 

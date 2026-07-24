@@ -56,17 +56,8 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 		return
 	}
 
-	h.setAccessTokenCookie(c, result.AccessToken)
-	h.setRefreshTokenCookie(c, result.RefreshToken)
-	h.setSessionCookie(c)
-
-	userData := gin.H{
-		"id":         result.User.ID,
-		"email":      *result.User.Email,
-		"name":       *result.User.Name,
-		"avatar_url": *result.User.AvatarURL,
-		"is_admin":   result.User.IsAdmin,
-	}
+	h.setSessionCookies(c, result)
+	userData := sessionUserData(result)
 	userDataJSON, err := json.Marshal(userData)
 	if err != nil {
 		// Non-fatal: redirect will still work; frontend won't have pre-filled data.
@@ -77,6 +68,61 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 
 	frontendURL := h.config.ClientURL + "/callback"
 	c.Redirect(http.StatusTemporaryRedirect, frontendURL)
+}
+
+func (h *AuthHandler) DevLogin(c *gin.Context) {
+	if !h.config.DevAuthEnabled || !h.config.IsDevelopment() {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	var request struct {
+		User string `json:"user"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		dto.Fail(c, http.StatusBadRequest, "Dev user must be 'a' or 'b'")
+		return
+	}
+
+	var email, name string
+	switch request.User {
+	case "a":
+		email, name = "dev-a@anochat.local", "Local Developer A"
+	case "b":
+		email, name = "dev-b@anochat.local", "Local Developer B"
+	default:
+		dto.Fail(c, http.StatusBadRequest, "Dev user must be 'a' or 'b'")
+		return
+	}
+
+	result, err := h.authService.CreateDevSession(c.Request.Context(), email, name)
+	if err != nil {
+		dto.FailErr(c, err)
+		return
+	}
+
+	h.setSessionCookies(c, result)
+	dto.OK(c, sessionUserData(result))
+}
+
+func (h *AuthHandler) setSessionCookies(c *gin.Context, result *service.OAuthResult) {
+	h.setAccessTokenCookie(c, result.AccessToken)
+	h.setRefreshTokenCookie(c, result.RefreshToken)
+	h.setSessionCookie(c)
+}
+
+func sessionUserData(result *service.OAuthResult) gin.H {
+	data := gin.H{"id": result.User.ID, "is_admin": result.User.IsAdmin}
+	if result.User.Email != nil {
+		data["email"] = *result.User.Email
+	}
+	if result.User.Name != nil {
+		data["name"] = *result.User.Name
+	}
+	if result.User.AvatarURL != nil {
+		data["avatar_url"] = *result.User.AvatarURL
+	}
+	return data
 }
 
 func (h *AuthHandler) RefreshToken(c *gin.Context) {

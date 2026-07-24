@@ -3,16 +3,19 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/ndquang191/Anochat/api/internal/domain/chat"
 	"github.com/ndquang191/Anochat/api/internal/domain/identity"
 	"github.com/ndquang191/Anochat/api/internal/domain/moderation"
+	"github.com/ndquang191/Anochat/api/pkg/apperr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
 func newModerationService(bwRepo *mockBannedWordRepo, rRepo *mockReportRepo, uRepo *mockUserRepo) *ModerationService {
-	return NewModerationService(bwRepo, rRepo, uRepo)
+	return NewModerationService(bwRepo, rRepo, uRepo, new(mockRoomRepo))
 }
 
 func TestContainsBannedWord(t *testing.T) {
@@ -112,15 +115,81 @@ func TestDeleteWord(t *testing.T) {
 
 func TestCreateReport(t *testing.T) {
 	reportRepo := new(mockReportRepo)
+	roomRepo := new(mockRoomRepo)
+	svc := NewModerationService(new(mockBannedWordRepo), reportRepo, new(mockUserRepo), roomRepo)
+	reporterID := uuid.New()
+	reportedUserID := uuid.New()
+	roomID := uuid.New()
+
+	roomRepo.On("FindByID", mock.Anything, roomID).Return(&chat.Room{
+		ID:      roomID,
+		User1ID: reporterID,
+		User2ID: reportedUserID,
+	}, nil)
+	reportRepo.On(
+		"CreateWithSnapshot",
+		mock.Anything,
+		mock.MatchedBy(func(r *moderation.Report) bool {
+			return r.Status == "pending" &&
+				r.ReporterID == reporterID &&
+				r.ReportedUserID == reportedUserID
+		}),
+		(*chat.Message)(nil),
+		reportSnapshotMessageLimit,
+		true,
+	).Return(nil)
+
+	err := svc.CreateReport(context.Background(), reporterID, reportedUserID, roomID)
+	assert.NoError(t, err)
+	roomRepo.AssertExpectations(t)
+	reportRepo.AssertExpectations(t)
+}
+
+func TestCreateAutoReportIncludesTriggerMessage(t *testing.T) {
+	reportRepo := new(mockReportRepo)
 	svc := newModerationService(new(mockBannedWordRepo), reportRepo, new(mockUserRepo))
+	trigger := &chat.Message{
+		ID:        uuid.New(),
+		RoomID:    uuid.New(),
+		SenderID:  uuid.New(),
+		Content:   "banned content",
+		CreatedAt: time.Now(),
+	}
 
-	reportRepo.On("Create", mock.Anything, mock.MatchedBy(func(r *moderation.Report) bool {
-		return r.Status == "pending"
-	})).Return(nil)
+	reportRepo.On(
+		"CreateWithSnapshot",
+		mock.Anything,
+		mock.MatchedBy(func(r *moderation.Report) bool {
+			return r.ReporterID == uuid.Nil &&
+				r.ReportedUserID == trigger.SenderID &&
+				r.RoomID == trigger.RoomID
+		}),
+		trigger,
+		reportSnapshotMessageLimit,
+		false,
+	).Return(nil)
 
-	err := svc.CreateReport(context.Background(), uuid.New(), uuid.New(), uuid.New())
+	err := svc.CreateAutoReport(context.Background(), trigger.SenderID, trigger.RoomID, trigger)
 	assert.NoError(t, err)
 	reportRepo.AssertExpectations(t)
+}
+
+func TestCreateReportRejectsNonParticipant(t *testing.T) {
+	reportRepo := new(mockReportRepo)
+	roomRepo := new(mockRoomRepo)
+	svc := NewModerationService(new(mockBannedWordRepo), reportRepo, new(mockUserRepo), roomRepo)
+	roomID := uuid.New()
+	reportedUserID := uuid.New()
+
+	roomRepo.On("FindByID", mock.Anything, roomID).Return(&chat.Room{
+		ID:      roomID,
+		User1ID: uuid.New(),
+		User2ID: reportedUserID,
+	}, nil)
+
+	err := svc.CreateReport(context.Background(), uuid.New(), reportedUserID, roomID)
+	assert.ErrorIs(t, err, apperr.ErrForbidden)
+	reportRepo.AssertNotCalled(t, "CreateWithSnapshot", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestBanUser(t *testing.T) {
@@ -132,7 +201,11 @@ func TestBanUser(t *testing.T) {
 	user := &identity.User{ID: userID, IsActive: true}
 	userRepo.On("FindByID", mock.Anything, userID).Return(user, nil)
 	userRepo.On("Update", mock.Anything, mock.MatchedBy(func(u *identity.User) bool {
-		return u.ID == userID && !u.IsActive
+		return u.ID == userID &&
+			!u.IsActive &&
+			u.BanCount == 1 &&
+			u.BannedAt != nil &&
+			!u.ReviewRequested
 	})).Return(nil)
 	reportRepo.On("MarkReviewedByUser", mock.Anything, userID).Return(nil)
 
@@ -147,13 +220,62 @@ func TestUnbanUser(t *testing.T) {
 	svc := newModerationService(new(mockBannedWordRepo), new(mockReportRepo), userRepo)
 	userID := uuid.New()
 
-	user := &identity.User{ID: userID, IsActive: false}
+	now := time.Now()
+	user := &identity.User{
+		ID:                 userID,
+		IsActive:           false,
+		BanCount:           2,
+		ReviewRequestCount: 1,
+		ReviewRequested:    true,
+		ReviewRequestedAt:  &now,
+	}
 	userRepo.On("FindByID", mock.Anything, userID).Return(user, nil)
 	userRepo.On("Update", mock.Anything, mock.MatchedBy(func(u *identity.User) bool {
-		return u.ID == userID && u.IsActive
+		return u.ID == userID &&
+			u.IsActive &&
+			u.BanCount == 2 &&
+			u.ReviewRequestCount == 1 &&
+			!u.ReviewRequested &&
+			u.ReviewRequestedAt == nil
 	})).Return(nil)
 
 	err := svc.UnbanUser(context.Background(), userID)
 	assert.NoError(t, err)
 	userRepo.AssertExpectations(t)
+}
+
+func TestRequestBanReview(t *testing.T) {
+	userRepo := new(mockUserRepo)
+	svc := newModerationService(new(mockBannedWordRepo), new(mockReportRepo), userRepo)
+	userID := uuid.New()
+
+	user := &identity.User{ID: userID, IsActive: false, ReviewRequestCount: 2}
+	userRepo.On("FindByID", mock.Anything, userID).Return(user, nil)
+	userRepo.On("Update", mock.Anything, mock.MatchedBy(func(u *identity.User) bool {
+		return u.ReviewRequested &&
+			u.ReviewRequestedAt != nil &&
+			u.ReviewRequestCount == 3
+	})).Return(nil)
+
+	err := svc.RequestBanReview(context.Background(), userID)
+	assert.NoError(t, err)
+	userRepo.AssertExpectations(t)
+}
+
+func TestRequestBanReviewIsIdempotentForCurrentBan(t *testing.T) {
+	userRepo := new(mockUserRepo)
+	svc := newModerationService(new(mockBannedWordRepo), new(mockReportRepo), userRepo)
+	userID := uuid.New()
+
+	user := &identity.User{
+		ID:                 userID,
+		IsActive:           false,
+		ReviewRequested:    true,
+		ReviewRequestCount: 1,
+	}
+	userRepo.On("FindByID", mock.Anything, userID).Return(user, nil)
+
+	err := svc.RequestBanReview(context.Background(), userID)
+	assert.NoError(t, err)
+	userRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 }

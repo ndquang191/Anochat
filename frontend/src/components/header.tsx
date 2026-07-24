@@ -48,18 +48,18 @@ export default function Header({ trigger }: HeaderProps) {
     };
     const isHidden = partner?.profile?.is_hidden;
 
-    const partnerName = isHidden ? "Ẩn danh" : partner?.nickname || partner?.name || "Người dùng";
+    const partnerName = isHidden ? t("anonymous") : partner?.nickname || partner?.name || t("user");
     const partnerAge =
         !isHidden && partner?.profile?.age
-            ? `${partner.profile.age} tuổi`
+            ? t("yearsOld", { age: partner.profile.age })
             : null;
     const partnerGender =
         !isHidden &&
         partner?.profile?.is_male !== null &&
         partner?.profile?.is_male !== undefined
             ? partner.profile.is_male
-                ? "Nam"
-                : "Nữ"
+                ? t("male")
+                : t("female")
             : null;
     const partnerSubtitle = [partnerAge, partnerGender]
         .filter(Boolean)
@@ -70,11 +70,11 @@ export default function Header({ trigger }: HeaderProps) {
             <header className="absolute top-0 left-0 right-0 flex h-16 shrink-0 items-center justify-between border-b-2 px-4">
                 <div className="flex items-center gap-2">
                     {trigger}
-                    <span className="text-base font-semibold">Admin Panel</span>
+                    <span className="text-base font-semibold">{t("adminPanel")}</span>
                 </div>
                 <Button variant="secondary" size="sm" onClick={() => setIsAdminOpen(false)}>
                     <X />
-                    Back to chat
+                    {t("chat")}
                 </Button>
             </header>
         );

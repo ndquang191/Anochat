@@ -4,27 +4,29 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/dto"
-	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/internal/service"
 	"github.com/ndquang191/Anochat/api/pkg/apperr"
 )
 
 type ModerationHandler struct {
 	moderationService *service.ModerationService
-	messageRepo       repository.MessageRepository
 }
 
-func NewModerationHandler(moderationService *service.ModerationService, messageRepo repository.MessageRepository) *ModerationHandler {
-	return &ModerationHandler{moderationService: moderationService, messageRepo: messageRepo}
+func NewModerationHandler(moderationService *service.ModerationService) *ModerationHandler {
+	return &ModerationHandler{moderationService: moderationService}
 }
 
-func (h *ModerationHandler) requireAdmin(c *gin.Context) bool {
+func requireAdmin(c *gin.Context) bool {
 	if !c.GetBool("is_admin") {
 		dto.FailErr(c, apperr.ErrForbidden)
 		c.Abort()
 		return false
 	}
 	return true
+}
+
+func (h *ModerationHandler) requireAdmin(c *gin.Context) bool {
+	return requireAdmin(c)
 }
 
 func (h *ModerationHandler) ListWords(c *gin.Context) {
@@ -160,16 +162,16 @@ func (h *ModerationHandler) BanUser(c *gin.Context) {
 	dto.OKWithMessage(c, "User banned", nil)
 }
 
-func (h *ModerationHandler) ListRoomMessages(c *gin.Context) {
+func (h *ModerationHandler) ListReportMessages(c *gin.Context) {
 	if !h.requireAdmin(c) {
 		return
 	}
-	roomID, err := uuid.Parse(c.Param("id"))
+	reportID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		dto.FailErr(c, apperr.ErrInvalidID)
 		return
 	}
-	messages, err := h.messageRepo.FindByRoomID(c.Request.Context(), roomID)
+	messages, err := h.moderationService.GetReportMessages(c.Request.Context(), reportID)
 	if err != nil {
 		dto.FailErr(c, err)
 		return
@@ -210,27 +212,58 @@ func (h *ModerationHandler) ListBannedUsers(c *gin.Context) {
 	if err != nil {
 		roomMap = map[uuid.UUID]uuid.UUID{} // non-fatal
 	}
+	reportMap, err := h.moderationService.GetLatestReportsForUsers(c.Request.Context(), userIDs)
+	if err != nil {
+		reportMap = map[uuid.UUID]uuid.UUID{} // non-fatal
+	}
 
 	type bannedUserDTO struct {
-		ID         string  `json:"id"`
-		Name       *string `json:"name"`
-		Email      *string `json:"email"`
-		CreatedAt  int64   `json:"created_at"`
-		LastRoomID *string `json:"last_room_id"`
+		ID                 string  `json:"id"`
+		Name               *string `json:"name"`
+		Email              *string `json:"email"`
+		CreatedAt          int64   `json:"created_at"`
+		BannedAt           *int64  `json:"banned_at"`
+		BanCount           int     `json:"ban_count"`
+		ReviewRequestCount int     `json:"review_request_count"`
+		ReviewRequested    bool    `json:"review_requested"`
+		ReviewRequestedAt  *int64  `json:"review_requested_at"`
+		LastRoomID         *string `json:"last_room_id"`
+		LastReportID       *string `json:"last_report_id"`
 	}
 	result := make([]bannedUserDTO, len(users))
 	for i, u := range users {
 		var lastRoomID *string
+		var lastReportID *string
+		var bannedAt *int64
+		var reviewRequestedAt *int64
 		if rid, ok := roomMap[u.ID]; ok {
 			s := rid.String()
 			lastRoomID = &s
 		}
+		if rid, ok := reportMap[u.ID]; ok {
+			s := rid.String()
+			lastReportID = &s
+		}
+		if u.BannedAt != nil {
+			ts := u.BannedAt.Unix()
+			bannedAt = &ts
+		}
+		if u.ReviewRequestedAt != nil {
+			ts := u.ReviewRequestedAt.Unix()
+			reviewRequestedAt = &ts
+		}
 		result[i] = bannedUserDTO{
-			ID:         u.ID.String(),
-			Name:       u.Name,
-			Email:      u.Email,
-			CreatedAt:  u.CreatedAt.Unix(),
-			LastRoomID: lastRoomID,
+			ID:                 u.ID.String(),
+			Name:               u.Name,
+			Email:              u.Email,
+			CreatedAt:          u.CreatedAt.Unix(),
+			BannedAt:           bannedAt,
+			BanCount:           u.BanCount,
+			ReviewRequestCount: u.ReviewRequestCount,
+			ReviewRequested:    u.ReviewRequested,
+			ReviewRequestedAt:  reviewRequestedAt,
+			LastRoomID:         lastRoomID,
+			LastReportID:       lastReportID,
 		}
 	}
 	dto.OK(c, result)
@@ -250,6 +283,19 @@ func (h *ModerationHandler) UnbanUser(c *gin.Context) {
 		return
 	}
 	dto.OKWithMessage(c, "User unbanned", nil)
+}
+
+func (h *ModerationHandler) RequestBanReview(c *gin.Context) {
+	userID := getUserID(c)
+	if userID == uuid.Nil {
+		dto.FailErr(c, apperr.ErrUnauthenticated)
+		return
+	}
+	if err := h.moderationService.RequestBanReview(c.Request.Context(), userID); err != nil {
+		dto.FailErr(c, err)
+		return
+	}
+	dto.OKWithMessage(c, "Review request submitted", nil)
 }
 
 func (h *ModerationHandler) CreateReport(c *gin.Context) {

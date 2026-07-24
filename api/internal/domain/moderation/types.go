@@ -24,3 +24,12 @@ type Report struct {
 	CreatedAt        time.Time
 	ReportedUserName *string
 }
+
+type ReportMessage struct {
+	ID                uuid.UUID
+	ReportID          uuid.UUID
+	OriginalMessageID uuid.UUID
+	SenderID          uuid.UUID
+	Content           string
+	CreatedAt         time.Time
+}

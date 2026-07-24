@@ -2,11 +2,14 @@ package repository
 
 import (
 	"context"
+	"sort"
 
 	"github.com/google/uuid"
+	"github.com/ndquang191/Anochat/api/internal/domain/chat"
 	"github.com/ndquang191/Anochat/api/internal/domain/moderation"
 	"github.com/ndquang191/Anochat/api/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // BannedWordRepository defines data access for the banned word list.
@@ -86,10 +89,12 @@ func bannedWordDomainToModel(w *moderation.BannedWord) *model.BannedWord {
 
 // ReportRepository defines data access for moderation reports.
 type ReportRepository interface {
-	Create(ctx context.Context, report *moderation.Report) error
+	CreateWithSnapshot(ctx context.Context, report *moderation.Report, triggerMessage *chat.Message, limit int, requireRoom bool) error
 	FindAll(ctx context.Context) ([]*moderation.Report, error)
+	FindMessages(ctx context.Context, reportID uuid.UUID) ([]*moderation.ReportMessage, error)
 	MarkReviewedByUser(ctx context.Context, reportedUserID uuid.UUID) error
 	FindLatestRoomForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error)
+	FindLatestReportForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error)
 }
 
 type reportRepo struct{ db *gorm.DB }
@@ -98,13 +103,86 @@ func NewReportRepository(db *gorm.DB) ReportRepository {
 	return &reportRepo{db: db}
 }
 
-func (r *reportRepo) Create(ctx context.Context, report *moderation.Report) error {
-	m := reportDomainToModel(report)
-	if err := r.db.WithContext(ctx).Create(m).Error; err != nil {
+func (r *reportRepo) CreateWithSnapshot(
+	ctx context.Context,
+	report *moderation.Report,
+	triggerMessage *chat.Message,
+	limit int,
+	requireRoom bool,
+) error {
+	if limit <= 0 {
+		limit = 1
+	}
+
+	reportModel := reportDomainToModel(report)
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if requireRoom {
+			var room model.Room
+			if err := tx.
+				Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ?", report.RoomID).
+				First(&room).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.Create(reportModel).Error; err != nil {
+			return err
+		}
+
+		var sourceMessages []model.Message
+		if err := tx.
+			Where("room_id = ?", report.RoomID).
+			Order("created_at DESC").
+			Limit(limit).
+			Find(&sourceMessages).Error; err != nil {
+			return err
+		}
+
+		evidenceByOriginalID := make(map[uuid.UUID]model.ReportMessage, len(sourceMessages)+1)
+		for i := range sourceMessages {
+			message := sourceMessages[i]
+			evidenceByOriginalID[message.ID] = model.ReportMessage{
+				ReportID:          reportModel.ID,
+				OriginalMessageID: message.ID,
+				SenderID:          message.SenderID,
+				Content:           message.Content,
+				CreatedAt:         message.CreatedAt,
+			}
+		}
+		if triggerMessage != nil {
+			evidenceByOriginalID[triggerMessage.ID] = model.ReportMessage{
+				ReportID:          reportModel.ID,
+				OriginalMessageID: triggerMessage.ID,
+				SenderID:          triggerMessage.SenderID,
+				Content:           triggerMessage.Content,
+				CreatedAt:         triggerMessage.CreatedAt,
+			}
+		}
+
+		evidence := make([]model.ReportMessage, 0, len(evidenceByOriginalID))
+		for _, message := range evidenceByOriginalID {
+			evidence = append(evidence, message)
+		}
+		sort.Slice(evidence, func(i, j int) bool {
+			return evidence[i].CreatedAt.Before(evidence[j].CreatedAt)
+		})
+		if len(evidence) > limit {
+			evidence = evidence[len(evidence)-limit:]
+		}
+		if len(evidence) > 0 {
+			if err := tx.Create(&evidence).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return err
 	}
-	report.ID = m.ID
-	report.CreatedAt = m.CreatedAt
+
+	report.ID = reportModel.ID
+	report.CreatedAt = reportModel.CreatedAt
 	return nil
 }
 
@@ -119,6 +197,22 @@ func (r *reportRepo) FindAll(ctx context.Context) ([]*moderation.Report, error) 
 	result := make([]*moderation.Report, len(models))
 	for i := range models {
 		result[i] = reportModelToDomain(&models[i])
+	}
+	return result, nil
+}
+
+func (r *reportRepo) FindMessages(ctx context.Context, reportID uuid.UUID) ([]*moderation.ReportMessage, error) {
+	var models []model.ReportMessage
+	if err := r.db.WithContext(ctx).
+		Where("report_id = ?", reportID).
+		Order("created_at ASC").
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+
+	result := make([]*moderation.ReportMessage, len(models))
+	for i := range models {
+		result[i] = reportMessageModelToDomain(&models[i])
 	}
 	return result, nil
 }
@@ -144,6 +238,31 @@ func (r *reportRepo) FindLatestRoomForUsers(ctx context.Context, userIDs []uuid.
 	result := make(map[uuid.UUID]uuid.UUID, len(rows))
 	for _, row := range rows {
 		result[row.ReportedUserID] = row.RoomID
+	}
+	return result, nil
+}
+
+func (r *reportRepo) FindLatestReportForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
+	if len(userIDs) == 0 {
+		return map[uuid.UUID]uuid.UUID{}, nil
+	}
+	type row struct {
+		ReportedUserID uuid.UUID
+		ReportID       uuid.UUID
+	}
+	var rows []row
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT DISTINCT ON (reported_user_id) reported_user_id, id AS report_id
+		FROM reports
+		WHERE reported_user_id = ANY(?)
+		ORDER BY reported_user_id, created_at DESC
+	`, userIDs).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[uuid.UUID]uuid.UUID, len(rows))
+	for _, row := range rows {
+		result[row.ReportedUserID] = row.ReportID
 	}
 	return result, nil
 }
@@ -178,5 +297,16 @@ func reportDomainToModel(r *moderation.Report) *model.Report {
 		ReportedUserID: r.ReportedUserID,
 		RoomID:         r.RoomID,
 		Status:         r.Status,
+	}
+}
+
+func reportMessageModelToDomain(m *model.ReportMessage) *moderation.ReportMessage {
+	return &moderation.ReportMessage{
+		ID:                m.ID,
+		ReportID:          m.ReportID,
+		OriginalMessageID: m.OriginalMessageID,
+		SenderID:          m.SenderID,
+		Content:           m.Content,
+		CreatedAt:         m.CreatedAt,
 	}
 }

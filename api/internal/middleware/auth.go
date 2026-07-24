@@ -44,8 +44,8 @@ func AuthMiddleware(authService *service.AuthService, userRepo repository.UserRe
 		}
 
 		user, err := userRepo.FindByID(c.Request.Context(), claims.UserID)
-		if err != nil || !user.IsActive {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Tài khoản của bạn đã bị khóa", "code": "account_suspended"})
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Không tìm thấy tài khoản", "code": "user_not_found"})
 			c.Abort()
 			return
 		}
@@ -53,6 +53,23 @@ func AuthMiddleware(authService *service.AuthService, userRepo repository.UserRe
 		c.Set("user_id", claims.UserID)
 		c.Set("user_email", claims.Email)
 		c.Set("is_admin", user.IsAdmin)
+		c.Set("is_active", user.IsActive)
+		c.Set("ban_count", user.BanCount)
+		c.Set("review_request_count", user.ReviewRequestCount)
+		c.Set("review_requested", user.ReviewRequested)
+		c.Next()
+	}
+}
+
+// RequireActive blocks chat and account mutations while still allowing a
+// suspended user to load their status and request a review.
+func RequireActive() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !c.GetBool("is_active") {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Tài khoản của bạn đã bị khóa", "code": "account_suspended"})
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }

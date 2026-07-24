@@ -73,6 +73,23 @@ func TestGetActiveRoomByUserID_NotFound(t *testing.T) {
 	roomRepo.AssertExpectations(t)
 }
 
+func TestUpdateConnectionStatus(t *testing.T) {
+	svc, roomRepo, _ := newRoomServiceWithMocks()
+	roomID := uuid.New()
+
+	roomRepo.On(
+		"UpdateSessionConnection",
+		mock.Anything,
+		roomID,
+		true,
+		mock.AnythingOfType("time.Time"),
+	).Return(nil)
+
+	err := svc.UpdateConnectionStatus(context.Background(), roomID, true)
+	assert.NoError(t, err)
+	roomRepo.AssertExpectations(t)
+}
+
 func TestLeaveRoom(t *testing.T) {
 	svc, roomRepo, msgRepo := newRoomServiceWithMocks()
 	userID := uuid.New()

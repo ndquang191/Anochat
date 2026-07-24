@@ -17,6 +17,7 @@ type RoomRepository interface {
 	FindActiveByUserID(ctx context.Context, userID uuid.UUID) (*chat.Room, error)
 	Create(ctx context.Context, room *chat.Room) error
 	UpdateEndedAt(ctx context.Context, roomID uuid.UUID, endedAt time.Time) error
+	UpdateSessionConnection(ctx context.Context, roomID uuid.UUID, connected bool, changedAt time.Time) error
 	Delete(ctx context.Context, roomID uuid.UUID) error
 }
 
@@ -52,7 +53,16 @@ func (r *roomRepo) FindActiveByUserID(ctx context.Context, userID uuid.UUID) (*c
 
 func (r *roomRepo) Create(ctx context.Context, room *chat.Room) error {
 	m := roomDomainToModel(room)
-	if err := r.db.WithContext(ctx).Create(m).Error; err != nil {
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(m).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.RoomSession{
+			RoomID:    m.ID,
+			Status:    "matched",
+			MatchedAt: m.CreatedAt,
+		}).Error
+	}); err != nil {
 		return err
 	}
 	room.ID = m.ID
@@ -61,7 +71,44 @@ func (r *roomRepo) Create(ctx context.Context, room *chat.Room) error {
 }
 
 func (r *roomRepo) UpdateEndedAt(ctx context.Context, roomID uuid.UUID, endedAt time.Time) error {
-	return r.db.WithContext(ctx).Model(&model.Room{}).Where("id = ?", roomID).Update("ended_at", endedAt).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.Room{}).
+			Where("id = ?", roomID).
+			Update("ended_at", endedAt).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.RoomSession{}).
+			Where("room_id = ? AND ended_at IS NULL", roomID).
+			Updates(map[string]any{
+				"status":   "ended",
+				"ended_at": endedAt,
+			}).Error
+	})
+}
+
+func (r *roomRepo) UpdateSessionConnection(
+	ctx context.Context,
+	roomID uuid.UUID,
+	connected bool,
+	changedAt time.Time,
+) error {
+	if connected {
+		return r.db.WithContext(ctx).
+			Model(&model.RoomSession{}).
+			Where("room_id = ? AND ended_at IS NULL", roomID).
+			Updates(map[string]any{
+				"status":          "connected",
+				"connected_at":    gorm.Expr("COALESCE(connected_at, ?)", changedAt),
+				"disconnected_at": nil,
+			}).Error
+	}
+	return r.db.WithContext(ctx).
+		Model(&model.RoomSession{}).
+		Where("room_id = ? AND ended_at IS NULL AND status IN ?", roomID, []string{"connected", "disconnected"}).
+		Updates(map[string]any{
+			"status":          "disconnected",
+			"disconnected_at": changedAt,
+		}).Error
 }
 
 func (r *roomRepo) Delete(ctx context.Context, roomID uuid.UUID) error {

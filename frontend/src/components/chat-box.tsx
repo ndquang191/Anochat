@@ -8,8 +8,8 @@ import { toast } from "sonner";
 import { ChatLoadingState } from "./chat/chat-loading-state";
 import { ChatMessages } from "./chat/chat-messages";
 import { ChatInput } from "./chat/chat-input";
-import { WifiOff } from "lucide-react";
 import { useLanguage } from "@/contexts/theme";
+import { GenericErrorState } from "@/components/generic-error-state";
 
 const CONNECTION_TIMEOUT_MS = 10000;
 
@@ -44,22 +44,14 @@ export default function ChatBox() {
 	}, [isConnected]);
 
 	if (!user) {
-		return <ChatLoadingState message="Đang tải thông tin người dùng..." />;
+		return <ChatLoadingState message={t("loading")} />;
 	}
 
 	if (!isConnected) {
 		if (connectionTimedOut) {
-			return (
-				<div className="h-full w-full flex items-center justify-center">
-					<div className="text-center space-y-3">
-						<WifiOff className="h-4 w-4 md:h-5 md:w-5 text-muted-foreground mx-auto" />
-						<p className="text-sm md:text-base font-medium">Không thể kết nối</p>
-						<p className="text-sm md:text-base text-muted-foreground">Vui lòng tải lại trang</p>
-					</div>
-				</div>
-			);
+			return <GenericErrorState />;
 		}
-		return <ChatLoadingState message="Đang kết nối WebSocket..." />;
+		return <ChatLoadingState message={t("loading")} />;
 	}
 
 	return (

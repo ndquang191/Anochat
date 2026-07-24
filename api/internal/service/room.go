@@ -50,6 +50,14 @@ func (s *RoomService) GetActiveRoomByUserID(ctx context.Context, userID uuid.UUI
 	return room, nil
 }
 
+func (s *RoomService) UpdateConnectionStatus(
+	ctx context.Context,
+	roomID uuid.UUID,
+	connected bool,
+) error {
+	return s.roomRepo.UpdateSessionConnection(ctx, roomID, connected, time.Now().UTC())
+}
+
 func (s *RoomService) LeaveRoom(ctx context.Context, roomID, userID uuid.UUID) error {
 	room, err := s.roomRepo.FindByID(ctx, roomID)
 	if err != nil {

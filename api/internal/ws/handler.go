@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/ndquang191/Anochat/api/internal/domain/chat"
 )
 
 func (c *Client) handleMessage(message []byte) {
@@ -64,21 +65,17 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 		return
 	}
 
-	if c.Hub.moderationService.ContainsBannedWord(content) {
-		slog.Info("Auto-reporting user for banned word", "user_id", c.UserID, "room_id", *c.RoomID)
-		go func(roomID uuid.UUID) {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := c.Hub.moderationService.CreateReport(ctx, uuid.Nil, c.UserID, roomID); err != nil {
-				slog.Error("Failed to create auto-report", "error", err, "user_id", c.UserID)
-			}
-		}(*c.RoomID)
-	}
-
 	msgID := uuid.New()
 	now := time.Now().UTC()
 	roomID := *c.RoomID
-	isFakeRoom := c.Hub.fakeMatchService.IsParticipant(c.UserID, roomID)
+	isSensitive := c.Hub.moderationService.ContainsBannedWord(content)
+	triggerMessage := &chat.Message{
+		ID:        msgID,
+		RoomID:    roomID,
+		SenderID:  c.UserID,
+		Content:   content,
+		CreatedAt: now,
+	}
 
 	broadcastMsg := WSMessage{
 		Type: "receive_message",
@@ -102,22 +99,37 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 		Exclude: c.UserID,
 	}
 
-	if isFakeRoom {
-		reply := c.Hub.fakeMatchService.AdvanceConversation(c.UserID, roomID)
-		c.Hub.NotifyFakeMessage(c.UserID, reply)
-		slog.Info("Fake room message handled", "user_id", c.UserID, "room_id", roomID)
-		return
-	}
-
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := c.Hub.messageService.SaveMessage(ctx, msgID, roomID, c.UserID, content, now); err != nil {
 			slog.Error("Failed to save message", "error", err, "user_id", c.UserID, "message_id", msgID)
 		}
+		if isSensitive {
+			c.createAutoReport(triggerMessage)
+		}
 	}()
 
 	slog.Info("Message sent", "user_id", c.UserID, "room_id", roomID, "message_id", msgID)
+}
+
+func (c *Client) createAutoReport(triggerMessage *chat.Message) {
+	slog.Info(
+		"Auto-reporting user for banned word",
+		"user_id", c.UserID,
+		"room_id", triggerMessage.RoomID,
+		"message_id", triggerMessage.ID,
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.Hub.moderationService.CreateAutoReport(
+		ctx,
+		c.UserID,
+		triggerMessage.RoomID,
+		triggerMessage,
+	); err != nil {
+		slog.Error("Failed to create auto-report", "error", err, "user_id", c.UserID)
+	}
 }
 
 func messageExceedsLimit(content string, maxLength int) bool {
@@ -138,20 +150,7 @@ func (c *Client) handleJoinRoom(payload map[string]interface{}) {
 
 	room, err := c.Hub.roomService.GetRoomByID(context.Background(), roomID)
 	if err != nil || room == nil {
-		if !c.Hub.fakeMatchService.IsParticipant(c.UserID, roomID) {
-			slog.Error("Room not found", "room_id", roomID, "user_id", c.UserID)
-			return
-		}
-		c.Hub.AddClientToRoom(c.UserID, roomID)
-		confirmation := WSMessage{
-			Type: "room_joined",
-			Payload: map[string]interface{}{
-				"room_id":   roomID.String(),
-				"timestamp": time.Now().Unix(),
-			},
-		}
-		c.SendJSON(confirmation)
-		slog.Info("User joined fake room via WebSocket", "user_id", c.UserID, "room_id", roomID)
+		slog.Error("Room not found", "room_id", roomID, "user_id", c.UserID)
 		return
 	}
 
@@ -181,9 +180,7 @@ func (c *Client) handleLeaveRoom(payload map[string]interface{}) {
 
 	roomID := *c.RoomID
 
-	if c.Hub.fakeMatchService.IsParticipant(c.UserID, roomID) {
-		c.Hub.fakeMatchService.EndSession(c.UserID)
-	} else if err := c.Hub.roomService.LeaveRoom(context.Background(), roomID, c.UserID); err != nil {
+	if err := c.Hub.roomService.LeaveRoom(context.Background(), roomID, c.UserID); err != nil {
 		slog.Error("Failed to leave room in database", "error", err, "user_id", c.UserID, "room_id", roomID)
 	}
 

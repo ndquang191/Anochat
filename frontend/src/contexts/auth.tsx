@@ -14,7 +14,12 @@ interface AuthContextType {
 	room: RoomDTO | null;
 	messages: MessageDTO[];
 	inQueue: boolean;
+	isBanned: boolean;
+	banCount: number;
+	reviewRequestCount: number;
+	reviewRequested: boolean;
 	loading: boolean;
+	hasError: boolean;
 	login: (user: UserDTO) => void;
 	logout: () => Promise<void>;
 	checkAuth: () => Promise<void>;
@@ -69,7 +74,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		room: data?.room ?? null,
 		messages: data?.messages ?? [],
 		inQueue: data?.in_queue ?? false,
+		isBanned: data?.is_banned ?? false,
+		banCount: data?.ban_count ?? 0,
+		reviewRequestCount: data?.review_request_count ?? 0,
+		reviewRequested: data?.review_requested ?? false,
 		loading: !mounted || (hasCookie && isLoading),
+		hasError: hasCookie && isError,
 		login,
 		logout,
 		checkAuth,

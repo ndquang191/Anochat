@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import type { ApiResponse, UserStateResponse, ProfileDTO, BannedWordDTO, ReportDTO, BannedUserDTO } from "@/types";
+import type { AdminOverviewDTO, ApiResponse, UserDTO, UserStateResponse, ProfileDTO, BannedWordDTO, ReportDTO, BannedUserDTO } from "@/types";
 import { translateStored } from "@/lib/i18n";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -66,7 +66,6 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 
 			const retryError = await retryResponse.json().catch(() => ({}));
 			const retryMessage = retryError.message || `HTTP error! status: ${retryResponse.status}`;
-			toast.error(retryMessage);
 			throw new Error(retryMessage);
 		}
 
@@ -78,7 +77,6 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 	if (!response.ok) {
 		const errorData = await response.json().catch(() => ({}));
 		const errorMessage = errorData.message || errorData.error || `HTTP error! status: ${response.status}`;
-		toast.error(errorMessage);
 		throw new Error(errorMessage);
 	}
 
@@ -104,6 +102,9 @@ export const userAPI = {
 		return apiCall<UserStateResponse>("/user/state");
 	},
 
+	requestBanReview: () =>
+		apiCall<void>("/user/ban-review", { method: "POST" }),
+
 	updateProfile: async (data: {
 		nickname?: string | null;
 		age?: number | null;
@@ -120,6 +121,7 @@ export const userAPI = {
 };
 
 export const authAPI = {
+	devLogin: (user: "a" | "b") => apiCall<UserDTO>("/auth/dev", { method: "POST", body: JSON.stringify({ user }) }),
 	logout: async () => {
 		const result = await apiCall<{ message: string }>("/auth/logout", { method: "POST" });
 		toast.success(translateStored("logoutSuccess"));
@@ -147,13 +149,17 @@ export const moderationAPI = {
 			method: "POST",
 			body: JSON.stringify({ reported_user_id: reportedUserId, room_id: roomId }),
 		}),
-	getRoomMessages: (roomId: string) =>
+	getReportMessages: (reportId: string) =>
 		apiCall<{ id: string; sender_id: string; content: string; created_at: number }[]>(
-			`/admin/rooms/${roomId}/messages`
+			`/admin/reports/${reportId}/messages`
 		),
 	listBannedUsers: () => apiCall<BannedUserDTO[]>("/admin/users/banned"),
 	unbanUser: (userId: string) =>
 		apiCall<void>(`/admin/users/${userId}/unban`, { method: "POST" }),
+};
+
+export const adminAPI = {
+	getOverview: () => apiCall<AdminOverviewDTO>("/admin/overview"),
 };
 
 export const roomAPI = {

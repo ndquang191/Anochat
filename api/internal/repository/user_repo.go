@@ -85,7 +85,7 @@ func (r *userRepo) FindBanned(ctx context.Context) ([]*identity.User, error) {
 	var models []model.User
 	if err := r.db.WithContext(ctx).
 		Where("is_active = false AND is_deleted = false").
-		Order("created_at DESC").
+		Order("review_requested DESC, review_requested_at DESC NULLS LAST, banned_at DESC NULLS LAST, created_at DESC").
 		Find(&models).Error; err != nil {
 		return nil, err
 	}
@@ -100,14 +100,19 @@ func (r *userRepo) FindBanned(ctx context.Context) ([]*identity.User, error) {
 
 func userModelToDomain(m *model.User) *identity.User {
 	u := &identity.User{
-		ID:        m.ID,
-		Email:     m.Email,
-		Name:      m.Name,
-		AvatarURL: m.AvatarURL,
-		IsActive:  m.IsActive,
-		IsAdmin:   m.IsAdmin,
-		IsDeleted: m.IsDeleted,
-		CreatedAt: m.CreatedAt,
+		ID:                 m.ID,
+		Email:              m.Email,
+		Name:               m.Name,
+		AvatarURL:          m.AvatarURL,
+		IsActive:           m.IsActive,
+		IsAdmin:            m.IsAdmin,
+		IsDeleted:          m.IsDeleted,
+		BanCount:           m.BanCount,
+		ReviewRequestCount: m.ReviewRequestCount,
+		ReviewRequested:    m.ReviewRequested,
+		BannedAt:           m.BannedAt,
+		ReviewRequestedAt:  m.ReviewRequestedAt,
+		CreatedAt:          m.CreatedAt,
 	}
 	if m.Profile != nil {
 		u.Profile = profileModelToDomain(m.Profile)
@@ -117,13 +122,18 @@ func userModelToDomain(m *model.User) *identity.User {
 
 func userDomainToModel(u *identity.User) *model.User {
 	return &model.User{
-		ID:        u.ID,
-		Email:     u.Email,
-		Name:      u.Name,
-		AvatarURL: u.AvatarURL,
-		IsActive:  u.IsActive,
-		IsAdmin:   u.IsAdmin,
-		IsDeleted: u.IsDeleted,
-		CreatedAt: u.CreatedAt,
+		ID:                 u.ID,
+		Email:              u.Email,
+		Name:               u.Name,
+		AvatarURL:          u.AvatarURL,
+		IsActive:           u.IsActive,
+		IsAdmin:            u.IsAdmin,
+		IsDeleted:          u.IsDeleted,
+		BanCount:           u.BanCount,
+		ReviewRequestCount: u.ReviewRequestCount,
+		ReviewRequested:    u.ReviewRequested,
+		BannedAt:           u.BannedAt,
+		ReviewRequestedAt:  u.ReviewRequestedAt,
+		CreatedAt:          u.CreatedAt,
 	}
 }

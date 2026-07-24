@@ -18,20 +18,17 @@ export default function AppHeader({ trigger }: HeaderProps) {
 	const partner = room?.partner;
 
 	const isHidden = partner?.profile?.is_hidden;
-	const partnerName = isHidden ? t("anonymous") : partner?.name || t("user");
+	const partnerName = isHidden
+		? t("anonymous")
+		: partner?.nickname?.trim() || partner?.name || t("user");
 	const partnerAge =
-		!isHidden && partner?.profile?.age
-			? t("yearsOld", { age: partner.profile.age })
-			: null;
-	const partnerGender =
-		!isHidden &&
-		partner?.profile?.is_male !== null &&
-		partner?.profile?.is_male !== undefined
-			? partner.profile.is_male
-				? t("male")
-				: t("female")
-			: null;
-	const partnerSubtitle = [partnerAge, partnerGender].filter(Boolean).join(" • ");
+		!isHidden && partner?.profile?.age ? partner.profile.age : null;
+	const ageBadgeClass =
+		partner?.profile?.is_male === true
+			? "border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-300"
+			: partner?.profile?.is_male === false
+				? "border-pink-500/25 bg-pink-500/10 text-pink-700 dark:text-pink-300"
+				: "border-border bg-muted text-muted-foreground";
 
 	if (isAdminOpen) {
 		return (
@@ -56,11 +53,15 @@ export default function AppHeader({ trigger }: HeaderProps) {
 			<div className="flex items-center gap-2">
 				{trigger}
 				{partner && (
-					<div className="flex flex-col leading-tight">
-						<span className="text-base font-semibold">{partnerName}</span>
-						{partnerSubtitle && (
-							<span className="text-xs text-muted-foreground">
-								{partnerSubtitle}
+					<div className="flex min-w-0 items-center gap-2">
+						<span className="truncate text-base font-semibold">{partnerName}</span>
+						{partnerAge && (
+							<span
+								className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold tabular-nums ${ageBadgeClass}`}
+								aria-label={t("yearsOld", { age: partnerAge })}
+								title={t("yearsOld", { age: partnerAge })}
+							>
+								{partnerAge}
 							</span>
 						)}
 					</div>

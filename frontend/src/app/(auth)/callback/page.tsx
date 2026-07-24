@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth";
 import { getCookie, deleteCookie } from "@/lib/cookies";
+import { useLanguage } from "@/contexts/theme";
 
 export default function CallbackPage() {
 	const router = useRouter();
 	const { login } = useAuth();
+	const { t } = useLanguage();
 	const [error, setError] = useState<string | null>(null);
 	const [retryCount, setRetryCount] = useState(0);
 
@@ -28,7 +30,7 @@ export default function CallbackPage() {
 							router.push("/");
 						}, 100);
 					} catch {
-						setError("Invalid user data received");
+						setError("error");
 					}
 				} else {
 					if (retryCount < 3) {
@@ -36,11 +38,11 @@ export default function CallbackPage() {
 							setRetryCount((prev) => prev + 1);
 						}, 1000);
 					} else {
-						setError("No user data received from authentication. Please try logging in again.");
+						setError("error");
 					}
 				}
 			} catch {
-				setError("Authentication failed");
+				setError("error");
 			}
 		};
 
@@ -52,13 +54,15 @@ export default function CallbackPage() {
 		return (
 			<div className="flex min-h-svh w-full items-center justify-center p-6">
 				<div className="text-center">
-					<h1 className="text-2xl font-bold text-red-600 mb-4">Authentication Error</h1>
-					<p className="text-gray-600 mb-4">{error}</p>
+					<h1 className="text-2xl font-bold text-red-600 mb-4">
+						{t("somethingWentWrong")}
+					</h1>
+					<p className="text-gray-600 mb-4">{t("comeBackLaterOrSignOut")}</p>
 					<button
 						onClick={() => router.push("/login")}
 						className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
 					>
-						Try Again
+						{t("signOut")}
 					</button>
 				</div>
 			</div>
@@ -70,8 +74,8 @@ export default function CallbackPage() {
 			<div className="flex min-h-svh w-full items-center justify-center p-6">
 				<div className="text-center">
 					<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-					<h1 className="text-2xl font-bold mb-2">Processing...</h1>
-					<p className="text-gray-600">Retry {retryCount}/3</p>
+					<h1 className="text-2xl font-bold mb-2">{t("processing")}</h1>
+					<p className="text-gray-600">{t("loading")}</p>
 				</div>
 			</div>
 		);

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/ndquang191/Anochat/api/internal/domain/identity"
 	"github.com/ndquang191/Anochat/api/internal/domain/matching"
 	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/pkg/apperr"
@@ -17,10 +16,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const (
-	queueKey       = "queue:waiting"
-	fakeMatchDelay = 3 * time.Minute
-)
+const queueKey = "queue:waiting"
 
 // matchOrJoinScript atomically tries to match the joining user with a waiting one,
 // or adds them to the queue if no match is available.
@@ -53,38 +49,22 @@ return "waiting"
 `)
 
 type QueueService struct {
-	roomService      *RoomService
-	roomRepo         repository.RoomRepository
-	profileRepo      repository.ProfileRepository
-	fakeMatchService *FakeMatchService
-	rdb              *redis.Client
-	matchNotifier    matching.MatchNotifier
+	roomService   *RoomService
+	roomRepo      repository.RoomRepository
+	rdb           *redis.Client
+	matchNotifier matching.MatchNotifier
 }
 
 func NewQueueService(
 	roomService *RoomService,
 	roomRepo repository.RoomRepository,
 	rdb *redis.Client,
-	extras ...interface{},
 ) *QueueService {
-	qs := &QueueService{
+	return &QueueService{
 		roomService: roomService,
 		roomRepo:    roomRepo,
 		rdb:         rdb,
 	}
-
-	if len(extras) > 0 {
-		if profileRepo, ok := extras[0].(repository.ProfileRepository); ok {
-			qs.profileRepo = profileRepo
-		}
-	}
-	if len(extras) > 1 {
-		if fakeMatchService, ok := extras[1].(*FakeMatchService); ok {
-			qs.fakeMatchService = fakeMatchService
-		}
-	}
-
-	return qs
 }
 
 func (qs *QueueService) SetMatchNotifier(notifier matching.MatchNotifier) {
@@ -97,10 +77,6 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
 		return apperr.ErrHasActiveRoom
 	} else if err != repository.ErrNotFound {
 		return fmt.Errorf("failed to check active room: %w", err)
-	}
-
-	if qs.fakeMatchService != nil && qs.fakeMatchService.HasActiveSession(userID) {
-		return apperr.ErrHasActiveRoom
 	}
 
 	score := float64(time.Now().UnixMilli())
@@ -145,7 +121,6 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
 	case result == "waiting":
 		qs.updateQueueMetric(ctx)
 		slog.Info("User joined queue", "user_id", userID)
-		qs.scheduleFakeMatch(userID, int64(score))
 	}
 
 	return nil
@@ -192,83 +167,6 @@ func (qs *QueueService) UserDisconnected(userID uuid.UUID) {
 // Users are removed individually as they disconnect; clearing the shared
 // queue key on one instance shutdown would affect other running instances.
 func (qs *QueueService) Stop() {}
-
-func (qs *QueueService) scheduleFakeMatch(userID uuid.UUID, joinedAtMs int64) {
-	if qs.fakeMatchService == nil {
-		return
-	}
-
-	go func() {
-		timer := time.NewTimer(fakeMatchDelay)
-		defer timer.Stop()
-		<-timer.C
-
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		score, err := qs.rdb.ZScore(ctx, queueKey, userID.String()).Result()
-		if err != nil || int64(score) != joinedAtMs {
-			return
-		}
-
-		removed, err := qs.rdb.ZRem(ctx, queueKey, userID.String()).Result()
-		if err != nil || removed == 0 {
-			return
-		}
-		qs.updateQueueMetric(ctx)
-
-		profile := qs.loadProfile(userID)
-		session := qs.fakeMatchService.CreateSession(userID, profile)
-
-		slog.Info("Created fake match after queue timeout", "user_id", userID, "room_id", session.RoomID)
-
-		if qs.matchNotifier != nil {
-			qs.matchNotifier.NotifyFakeMatch(session)
-		}
-
-		go qs.finishFakeMatch(userID, session.RoomID)
-	}()
-}
-
-func (qs *QueueService) finishFakeMatch(userID, roomID uuid.UUID) {
-	if qs.fakeMatchService == nil {
-		return
-	}
-
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		session := qs.fakeMatchService.GetByUserID(userID)
-		if session == nil || session.RoomID != roomID {
-			return
-		}
-		if !qs.fakeMatchService.ShouldEndSession(userID, roomID, time.Now().UTC()) {
-			continue
-		}
-
-		qs.fakeMatchService.EndSession(userID)
-		if qs.matchNotifier != nil {
-			qs.matchNotifier.NotifyFakePartnerLeft(userID, roomID)
-		}
-		return
-	}
-}
-
-func (qs *QueueService) loadProfile(userID uuid.UUID) *identity.Profile {
-	if qs.profileRepo == nil {
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	profile, err := qs.profileRepo.FindByUserID(ctx, userID)
-	if err != nil {
-		return nil
-	}
-	return profile
-}
 
 func (qs *QueueService) updateQueueMetric(ctx context.Context) {
 	size, err := qs.rdb.ZCard(ctx, queueKey).Result()

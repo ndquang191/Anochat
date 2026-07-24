@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, type FormEvent, type ChangeEvent } from "react";
+import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { convertEmotes } from "@/lib/emotes";
@@ -83,8 +84,15 @@ export function ChatInput({ onSendMessage, onTypingChange, disabled }: ChatInput
 				className="flex-1"
 				disabled={disabled}
 			/>
-			<Button type="submit" className="h-9 shrink-0" disabled={disabled || !message.trim()}>
-				{t("send")}
+			<Button
+				type="submit"
+				size="icon"
+				className="shrink-0"
+				disabled={disabled || !message.trim()}
+				aria-label={t("send")}
+				title={t("send")}
+			>
+				<Send aria-hidden="true" />
 			</Button>
 		</form>
 	);

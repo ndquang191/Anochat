@@ -31,8 +31,8 @@ export function HomeCtaActions() {
 					</Link>
 				</Button>
 				<Button size="lg" variant="outline" asChild>
-					<Link href="#faq">
-						Xem FAQ
+					<Link href="#cach-hoat-dong">
+						Cách hoạt động
 						<ArrowRight />
 					</Link>
 				</Button>

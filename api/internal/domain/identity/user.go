@@ -8,23 +8,29 @@ import (
 
 // User represents a registered user.
 type User struct {
-	ID        uuid.UUID
-	Email     *string
-	Name      *string
-	AvatarURL *string
-	IsActive  bool
-	IsAdmin   bool
-	IsDeleted bool
-	CreatedAt time.Time
-	Profile   *Profile
+	ID                 uuid.UUID
+	Email              *string
+	Name               *string
+	AvatarURL          *string
+	IsActive           bool
+	IsAdmin            bool
+	IsDeleted          bool
+	BanCount           int
+	ReviewRequestCount int
+	ReviewRequested    bool
+	BannedAt           *time.Time
+	ReviewRequestedAt  *time.Time
+	CreatedAt          time.Time
+	Profile            *Profile
 }
 
 // Profile represents user demographic information.
 type Profile struct {
-	UserID    uuid.UUID
-	Nickname  *string
-	IsMale    *bool
-	Age       *int
-	IsHidden  bool
-	UpdatedAt time.Time
+	UserID            uuid.UUID
+	Nickname          *string
+	NicknameUpdatedAt *time.Time
+	IsMale            *bool
+	Age               *int
+	IsHidden          bool
+	UpdatedAt         time.Time
 }

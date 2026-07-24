@@ -26,6 +26,8 @@ var (
 	ErrUserNotFound    = &AppError{HTTPStatus: http.StatusNotFound, Message: "Không tìm thấy người dùng"}
 	ErrProfileNotFound = &AppError{HTTPStatus: http.StatusNotFound, Message: "Hồ sơ không tồn tại hoặc đã bị ẩn"}
 	ErrUnauthenticated = &AppError{HTTPStatus: http.StatusUnauthorized, Message: "Bạn cần đăng nhập để thực hiện thao tác này"}
+	ErrInvalidDisplayName = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Tên hiển thị phải có từ 2 đến 32 ký tự"}
+	ErrDisplayNameCooldown = &AppError{HTTPStatus: http.StatusTooManyRequests, Message: "Tên hiển thị chỉ có thể thay đổi một lần trong 30 ngày"}
 
 	// Room
 	ErrNoActiveRoom  = &AppError{HTTPStatus: http.StatusNotFound, Message: "Bạn hiện không có phòng chat nào đang hoạt động"}

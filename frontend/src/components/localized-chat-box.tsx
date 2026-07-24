@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useWebSocketChat } from "@/hooks/use-websocket-chat";
 import { type ChatMessage } from "@/lib/websocket";
 import { useAuth } from "@/contexts/auth";
@@ -9,10 +10,14 @@ import { ChatLoadingState } from "@/components/chat/chat-loading-state";
 import { ChatEmptyState } from "@/components/chat/chat-empty-state";
 import { ChatMessages } from "@/components/chat/chat-messages";
 import { ChatInput } from "@/components/chat/chat-input";
+import { GenericErrorState } from "@/components/generic-error-state";
+
+const CONNECTION_TIMEOUT_MS = 10000;
 
 export default function LocalizedChatBox() {
 	const { user, messages: initialMessages } = useAuth();
 	const { t } = useLanguage();
+	const [connectionTimedOut, setConnectionTimedOut] = useState(false);
 
 	const { messages, sendMessage, isConnected, roomId, partnerLeft } =
 		useWebSocketChat({
@@ -30,12 +35,29 @@ export default function LocalizedChatBox() {
 			},
 		});
 
+	useEffect(() => {
+		if (isConnected) {
+			setConnectionTimedOut(false);
+			return;
+		}
+
+		const timer = window.setTimeout(
+			() => setConnectionTimedOut(true),
+			CONNECTION_TIMEOUT_MS
+		);
+		return () => window.clearTimeout(timer);
+	}, [isConnected]);
+
 	if (!user) {
-		return <ChatLoadingState message={t("loadingUser")} />;
+		return <ChatLoadingState message={t("loading")} />;
 	}
 
 	if (!isConnected) {
-		return <ChatLoadingState message={t("connectingWebSocket")} />;
+		return connectionTimedOut ? (
+			<GenericErrorState />
+		) : (
+			<ChatLoadingState message={t("loading")} />
+		);
 	}
 
 	if (!roomId && !partnerLeft) {

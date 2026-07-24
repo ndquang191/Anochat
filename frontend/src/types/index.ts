@@ -10,6 +10,7 @@ export interface UserDTO {
 
 export interface ProfileDTO {
 	nickname?: string;
+	nickname_change_available_at?: number;
 	age?: number;
 	is_male?: boolean;
 	is_hidden: boolean;
@@ -36,6 +37,10 @@ export interface UserStateResponse {
 	messages?: MessageDTO[];
 	in_queue?: boolean;
 	is_admin: boolean;
+	is_banned: boolean;
+	ban_count: number;
+	review_request_count: number;
+	review_requested: boolean;
 }
 
 export interface ApiResponse<T> {
@@ -67,7 +72,33 @@ export interface BannedUserDTO {
 	name?: string;
 	email?: string;
 	created_at: number;
+	banned_at?: number;
+	ban_count: number;
+	review_request_count: number;
+	review_requested: boolean;
+	review_requested_at?: number;
 	last_room_id?: string;
+	last_report_id?: string;
+}
+
+export interface AdminOverviewDTO {
+	total_users: number;
+	male_users: number;
+	female_users: number;
+	unspecified_users: number;
+	in_queue: number;
+	in_queue_male: number;
+	in_queue_female: number;
+	in_queue_unknown: number;
+	active_rooms: number;
+	daily_metrics: DailyOverviewMetricDTO[];
+}
+
+export interface DailyOverviewMetricDTO {
+	date: string;
+	matches: number;
+	total_users: number;
+	active_rooms: number;
 }
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";

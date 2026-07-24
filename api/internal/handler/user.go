@@ -3,9 +3,11 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/ndquang191/Anochat/api/internal/domain/identity"
 	"github.com/ndquang191/Anochat/api/internal/dto"
 	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/internal/service"
@@ -17,17 +19,24 @@ type UserHandler struct {
 	userService  *service.UserService
 	roomService  *service.RoomService
 	queueService *service.QueueService
-	fakeService  *service.FakeMatchService
 	roomRepo     repository.RoomRepository
 	messageRepo  repository.MessageRepository
 	config       *config.Config
+}
+
+func nicknameChangeAvailableAt(profile *identity.Profile) *int64 {
+	next := service.DisplayNameChangeAvailableAt(profile, time.Now())
+	if next == nil {
+		return nil
+	}
+	unix := next.Unix()
+	return &unix
 }
 
 func NewUserHandler(
 	userService *service.UserService,
 	roomService *service.RoomService,
 	queueService *service.QueueService,
-	fakeService *service.FakeMatchService,
 	roomRepo repository.RoomRepository,
 	messageRepo repository.MessageRepository,
 	cfg *config.Config,
@@ -36,7 +45,6 @@ func NewUserHandler(
 		userService:  userService,
 		roomService:  roomService,
 		queueService: queueService,
-		fakeService:  fakeService,
 		roomRepo:     roomRepo,
 		messageRepo:  messageRepo,
 		config:       cfg,
@@ -50,18 +58,27 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 		return
 	}
 
-	profile, _ := h.userService.GetProfile(c.Request.Context(), userID)
-
 	resp := dto.UserStateResponse{
-		InQueue: h.queueService.IsInQueue(userID),
-		IsAdmin: c.GetBool("is_admin"),
+		IsAdmin:            c.GetBool("is_admin"),
+		IsBanned:           !c.GetBool("is_active"),
+		BanCount:           c.GetInt("ban_count"),
+		ReviewRequestCount: c.GetInt("review_request_count"),
+		ReviewRequested:    c.GetBool("review_requested"),
 	}
+	if resp.IsBanned {
+		dto.OK(c, resp)
+		return
+	}
+
+	resp.InQueue = h.queueService.IsInQueue(userID)
+	profile, _ := h.userService.GetProfile(c.Request.Context(), userID)
 	if profile != nil {
 		resp.Profile = &dto.ProfileDTO{
-			Nickname: profile.Nickname,
-			Age:      profile.Age,
-			IsMale:   profile.IsMale,
-			IsHidden: profile.IsHidden,
+			Nickname:                  profile.Nickname,
+			NicknameChangeAvailableAt: nicknameChangeAvailableAt(profile),
+			Age:                       profile.Age,
+			IsMale:                    profile.IsMale,
+			IsHidden:                  profile.IsHidden,
 		}
 	}
 
@@ -115,34 +132,6 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 			}
 		}
 	}
-	if resp.Room == nil {
-		session := h.fakeService.GetByUserID(userID)
-		if session != nil {
-			resp.Room = &dto.RoomDTO{
-				ID:      session.RoomID.String(),
-				User1ID: session.UserID.String(),
-				User2ID: session.PartnerID.String(),
-				Partner: &dto.UserDTO{
-					ID:   session.PartnerID.String(),
-					Name: &session.PartnerName,
-					Profile: &dto.ProfileDTO{
-						Age:      &session.PartnerAge,
-						IsMale:   &session.PartnerIsMale,
-						IsHidden: false,
-					},
-				},
-			}
-			resp.Messages = []dto.MessageDTO{
-				{
-					ID:        session.GreetingID.String(),
-					SenderID:  session.PartnerID.String(),
-					Content:   session.Greeting,
-					CreatedAt: session.CreatedAt.Unix(),
-				},
-			}
-		}
-	}
-
 	dto.OK(c, resp)
 }
 
@@ -171,10 +160,11 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	dto.OKWithMessage(c, "Profile updated successfully", dto.ProfileDTO{
-		Nickname: profile.Nickname,
-		Age:      profile.Age,
-		IsMale:   profile.IsMale,
-		IsHidden: profile.IsHidden,
+		Nickname:                  profile.Nickname,
+		NicknameChangeAvailableAt: nicknameChangeAvailableAt(profile),
+		Age:                       profile.Age,
+		IsMale:                    profile.IsMale,
+		IsHidden:                  profile.IsHidden,
 	})
 }
 
@@ -187,10 +177,6 @@ func (h *UserHandler) LeaveCurrentRoom(c *gin.Context) {
 
 	err := h.roomService.LeaveCurrentRoom(c.Request.Context(), userID)
 	if err != nil {
-		if h.fakeService.EndSession(userID) != nil {
-			dto.OKWithMessage(c, "Successfully left room", nil)
-			return
-		}
 		dto.FailErr(c, err)
 		return
 	}

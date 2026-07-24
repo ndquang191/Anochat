@@ -3,6 +3,8 @@
 import { useRef, useEffect, useCallback, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChatMessage } from "./chat-message";
+import { useLanguage } from "@/contexts/theme";
+import type { Language } from "@/lib/i18n";
 
 interface Message {
 	id: string;
@@ -20,17 +22,31 @@ type Row =
 	| { kind: "date"; label: string }
 	| { kind: "message"; message: Message };
 
-function formatDateLabel(unixSec: number): string {
+function formatDateLabel(
+	unixSec: number,
+	language: Language,
+	todayLabel: string,
+	yesterdayLabel: string
+): string {
 	const d = new Date(unixSec * 1000);
 	const today = new Date();
 	const yesterday = new Date(today);
 	yesterday.setDate(today.getDate() - 1);
-	if (d.toDateString() === today.toDateString()) return "Hôm nay";
-	if (d.toDateString() === yesterday.toDateString()) return "Hôm qua";
-	return d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+	if (d.toDateString() === today.toDateString()) return todayLabel;
+	if (d.toDateString() === yesterday.toDateString()) return yesterdayLabel;
+	return d.toLocaleDateString(language === "vi" ? "vi-VN" : "en-US", {
+		day: "2-digit",
+		month: "2-digit",
+		year: "numeric",
+	});
 }
 
-function buildRows(messages: Message[]): Row[] {
+function buildRows(
+	messages: Message[],
+	language: Language,
+	todayLabel: string,
+	yesterdayLabel: string
+): Row[] {
 	const dateKeys = new Set(
 		messages
 			.filter((m) => m.created_at)
@@ -45,7 +61,15 @@ function buildRows(messages: Message[]): Row[] {
 			? new Date(message.created_at * 1000).toDateString()
 			: "";
 		if (multiDay && dateKey && dateKey !== lastDateKey) {
-			rows.push({ kind: "date", label: formatDateLabel(message.created_at!) });
+			rows.push({
+				kind: "date",
+				label: formatDateLabel(
+					message.created_at!,
+					language,
+					todayLabel,
+					yesterdayLabel
+				),
+			});
 			lastDateKey = dateKey;
 		}
 		rows.push({ kind: "message", message });
@@ -56,16 +80,22 @@ function buildRows(messages: Message[]): Row[] {
 const SCROLL_THRESHOLD = 150;
 
 export function ChatMessages({ messages, currentUserId }: ChatMessagesProps) {
+	const { language, t } = useLanguage();
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const isAtBottomRef = useRef(true);
 	const prevMessageCountRef = useRef(0);
 
-	const rows = useMemo(() => buildRows(messages), [messages]);
+	const todayLabel = t("today");
+	const yesterdayLabel = t("yesterday");
+	const rows = useMemo(
+		() => buildRows(messages, language, todayLabel, yesterdayLabel),
+		[messages, language, todayLabel, yesterdayLabel]
+	);
 
 	const virtualizer = useVirtualizer({
 		count: rows.length,
 		getScrollElement: () => scrollContainerRef.current,
-		estimateSize: (index) => (rows[index].kind === "date" ? 32 : 60),
+		estimateSize: (index) => (rows[index].kind === "date" ? 28 : 44),
 		overscan: 5,
 	});
 
@@ -99,8 +129,8 @@ export function ChatMessages({ messages, currentUserId }: ChatMessagesProps) {
 		return (
 			<div className="flex-1 min-h-0 flex items-center justify-center">
 				<div className="text-center text-muted-foreground py-8">
-					<p className="text-sm md:text-base">Chưa có tin nhắn nào</p>
-					<p className="text-sm md:text-base mt-2">Hãy bắt đầu cuộc trò chuyện!</p>
+					<p className="text-sm md:text-base">{t("noMessages")}</p>
+					<p className="text-sm md:text-base mt-2">{t("startConversation")}</p>
 				</div>
 			</div>
 		);
@@ -132,12 +162,23 @@ export function ChatMessages({ messages, currentUserId }: ChatMessagesProps) {
 					>
 						{virtualItems.map((virtualItem) => {
 							const row = rows[virtualItem.index];
+							const nextRow = rows[virtualItem.index + 1];
+							const endsSenderGroup =
+								row.kind === "message" &&
+								(nextRow?.kind !== "message" ||
+									nextRow.message.sender_id !== row.message.sender_id);
 							return (
 								<div
 									key={virtualItem.key}
 									data-index={virtualItem.index}
 									ref={virtualizer.measureElement}
-									className="pb-3"
+									className={
+										row.kind === "date"
+											? "pb-2"
+											: endsSenderGroup
+												? "pb-1.5"
+												: "pb-1"
+									}
 								>
 									{row.kind === "date" ? (
 										<div className="flex items-center gap-3 py-1">

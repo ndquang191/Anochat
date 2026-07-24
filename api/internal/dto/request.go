@@ -28,11 +28,15 @@ type UpdateProfileRequest struct {
 
 // UserStateResponse is returned by GET /user/state.
 type UserStateResponse struct {
-	Profile  *ProfileDTO  `json:"profile,omitempty"`
-	Room     *RoomDTO     `json:"room"`
-	Messages []MessageDTO `json:"messages"`
-	InQueue  bool         `json:"in_queue"`
-	IsAdmin  bool         `json:"is_admin"`
+	Profile            *ProfileDTO  `json:"profile,omitempty"`
+	Room               *RoomDTO     `json:"room"`
+	Messages           []MessageDTO `json:"messages"`
+	InQueue            bool         `json:"in_queue"`
+	IsAdmin            bool         `json:"is_admin"`
+	IsBanned           bool         `json:"is_banned"`
+	BanCount           int          `json:"ban_count"`
+	ReviewRequestCount int          `json:"review_request_count"`
+	ReviewRequested    bool         `json:"review_requested"`
 }
 
 // UserDTO is the user data in API responses.
@@ -47,10 +51,11 @@ type UserDTO struct {
 
 // ProfileDTO is the profile data in API responses.
 type ProfileDTO struct {
-	Nickname *string `json:"nickname,omitempty"`
-	Age      *int    `json:"age"`
-	IsMale   *bool   `json:"is_male"`
-	IsHidden bool    `json:"is_hidden"`
+	Nickname                  *string `json:"nickname,omitempty"`
+	NicknameChangeAvailableAt *int64  `json:"nickname_change_available_at,omitempty"`
+	Age                       *int    `json:"age"`
+	IsMale                    *bool   `json:"is_male"`
+	IsHidden                  bool    `json:"is_hidden"`
 }
 
 // RoomDTO is the room data in API responses.

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { RotateCw, LogOut } from "lucide-react";
+import { DoorOpen, RotateCw } from "lucide-react";
 import { useQueue } from "@/hooks/use-queue";
 import { useAuth } from "@/contexts/auth";
 import { toast } from "sonner";
@@ -40,9 +40,7 @@ export function ActionButton() {
 			}
 		} catch (error) {
 			console.error("Operation failed:", error);
-			toast.error(t("somethingWentWrong"), {
-				description: error instanceof Error ? error.message : t("pleaseTryAgain"),
-			});
+			toast.error(t("somethingWentWrong"));
 		}
 	};
 
@@ -50,7 +48,7 @@ export function ActionButton() {
 		if (inRoom) {
 			return {
 				bgColor: "bg-primary hover:bg-primary/90",
-				icon: <LogOut size={18} />,
+				icon: <DoorOpen size={18} />,
 				title: t("leaveChatRoom"),
 				spinning: false,
 			};
@@ -80,6 +78,7 @@ export function ActionButton() {
 			className={`relative w-10 h-10 rounded-full transition-all duration-300 ease-in-out transform ${
 				isLoading ? "cursor-not-allowed opacity-70" : "hover:scale-110 cursor-pointer"
 			} ${config.bgColor}`}
+			aria-label={config.title}
 			title={config.title}
 		>
 			<div

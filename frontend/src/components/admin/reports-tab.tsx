@@ -28,30 +28,32 @@ export interface GroupedUser {
 	report_count: number;
 	auto_count: number;
 	manual_count: number;
-	latest_room_id: string;
 	latest_report: ReportDTO;
 }
 
 export function ChatViewer({
-	roomId,
+	reportId,
 	reportedUserId,
 }: {
-	roomId: string;
+	reportId: string;
 	reportedUserId: string;
 }) {
+	const { language, t } = useLanguage();
+	const locale = language === "vi" ? "vi-VN" : "en-US";
 	const { data: messages = [], isLoading } = useQuery({
-		queryKey: ["admin", "room-messages", roomId],
+		queryKey: ["admin", "report-messages", reportId],
 		queryFn: async () => {
-			const res = await moderationAPI.getRoomMessages(roomId);
+			const res = await moderationAPI.getReportMessages(reportId);
 			return (res.data as ChatMessage[]) ?? [];
 		},
 	});
 
-	if (isLoading) return <p className="text-sm text-muted-foreground p-4">Loading...</p>;
+	if (isLoading)
+		return <p className="text-sm text-muted-foreground p-4">{t("loading")}</p>;
 	if (messages.length === 0)
 		return (
 			<p className="text-sm text-muted-foreground p-4">
-				No messages found (may have been deleted).
+				{t("adminNoEvidenceMessages")}
 			</p>
 		);
 
@@ -74,7 +76,7 @@ export function ChatViewer({
 							>
 								<p>{m.content}</p>
 								<p className="text-xs opacity-50 mt-0.5">
-									{new Date(m.created_at * 1000).toLocaleTimeString()}
+									{new Date(m.created_at * 1000).toLocaleTimeString(locale)}
 								</p>
 							</div>
 						</div>
@@ -123,7 +125,6 @@ export function ReportsTab() {
 					report_count: 1,
 					auto_count: isAuto ? 1 : 0,
 					manual_count: isAuto ? 0 : 1,
-					latest_room_id: r.room_id,
 					latest_report: r,
 				});
 			} else {
@@ -132,7 +133,6 @@ export function ReportsTab() {
 				else existing.manual_count++;
 				if (r.created_at > existing.latest_report.created_at) {
 					existing.latest_report = r;
-					existing.latest_room_id = r.room_id;
 				}
 			}
 		}
@@ -154,17 +154,17 @@ export function ReportsTab() {
 			<div className="relative mb-4">
 				<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
 				<Input
-					placeholder="Search by name or ID..."
+					placeholder={t("adminSearchNameOrId")}
 					value={search}
 					onChange={(e) => setSearch(e.target.value)}
 					className="pl-9"
 				/>
 			</div>
 
-			{isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
+			{isLoading && <p className="text-sm text-muted-foreground">{t("loading")}</p>}
 			{!isLoading && filtered.length === 0 && (
 				<p className="text-sm text-muted-foreground">
-					{grouped.length === 0 ? "No pending reports." : "No results for your search."}
+					{grouped.length === 0 ? t("adminNoPendingReports") : t("adminNoResults")}
 				</p>
 			)}
 
@@ -184,12 +184,12 @@ export function ReportsTab() {
 						<div className="flex gap-1.5 flex-wrap">
 							{g.auto_count > 0 && (
 								<Badge variant="secondary" className="text-xs px-1.5 py-0">
-									Auto {g.auto_count}
+									{t("adminAutoReports")} {g.auto_count}
 								</Badge>
 							)}
 							{g.manual_count > 0 && (
 								<Badge variant="outline" className="text-xs px-1.5 py-0">
-									Manual {g.manual_count}
+									{t("adminManualReports")} {g.manual_count}
 								</Badge>
 							)}
 						</div>
@@ -208,7 +208,7 @@ export function ReportsTab() {
 					{viewing && (
 						<>
 							<ChatViewer
-								roomId={viewing.latest_room_id}
+								reportId={viewing.latest_report.id}
 								reportedUserId={viewing.reported_user_id}
 							/>
 							<div className="pt-2 border-t">
@@ -217,7 +217,7 @@ export function ReportsTab() {
 									onClick={() => banMutation.mutate(viewing.reported_user_id)}
 									disabled={banMutation.isPending}
 								>
-									Ban User
+									{t("adminBanUser")}
 								</Button>
 							</div>
 						</>

@@ -38,7 +38,6 @@ type Hub struct {
 	queueService      *service.QueueService
 	messageService    *service.MessageService
 	roomService       *service.RoomService
-	fakeMatchService  *service.FakeMatchService
 	moderationService *service.ModerationService
 	rdb               *redis.Client
 	pubsub            *redis.PubSub
@@ -56,11 +55,25 @@ type BroadcastMessage struct {
 	Exclude uuid.UUID
 }
 
+var updateRoomPresenceScript = redis.NewScript(`
+local key = KEYS[1]
+local userID = ARGV[1]
+local action = ARGV[2]
+
+if action == "add" then
+	redis.call("SADD", key, userID)
+	redis.call("EXPIRE", key, 86400)
+else
+	redis.call("SREM", key, userID)
+end
+
+return redis.call("SCARD", key)
+`)
+
 func NewHub(
 	queueService *service.QueueService,
 	messageService *service.MessageService,
 	roomService *service.RoomService,
-	fakeMatchService *service.FakeMatchService,
 	moderationService *service.ModerationService,
 	rdb *redis.Client,
 	messageRateLimit int,
@@ -77,7 +90,6 @@ func NewHub(
 		queueService:      queueService,
 		messageService:    messageService,
 		roomService:       roomService,
-		fakeMatchService:  fakeMatchService,
 		moderationService: moderationService,
 		rdb:               rdb,
 		pubsub:            pubsub,
@@ -142,18 +154,6 @@ func (h *Hub) registerClient(client *Client) {
 
 		room, err := h.roomService.GetActiveRoomByUserID(ctx, client.UserID)
 		if err != nil || room == nil {
-			if session := h.fakeMatchService.GetByUserID(client.UserID); session != nil {
-				h.AddClientToRoom(client.UserID, session.RoomID)
-				slog.Info("Client auto-rejoined fake room", "user_id", client.UserID, "room_id", session.RoomID)
-
-				client.SendJSON(WSMessage{
-					Type: "room_rejoined",
-					Payload: map[string]interface{}{
-						"room_id":   session.RoomID.String(),
-						"timestamp": time.Now().Unix(),
-					},
-				})
-			}
 			return
 		}
 
@@ -225,6 +225,7 @@ func (h *Hub) AddClientToRoom(userID uuid.UUID, roomID uuid.UUID) {
 	}
 
 	slog.Info("Client added to room", "user_id", userID, "room_id", roomID, "room_size", len(h.roomClients[roomID]))
+	go h.updateRoomPresence(roomID, userID, true)
 }
 
 func (h *Hub) removeClientFromRoom(client *Client, roomID uuid.UUID) {
@@ -254,6 +255,37 @@ func (h *Hub) removeClientFromRoom(client *Client, roomID uuid.UUID) {
 	}
 
 	slog.Info("Client removed from room", "user_id", client.UserID, "room_id", roomID)
+	go h.updateRoomPresence(roomID, client.UserID, false)
+}
+
+func (h *Hub) updateRoomPresence(roomID, userID uuid.UUID, connected bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	action := "remove"
+	if connected {
+		action = "add"
+	}
+	key := "room:presence:" + roomID.String()
+	count, err := updateRoomPresenceScript.Run(
+		ctx,
+		h.rdb,
+		[]string{key},
+		userID.String(),
+		action,
+	).Int64()
+	if err != nil {
+		slog.Warn("Failed to update room presence", "room_id", roomID, "user_id", userID, "error", err)
+		return
+	}
+
+	fullyConnected := count >= 2
+	if !connected && count == 0 {
+		_ = h.rdb.Del(ctx, key).Err()
+	}
+	if err := h.roomService.UpdateConnectionStatus(ctx, roomID, fullyConnected); err != nil {
+		slog.Warn("Failed to update room session status", "room_id", roomID, "connected", fullyConnected, "error", err)
+	}
 }
 
 func (h *Hub) publishToRedis(msg *BroadcastMessage) {

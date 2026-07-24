@@ -15,6 +15,7 @@ type Config struct {
 	Env                string
 	ClientURL          string
 	AllowDatabaseReset bool
+	DevAuthEnabled     bool
 	Database           DatabaseConfig
 	OAuth              OAuthConfig
 	Chat               ChatConfig
@@ -106,6 +107,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	devAuthEnabled, err := boolEnv("DEV_AUTH_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
 
 	clientURL := envOrDefault("SERVER_CLIENT_URL", "http://localhost:3000")
 	cfg := &Config{
@@ -113,6 +118,7 @@ func Load() (*Config, error) {
 		Env:                strings.ToLower(envOrDefault("SERVER_ENV", "development")),
 		ClientURL:          clientURL,
 		AllowDatabaseReset: allowDatabaseReset,
+		DevAuthEnabled:     devAuthEnabled,
 		Database: DatabaseConfig{
 			Host:     envOrDefault("DATABASE_HOST", "localhost"),
 			Port:     envOrDefault("DATABASE_PORT", "5432"),
@@ -200,6 +206,9 @@ func durationEnv(key string, fallback time.Duration) (time.Duration, error) {
 func (c *Config) validate() error {
 	if c.Env != "development" && c.Env != "test" && c.Env != "production" {
 		return fmt.Errorf("SERVER_ENV must be development, test, or production")
+	}
+	if c.DevAuthEnabled && !c.IsDevelopment() {
+		return fmt.Errorf("DEV_AUTH_ENABLED can only be enabled in development")
 	}
 	if c.Database.User == "" {
 		return fmt.Errorf("DATABASE_USER is required")

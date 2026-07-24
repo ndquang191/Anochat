@@ -11,6 +11,8 @@ import { getWebSocketClient } from "@/lib/websocket";
 import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
 import { useQueue } from "@/hooks/use-queue";
 import { playMatchSound } from "@/hooks/use-sound-notification";
+import { BannedNotice } from "@/components/chat/banned-notice";
+import { GenericErrorState } from "@/components/generic-error-state";
 
 function RippleEffect({ active, onClick }: { active: boolean; onClick: () => void }) {
 	return (
@@ -48,7 +50,15 @@ function RippleEffect({ active, onClick }: { active: boolean; onClick: () => voi
 }
 
 const Page = () => {
-	const { user, room, inQueue, loading: authLoading } = useAuth();
+	const {
+		user,
+		room,
+		inQueue,
+		isBanned,
+		reviewRequested,
+		loading: authLoading,
+		hasError: authError,
+	} = useAuth();
 	const { isAdminOpen } = useAdmin();
 	const { t } = useLanguage();
 	const invalidateUserState = useInvalidateUserState();
@@ -63,6 +73,12 @@ const Page = () => {
 			client.connect().catch(console.error);
 		}
 	}, [user, inQueue]);
+
+	useEffect(() => {
+		if (inQueue) {
+			setShowEndedChat(false);
+		}
+	}, [inQueue]);
 
 	useEffect(() => {
 		const client = getWebSocketClient();
@@ -87,14 +103,6 @@ const Page = () => {
 		};
 	}, [invalidateUserState]);
 
-	if (isAdmin && isAdminOpen) {
-		return (
-			<div className="h-full w-full">
-				<AdminPanel />
-			</div>
-		);
-	}
-
 	if (authLoading) {
 		return (
 			<div className="flex h-full w-full items-center justify-center">
@@ -108,7 +116,23 @@ const Page = () => {
 		);
 	}
 
-	if (room || showEndedChat) {
+	if (authError) {
+		return <GenericErrorState />;
+	}
+
+	if (isBanned) {
+		return <BannedNotice reviewRequested={reviewRequested} />;
+	}
+
+	if (isAdmin && isAdminOpen) {
+		return (
+			<div className="h-full w-full">
+				<AdminPanel />
+			</div>
+		);
+	}
+
+	if (!inQueue && (room || showEndedChat)) {
 		return (
 			<div className="h-full w-full">
 				<LocalizedChatBox />

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/identity"
@@ -146,12 +147,12 @@ func TestUpdateProfile(t *testing.T) {
 	}
 
 	profileRepo.On("FindByUserID", mock.Anything, userID).Return(existing, nil)
-	profileRepo.On("Update", mock.Anything, mock.MatchedBy(func(p *identity.Profile) bool {
+	profileRepo.On("UpdateWithNicknameCooldown", mock.Anything, mock.MatchedBy(func(p *identity.Profile) bool {
 		return p.Nickname != nil && *p.Nickname == "newname" &&
 			p.IsMale != nil && *p.IsMale == true &&
 			p.Age != nil && *p.Age == 25 &&
 			p.IsHidden == true
-	})).Return(nil)
+	}), mock.AnythingOfType("time.Time")).Return(nil)
 
 	nickname := "newname"
 	isMale := true
@@ -164,6 +165,7 @@ func TestUpdateProfile(t *testing.T) {
 	assert.True(t, *profile.IsMale)
 	assert.Equal(t, 25, *profile.Age)
 	assert.True(t, profile.IsHidden)
+	assert.NotNil(t, profile.NicknameUpdatedAt)
 	assert.False(t, profile.UpdatedAt.IsZero())
 
 	profileRepo.AssertExpectations(t)
@@ -176,12 +178,75 @@ func TestUpdateProfile_ClearNickname(t *testing.T) {
 	existing := &identity.Profile{UserID: userID, Nickname: &oldNick}
 
 	profileRepo.On("FindByUserID", mock.Anything, userID).Return(existing, nil)
-	profileRepo.On("Update", mock.Anything, mock.MatchedBy(func(p *identity.Profile) bool {
+	profileRepo.On("UpdateWithNicknameCooldown", mock.Anything, mock.MatchedBy(func(p *identity.Profile) bool {
 		return p.Nickname == nil
-	})).Return(nil)
+	}), mock.AnythingOfType("time.Time")).Return(nil)
 
 	empty := ""
 	_, err := svc.UpdateProfile(context.Background(), userID, &empty, nil, nil, nil)
 	require.NoError(t, err)
 	profileRepo.AssertExpectations(t)
+}
+
+func TestUpdateProfile_DisplayNameCooldown(t *testing.T) {
+	svc, _, profileRepo := newUserServiceWithMocks()
+	userID := uuid.New()
+	oldNick := "oldname"
+	recently := time.Now().Add(-24 * time.Hour)
+	existing := &identity.Profile{
+		UserID:            userID,
+		Nickname:          &oldNick,
+		NicknameUpdatedAt: &recently,
+	}
+
+	profileRepo.On("FindByUserID", mock.Anything, userID).Return(existing, nil)
+
+	newNick := "newname"
+	profile, err := svc.UpdateProfile(context.Background(), userID, &newNick, nil, nil, nil)
+
+	assert.ErrorIs(t, err, apperr.ErrDisplayNameCooldown)
+	assert.Nil(t, profile)
+	profileRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+	profileRepo.AssertNotCalled(t, "UpdateWithNicknameCooldown", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestUpdateProfile_SameDisplayNameDoesNotConsumeCooldown(t *testing.T) {
+	svc, _, profileRepo := newUserServiceWithMocks()
+	userID := uuid.New()
+	nickname := "same-name"
+	recently := time.Now().Add(-24 * time.Hour)
+	existing := &identity.Profile{
+		UserID:            userID,
+		Nickname:          &nickname,
+		NicknameUpdatedAt: &recently,
+	}
+
+	profileRepo.On("FindByUserID", mock.Anything, userID).Return(existing, nil)
+	profileRepo.On("Update", mock.Anything, mock.MatchedBy(func(p *identity.Profile) bool {
+		return p.NicknameUpdatedAt != nil && p.NicknameUpdatedAt.Equal(recently)
+	})).Return(nil)
+
+	age := 30
+	profile, err := svc.UpdateProfile(context.Background(), userID, &nickname, nil, &age, nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, 30, *profile.Age)
+	assert.Equal(t, recently, *profile.NicknameUpdatedAt)
+	profileRepo.AssertExpectations(t)
+}
+
+func TestUpdateProfile_InvalidDisplayName(t *testing.T) {
+	svc, _, profileRepo := newUserServiceWithMocks()
+	userID := uuid.New()
+	existing := &identity.Profile{UserID: userID}
+
+	profileRepo.On("FindByUserID", mock.Anything, userID).Return(existing, nil)
+
+	tooShort := "x"
+	profile, err := svc.UpdateProfile(context.Background(), userID, &tooShort, nil, nil, nil)
+
+	assert.ErrorIs(t, err, apperr.ErrInvalidDisplayName)
+	assert.Nil(t, profile)
+	profileRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+	profileRepo.AssertNotCalled(t, "UpdateWithNicknameCooldown", mock.Anything, mock.Anything, mock.Anything)
 }

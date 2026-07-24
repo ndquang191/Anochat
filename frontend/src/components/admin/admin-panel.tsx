@@ -4,21 +4,29 @@ import { useState } from "react";
 import { BannedWordsTab } from "./banned-words-tab";
 import { ReportsTab } from "./reports-tab";
 import { BannedUsersTab } from "./banned-users-tab";
+import { OverviewTab } from "./overview-tab";
+import { useLanguage } from "@/contexts/theme";
+import type { TranslationKey } from "@/lib/i18n";
 
-type Tab = "words" | "reports" | "banned";
+type Tab = "overview" | "words" | "reports" | "banned";
 
-const TABS: { id: Tab; label: string }[] = [
-	{ id: "reports", label: "Reports" },
-	{ id: "banned", label: "Banned Users" },
-	{ id: "words", label: "Banned Words" },
+const TABS: { id: Tab; labelKey: TranslationKey }[] = [
+	{ id: "overview", labelKey: "adminOverview" },
+	{ id: "reports", labelKey: "adminReports" },
+	{ id: "banned", labelKey: "adminBannedUsers" },
+	{ id: "words", labelKey: "adminBannedWords" },
 ];
 
 export function AdminPanel() {
+	const { t } = useLanguage();
 	const [activeTab, setActiveTab] = useState<Tab>(() => {
 		if (typeof window !== "undefined") {
-			return (localStorage.getItem("admin_active_tab") as Tab) || "reports";
+			const savedTab = localStorage.getItem("admin_active_tab") as Tab | null;
+			return savedTab && TABS.some((tab) => tab.id === savedTab)
+				? savedTab
+				: "overview";
 		}
-		return "reports";
+		return "overview";
 	});
 
 	const handleTabChange = (tab: Tab) => {
@@ -29,7 +37,7 @@ export function AdminPanel() {
 	return (
 		<div className="h-full flex flex-col bg-background">
 			{/* Tabs */}
-			<div className="flex border-b px-6 shrink-0">
+			<div className="flex shrink-0 overflow-x-auto border-b px-6">
 				{TABS.map((tab) => (
 					<button
 						key={tab.id}
@@ -40,13 +48,14 @@ export function AdminPanel() {
 						}`}
 						onClick={() => handleTabChange(tab.id)}
 					>
-						{tab.label}
+						{t(tab.labelKey)}
 					</button>
 				))}
 			</div>
 
 			{/* Content */}
-			<div className="flex-1 overflow-y-auto px-6 py-4">
+			<div className="flex-1 overflow-y-auto px-6 py-3">
+				{activeTab === "overview" && <OverviewTab />}
 				{activeTab === "words" && <BannedWordsTab />}
 				{activeTab === "reports" && <ReportsTab />}
 				{activeTab === "banned" && <BannedUsersTab />}

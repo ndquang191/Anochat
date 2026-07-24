@@ -11,6 +11,7 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useLanguage } from "@/contexts/theme";
 
 type AlertDialogOptions = {
 	title: string;
@@ -20,6 +21,7 @@ type AlertDialogOptions = {
 };
 
 export function useAlertDialog() {
+	const { t } = useLanguage();
 	const [isOpen, setIsOpen] = useState(false);
 	const [options, setOptions] = useState<AlertDialogOptions | null>(null);
 	const [resolve, setResolve] = useState<((value: boolean) => void) | null>(null);
@@ -53,10 +55,10 @@ export function useAlertDialog() {
 						</AlertDialogHeader>
 						<AlertDialogFooter>
 							<AlertDialogCancel onClick={handleClose}>
-								{options.cancelText || "Cancel"}
+								{options.cancelText || t("cancel")}
 							</AlertDialogCancel>
 							<AlertDialogAction onClick={handleConfirm}>
-								{options.confirmText || "Confirm"}
+								{options.confirmText || t("confirm")}
 							</AlertDialogAction>
 						</AlertDialogFooter>
 					</AlertDialogContent>

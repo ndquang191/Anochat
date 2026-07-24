@@ -19,7 +19,7 @@ export function ChatMessage({ content, isCurrentUser, created_at }: ChatMessageP
 		<div className={`flex flex-col gap-0.5 ${isCurrentUser ? "items-end" : "items-start"}`}>
 			<div
 				onClick={() => timeStr && setShowTime((v) => !v)}
-				className={`max-w-[70%] rounded-md px-3 py-2 break-words ${
+				className={`max-w-[70%] break-words rounded-md px-2.5 py-1.5 text-sm leading-5 ${
 					timeStr ? "cursor-pointer" : ""
 				} ${
 					isCurrentUser

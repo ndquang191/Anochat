@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/chat"
 	"github.com/ndquang191/Anochat/api/internal/domain/identity"
-	"github.com/ndquang191/Anochat/api/internal/domain/matching"
 	"github.com/ndquang191/Anochat/api/internal/domain/moderation"
 	"github.com/stretchr/testify/mock"
 )
@@ -93,6 +92,11 @@ func (m *mockProfileRepo) Update(ctx context.Context, profile *identity.Profile)
 	return args.Error(0)
 }
 
+func (m *mockProfileRepo) UpdateWithNicknameCooldown(ctx context.Context, profile *identity.Profile, cutoff time.Time) error {
+	args := m.Called(ctx, profile, cutoff)
+	return args.Error(0)
+}
+
 // --- BannedWordRepository mock ---
 
 type mockBannedWordRepo struct{ mock.Mock }
@@ -124,8 +128,14 @@ func (m *mockBannedWordRepo) Delete(ctx context.Context, id uuid.UUID) error {
 
 type mockReportRepo struct{ mock.Mock }
 
-func (m *mockReportRepo) Create(ctx context.Context, report *moderation.Report) error {
-	args := m.Called(ctx, report)
+func (m *mockReportRepo) CreateWithSnapshot(
+	ctx context.Context,
+	report *moderation.Report,
+	triggerMessage *chat.Message,
+	limit int,
+	requireRoom bool,
+) error {
+	args := m.Called(ctx, report, triggerMessage, limit, requireRoom)
 	return args.Error(0)
 }
 
@@ -137,12 +147,28 @@ func (m *mockReportRepo) FindAll(ctx context.Context) ([]*moderation.Report, err
 	return args.Get(0).([]*moderation.Report), args.Error(1)
 }
 
+func (m *mockReportRepo) FindMessages(ctx context.Context, reportID uuid.UUID) ([]*moderation.ReportMessage, error) {
+	args := m.Called(ctx, reportID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*moderation.ReportMessage), args.Error(1)
+}
+
 func (m *mockReportRepo) MarkReviewedByUser(ctx context.Context, reportedUserID uuid.UUID) error {
 	args := m.Called(ctx, reportedUserID)
 	return args.Error(0)
 }
 
 func (m *mockReportRepo) FindLatestRoomForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
+	args := m.Called(ctx, userIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[uuid.UUID]uuid.UUID), args.Error(1)
+}
+
+func (m *mockReportRepo) FindLatestReportForUsers(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
 	args := m.Called(ctx, userIDs)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -177,6 +203,11 @@ func (m *mockRoomRepo) Create(ctx context.Context, room *chat.Room) error {
 
 func (m *mockRoomRepo) UpdateEndedAt(ctx context.Context, roomID uuid.UUID, endedAt time.Time) error {
 	args := m.Called(ctx, roomID, endedAt)
+	return args.Error(0)
+}
+
+func (m *mockRoomRepo) UpdateSessionConnection(ctx context.Context, roomID uuid.UUID, connected bool, changedAt time.Time) error {
+	args := m.Called(ctx, roomID, connected, changedAt)
 	return args.Error(0)
 }
 
@@ -234,12 +265,4 @@ type mockMatchNotifier struct{ mock.Mock }
 
 func (m *mockMatchNotifier) NotifyMatch(user1ID, user2ID, roomID uuid.UUID) {
 	m.Called(user1ID, user2ID, roomID)
-}
-
-func (m *mockMatchNotifier) NotifyFakeMatch(session *matching.FakeSession) {
-	m.Called(session)
-}
-
-func (m *mockMatchNotifier) NotifyFakePartnerLeft(userID, roomID uuid.UUID) {
-	m.Called(userID, roomID)
 }

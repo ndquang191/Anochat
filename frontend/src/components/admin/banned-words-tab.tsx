@@ -5,12 +5,20 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { moderationAPI } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { Pencil, Trash2, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import type { BannedWordDTO } from "@/types";
 import { useLanguage } from "@/contexts/theme";
 
 const DEFAULT_CATEGORY = "General";
+const NEW_CATEGORY_VALUE = "__new_category__";
 
 interface EditingState {
 	id: string;
@@ -23,6 +31,7 @@ export function BannedWordsTab() {
 	const queryClient = useQueryClient();
 	const [newWord, setNewWord] = useState("");
 	const [newCategory, setNewCategory] = useState("");
+	const [isCreatingCategory, setIsCreatingCategory] = useState(false);
 	const [editing, setEditing] = useState<EditingState | null>(null);
 
 	const { data: words = [], isLoading } = useQuery({
@@ -33,11 +42,15 @@ export function BannedWordsTab() {
 		},
 	});
 
-	// Collect existing category names for datalist autocomplete
+	// Categories are derived from the groups currently returned by the API.
 	const categories = useMemo(
 		() => Array.from(new Set(words.map((w) => w.category || DEFAULT_CATEGORY))).sort(),
 		[words]
 	);
+	const selectedCategory = newCategory || categories[0] || DEFAULT_CATEGORY;
+	const canAdd =
+		newWord.trim().length > 0 &&
+		(!isCreatingCategory || newCategory.trim().length > 0);
 
 	// Group words by category
 	const grouped = useMemo(() => {
@@ -52,9 +65,11 @@ export function BannedWordsTab() {
 
 	const addMutation = useMutation({
 		mutationFn: () =>
-			moderationAPI.addWord(newWord.trim(), newCategory.trim() || DEFAULT_CATEGORY),
+			moderationAPI.addWord(newWord.trim(), selectedCategory.trim() || DEFAULT_CATEGORY),
 		onSuccess: () => {
 			setNewWord("");
+			setNewCategory("");
+			setIsCreatingCategory(false);
 			queryClient.invalidateQueries({ queryKey: ["admin", "words"] });
 			toast.success(t("adminWordAdded"));
 		},
@@ -79,7 +94,7 @@ export function BannedWordsTab() {
 	});
 
 	const handleAddKeyDown = (e: React.KeyboardEvent) => {
-		if (e.key === "Enter" && newWord.trim()) addMutation.mutate();
+		if (e.key === "Enter" && canAdd) addMutation.mutate();
 	};
 
 	return (
@@ -87,36 +102,77 @@ export function BannedWordsTab() {
 			{/* Add word form */}
 			<div className="flex gap-2 pb-4 border-b">
 				<Input
-					placeholder="New word..."
+					placeholder={t("adminNewWord")}
 					value={newWord}
 					onChange={(e) => setNewWord(e.target.value)}
 					onKeyDown={handleAddKeyDown}
 					className="flex-1"
 				/>
-				<Input
-					placeholder="Category (optional)"
-					value={newCategory}
-					onChange={(e) => setNewCategory(e.target.value)}
-					onKeyDown={handleAddKeyDown}
-					list="category-list"
-					className="w-40"
-				/>
-				<datalist id="category-list">
-					{categories.map((c) => (
-						<option key={c} value={c} />
-					))}
-				</datalist>
+				{isCreatingCategory ? (
+					<div className="flex w-48 gap-1">
+						<Input
+							placeholder={t("adminNewCategory")}
+							value={newCategory}
+							onChange={(e) => setNewCategory(e.target.value)}
+							onKeyDown={handleAddKeyDown}
+							className="min-w-0"
+							autoFocus
+						/>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon"
+							onClick={() => {
+								setNewCategory("");
+								setIsCreatingCategory(false);
+							}}
+							title={t("adminUseExistingCategory")}
+							aria-label={t("adminUseExistingCategory")}
+						>
+							<X size={14} />
+						</Button>
+					</div>
+				) : (
+					<Select
+						value={selectedCategory}
+						onValueChange={(value) => {
+							if (value === NEW_CATEGORY_VALUE) {
+								setNewCategory("");
+								setIsCreatingCategory(true);
+								return;
+							}
+							setNewCategory(value);
+						}}
+					>
+						<SelectTrigger className="w-48">
+							<SelectValue placeholder={t("adminSelectCategory")} />
+						</SelectTrigger>
+						<SelectContent>
+							{categories.length === 0 && (
+								<SelectItem value={DEFAULT_CATEGORY}>{DEFAULT_CATEGORY}</SelectItem>
+							)}
+							{categories.map((category) => (
+								<SelectItem key={category} value={category}>
+									{category}
+								</SelectItem>
+							))}
+							<SelectItem value={NEW_CATEGORY_VALUE}>
+								{t("adminNewCategoryAction")}
+							</SelectItem>
+						</SelectContent>
+					</Select>
+				)}
 				<Button
 					onClick={() => addMutation.mutate()}
-					disabled={!newWord.trim() || addMutation.isPending}
+					disabled={!canAdd || addMutation.isPending}
 				>
-					Add
+					{t("adminAdd")}
 				</Button>
 			</div>
 
-			{isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
+			{isLoading && <p className="text-sm text-muted-foreground">{t("loading")}</p>}
 			{!isLoading && words.length === 0 && (
-				<p className="text-sm text-muted-foreground">No banned words yet.</p>
+				<p className="text-sm text-muted-foreground">{t("adminNoBannedWords")}</p>
 			)}
 
 			{/* Grouped sections */}
@@ -125,13 +181,13 @@ export function BannedWordsTab() {
 					<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 						{category}
 					</h3>
-					<div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+					<div className="flex flex-wrap items-start gap-2">
 						{catWords.map((w) =>
 							editing?.id === w.id ? (
 								/* Inline edit card */
 								<div
 									key={w.id}
-									className="rounded-md border bg-card px-2 py-1.5 flex flex-col gap-1 shadow-sm"
+									className="w-40 rounded-md border bg-card px-2 py-1.5 flex flex-col gap-1 shadow-sm"
 								>
 									<Input
 										value={editing.word}
@@ -145,15 +201,23 @@ export function BannedWordsTab() {
 										className="h-6 text-xs px-1"
 										autoFocus
 									/>
-									<Input
+									<Select
 										value={editing.category}
-										onChange={(e) =>
-											setEditing({ ...editing, category: e.target.value })
+										onValueChange={(category) =>
+											setEditing({ ...editing, category })
 										}
-										list="category-list"
-										placeholder="Category"
-										className="h-6 text-xs px-1"
-									/>
+									>
+										<SelectTrigger size="sm" className="h-6 w-full px-1 text-xs">
+											<SelectValue placeholder={t("adminCategory")} />
+										</SelectTrigger>
+										<SelectContent>
+											{categories.map((category) => (
+												<SelectItem key={category} value={category}>
+													{category}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
 									<div className="flex gap-1 justify-end">
 										<button
 											onClick={() => updateMutation.mutate(editing)}
@@ -174,9 +238,9 @@ export function BannedWordsTab() {
 								/* Normal word card */
 								<div
 									key={w.id}
-									className="rounded-md border bg-card px-2.5 py-1.5 flex items-center gap-1.5 shadow-sm group"
+									className="w-40 max-w-full rounded-md border bg-card px-2.5 py-1.5 flex items-center gap-1.5 shadow-sm group"
 								>
-									<span className="font-mono text-xs flex-1 truncate">{w.word}</span>
+									<span className="min-w-0 flex-1 truncate font-mono text-xs">{w.word}</span>
 									<button
 										onClick={() =>
 											setEditing({
@@ -186,7 +250,8 @@ export function BannedWordsTab() {
 											})
 										}
 										className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground transition-opacity cursor-pointer"
-										title="Edit"
+										title={t("adminEdit")}
+										aria-label={t("adminEdit")}
 									>
 										<Pencil size={11} />
 									</button>
@@ -194,7 +259,8 @@ export function BannedWordsTab() {
 										onClick={() => deleteMutation.mutate(w.id)}
 										disabled={deleteMutation.isPending}
 										className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-destructive transition-opacity cursor-pointer"
-										title="Delete"
+										title={t("adminDelete")}
+										aria-label={t("adminDelete")}
 									>
 										<Trash2 size={11} />
 									</button>

@@ -15,6 +15,7 @@ func setRequiredEnv(t *testing.T) {
 		"OAUTH_ACCESS_TOKEN_EXPIRY", "OAUTH_REFRESH_TOKEN_EXPIRY",
 		"CHAT_MESSAGE_RATE_LIMIT", "CHAT_MAX_MESSAGE_LENGTH",
 		"USER_MIN_AGE", "USER_MAX_AGE", "SECURITY_RATE_LIMIT", "ALLOW_DATABASE_RESET",
+		"DEV_AUTH_ENABLED",
 	} {
 		t.Setenv(key, "")
 	}
@@ -97,5 +98,15 @@ func TestLoadRejectsInvalidBoolean(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() error = nil, want invalid boolean error")
+	}
+}
+
+func TestLoadRejectsDevAuthOutsideDevelopment(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("SERVER_ENV", "production")
+	t.Setenv("DEV_AUTH_ENABLED", "true")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() error = nil, want dev auth environment error")
 	}
 }
