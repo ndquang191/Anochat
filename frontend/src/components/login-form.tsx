@@ -34,9 +34,10 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
 		e.preventDefault();
 		setIsLoading(true);
 		try {
-			window.location.href = authAPI.getGoogleAuthUrl();
+			await authAPI.assertAvailable();
+			window.location.assign(authAPI.getGoogleAuthUrl());
 		} catch (error) {
-			console.error("Lỗi đăng nhập:", error);
+			toast.error(error instanceof Error ? error.message : t("apiUnavailable"));
 			setIsLoading(false);
 		}
 	};

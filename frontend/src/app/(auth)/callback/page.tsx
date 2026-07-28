@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth";
 import { useLanguage } from "@/contexts/theme";
+import { translateStored } from "@/lib/i18n";
+import { toast } from "sonner";
 
 export default function CallbackPage() {
 	const router = useRouter();
@@ -16,8 +18,10 @@ export default function CallbackPage() {
 			.then(() => {
 				if (active) router.replace("/");
 			})
-			.catch(() => {
-				if (active) router.replace("/error");
+			.catch((error) => {
+				if (!active) return;
+				toast.error(error instanceof Error ? error.message : translateStored("apiUnavailable"));
+				router.replace("/login");
 			});
 		return () => {
 			active = false;

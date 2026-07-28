@@ -3,7 +3,10 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ndquang191/Anochat/api/internal/dto"
@@ -38,25 +41,42 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 	state := c.Query("state")
 	savedState, err := c.Cookie("oauth_state")
 	if err != nil || state != savedState {
-		dto.FailErr(c, apperr.ErrInvalidOAuthState)
+		h.redirectOAuthError(c, "invalid_state", nil)
 		return
 	}
 	c.SetCookie("oauth_state", "", -1, "/", "", h.config.IsProduction(), true)
 
 	code := c.Query("code")
 	if code == "" {
-		dto.FailErr(c, apperr.ErrNoAuthCode)
+		h.redirectOAuthError(c, "missing_code", nil)
 		return
 	}
 
 	result, err := h.authService.ProcessOAuthCallback(c.Request.Context(), code)
 	if err != nil {
-		dto.FailErr(c, err)
+		h.redirectOAuthError(c, "callback_failed", err)
 		return
 	}
 
 	h.setSessionCookies(c, result)
 	c.Redirect(http.StatusTemporaryRedirect, h.config.ClientURL+"/callback")
+}
+
+func (h *AuthHandler) redirectOAuthError(c *gin.Context, code string, err error) {
+	if err != nil {
+		slog.Error("Google OAuth callback failed", "error", err)
+	}
+
+	errorURL, parseErr := url.Parse(strings.TrimRight(h.config.ClientURL, "/") + "/error")
+	if parseErr != nil {
+		dto.FailErr(c, parseErr)
+		return
+	}
+
+	query := errorURL.Query()
+	query.Set("error", code)
+	errorURL.RawQuery = query.Encode()
+	c.Redirect(http.StatusSeeOther, errorURL.String())
 }
 
 func (h *AuthHandler) DevLogin(c *gin.Context) {

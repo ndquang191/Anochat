@@ -3,6 +3,7 @@ import type { AdminOverviewDTO, ApiResponse, UserStateResponse, ProfileDTO, Bann
 import { translateStored } from "@/lib/i18n";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+const API_HEALTH_CHECK_TIMEOUT_MS = 8_000;
 
 let refreshPromise: Promise<boolean> | null = null;
 
@@ -130,6 +131,28 @@ export const authAPI = {
 		const result = await apiCall<{ message: string }>("/auth/logout", { method: "POST" });
 		toast.success(translateStored("logoutSuccess"));
 		return result;
+	},
+
+	assertAvailable: async () => {
+		const controller = new AbortController();
+		const timeout = window.setTimeout(
+			() => controller.abort(),
+			API_HEALTH_CHECK_TIMEOUT_MS
+		);
+
+		try {
+			const response = await fetch(`${API_BASE}/healthz`, {
+				credentials: "include",
+				signal: controller.signal,
+			});
+			if (!response.ok) {
+				throw new Error("API health check failed");
+			}
+		} catch {
+			throw new Error(translateStored("apiUnavailable"));
+		} finally {
+			window.clearTimeout(timeout);
+		}
 	},
 
 	getGoogleAuthUrl: () => {
