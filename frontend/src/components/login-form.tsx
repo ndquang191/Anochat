@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ShineBorder } from "@/components/ui/shine-border";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { authAPI } from "@/lib/api";
 import { BrandLogo } from "@/components/brand-logo";
 import { useAuth } from "@/contexts/auth";
@@ -25,16 +25,39 @@ function GoogleIcon() {
 
 export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
 	const [isLoading, setIsLoading] = useState(false);
+	const apiAvailableRef = useRef(false);
+	const apiHealthCheckRef = useRef<Promise<void> | null>(null);
 	const { login } = useAuth();
 	const { t } = useLanguage();
 	const router = useRouter();
 	const devLoginEnabled = process.env.NEXT_PUBLIC_DEV_AUTH_ENABLED === "true";
 
+	useEffect(() => {
+		const healthCheck = authAPI.assertAvailable();
+		apiHealthCheckRef.current = healthCheck;
+
+		void healthCheck
+			.then(() => {
+				apiAvailableRef.current = true;
+			})
+			.catch(() => {
+				apiAvailableRef.current = false;
+			})
+			.finally(() => {
+				if (apiHealthCheckRef.current === healthCheck) {
+					apiHealthCheckRef.current = null;
+				}
+			});
+	}, []);
+
 	const handleGoogleLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
 		setIsLoading(true);
 		try {
-			await authAPI.assertAvailable();
+			if (!apiAvailableRef.current) {
+				await (apiHealthCheckRef.current ?? authAPI.assertAvailable());
+				apiAvailableRef.current = true;
+			}
 			window.location.assign(authAPI.getGoogleAuthUrl());
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : t("apiUnavailable"));
@@ -71,7 +94,7 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
 				</CardHeader>
 				<CardContent className="px-8">
 					<form onSubmit={handleGoogleLogin} className="space-y-3">
-						<Button type="submit" className="h-11 w-full" disabled={isLoading}>
+						<Button type="submit" className="h-11 w-full cursor-pointer" disabled={isLoading}>
 							{isLoading ? (
 								t("signingIn")
 							) : (
