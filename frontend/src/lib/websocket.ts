@@ -3,12 +3,15 @@ export interface WebSocketMessage {
 	payload: Record<string, unknown>;
 }
 
+export type MessageDeliveryStatus = "pending" | "sent" | "failed";
+
 export interface ChatMessage {
 	id: string;
 	room_id: string;
 	sender_id: string;
 	content: string;
 	created_at: number;
+	status?: MessageDeliveryStatus;
 }
 
 type MessageHandler = (message: WebSocketMessage) => void;
@@ -97,12 +100,14 @@ export class WebSocketClient {
 		}
 	}
 
-	send(type: string, payload: Record<string, unknown>) {
+	send(type: string, payload: Record<string, unknown>): boolean {
 		if (this.ws && this.ws.readyState === WebSocket.OPEN) {
 			const message: WebSocketMessage = { type, payload };
 			this.ws.send(JSON.stringify(message));
+			return true;
 		} else {
 			console.warn("WebSocket is not connected");
+			return false;
 		}
 	}
 

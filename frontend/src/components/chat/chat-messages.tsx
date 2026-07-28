@@ -12,6 +12,7 @@ interface Message {
 	content: string;
 	sender_id: string;
 	created_at?: number;
+	status?: "pending" | "sent" | "failed";
 }
 
 interface ChatMessagesProps {
@@ -273,11 +274,12 @@ export function ChatMessages({
 											<div className="flex-1 h-px bg-border" />
 										</div>
 									) : (
-										<ChatMessage
-											content={row.message.content}
-											isCurrentUser={row.message.sender_id === currentUserId}
-											created_at={row.message.created_at}
-										/>
+											<ChatMessage
+												content={row.message.content}
+												isCurrentUser={row.message.sender_id === currentUserId}
+												created_at={row.message.created_at}
+												status={row.message.status}
+											/>
 									)}
 								</div>
 							);

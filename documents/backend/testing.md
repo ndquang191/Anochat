@@ -130,6 +130,14 @@ This document outlines testing strategies and procedures for the Anochat backend
 - Same gender fallback (if no opposite gender available)
 - Unknown gender users can match with anyone
 
+**Concurrency and recovery tests:**
+- Two concurrent join requests from the same user create at most one room
+- A room creation failure releases the reservation without losing the waiting partner
+- An expired reservation does not block a waiting partner permanently
+- A delayed finalizer with an old token cannot clear a newer reservation
+- Leave/disconnect cannot remove a user owned by a live reservation
+- Reconciliation removes stale Redis state for PostgreSQL-active rooms
+
 ---
 
 #### Test Case: Leave Queue
@@ -177,9 +185,9 @@ This document outlines testing strategies and procedures for the Anochat backend
 
 **Steps:**
 1. Match User A and User B
-2. User A sends message: `{type: "send_message", payload: {content: "Hello"}}`
+2. User A sends message: `{type: "send_message", payload: {id: "<uuid>", content: "Hello"}}`
 3. Verify User B receives `receive_message` event
-4. Verify User A receives confirmation `receive_message`
+4. Verify User A receives `message_ack` with the same ID
 5. Check message saved to database
 6. User B sends reply
 7. Verify User A receives reply
@@ -189,7 +197,7 @@ This document outlines testing strategies and procedures for the Anochat backend
 - ✅ Both users receive messages in real-time
 - ✅ Messages saved to database with correct metadata
 - ✅ Message order preserved
-- ✅ Sender receives own message as confirmation
+- ✅ Sender receives persistence confirmation for the client-generated ID
 
 ---
 
@@ -323,10 +331,15 @@ This document outlines testing strategies and procedures for the Anochat backend
 
 **3. WebSocket Disconnect During Match**
 - User A in queue
-- User A's WebSocket disconnects
-- User B joins queue
-- User A should be removed from queue
-- User B should not match with disconnected User A
+- User B starts matching with User A and obtains a reservation
+- User A's WebSocket disconnects before room creation commits
+- User A remains protected by the reservation
+- Room creation either commits once or releases the reservation on failure
+
+**4. Duplicate Active Room**
+- Start two room transactions containing the same user
+- PostgreSQL accepts at most one `active_room_members` row for that user
+- The losing room transaction rolls back completely
 
 ---
 
@@ -549,6 +562,7 @@ govulncheck ./...
 
 # Build verification
 go build ./cmd/server
+go build ./cmd/migrate
 ```
 
 ### Integration Test Pipeline

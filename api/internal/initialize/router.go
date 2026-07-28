@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -26,6 +27,34 @@ import (
 type Server struct {
 	Router       *gin.Engine
 	QueueService *service.QueueService
+	Hub          *ws.Hub
+	background   sync.WaitGroup
+}
+
+func (s *Server) Start(ctx context.Context) {
+	s.background.Add(2)
+	go func() {
+		defer s.background.Done()
+		s.Hub.Run(ctx)
+	}()
+	go func() {
+		defer s.background.Done()
+		s.QueueService.Run(ctx)
+	}()
+}
+
+func (s *Server) Wait(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		s.background.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server {
@@ -69,9 +98,6 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 		cfg.Chat.MessageRateLimit,
 		cfg.Chat.MaxMessageLength,
 	)
-	go wsHub.Run()
-	slog.Info("WebSocket hub started")
-
 	queueService.SetMatchNotifier(wsHub)
 
 	authHandler := handler.NewAuthHandler(authService, oauthConfig, cfg)
@@ -144,6 +170,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	return &Server{
 		Router:       router,
 		QueueService: queueService,
+		Hub:          wsHub,
 	}
 }
 

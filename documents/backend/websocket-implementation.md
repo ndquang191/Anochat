@@ -83,7 +83,7 @@ WS disconnect
 ## Message Flow (send_message)
 
 ```go
-// 1. Client sends WS frame
+// 1. Client sends WS frame with a client-generated UUID
 client.handleSendMessage(payload)
 
 // 2. Rate limit check via Redis
@@ -92,16 +92,19 @@ hub.CheckMessageRateLimit(userID)  // INCR msgrl:{userID}, EXPIRE 1s
 // 3. Moderation check
 hub.moderationService.ContainsBannedWord(content)  // → auto-report if hit
 
-// 4. Publish to Redis
+// 4. Persist with the client-generated UUID
+messageService.SaveMessage(ctx, msgID, roomID, senderID, content, now)
+
+// 5. Publish to Redis
 hub.broadcast <- &BroadcastMessage{RoomID, Message, Exclude}
   → hub.publishToRedis()
     → rdb.Publish("room:{roomID}", {exclude, payload})
 
-// 5. Redis fan-out to all subscribed Hub instances
+// 6. Redis fan-out to all subscribed Hub instances
 //    Each Hub calls handleRoomMessage() → delivers to local clients in that room
 
-// 6. Save to DB (async goroutine)
-messageService.SaveMessage(ctx, msgID, roomID, senderID, content, now)
+// 7. Confirm persistence to the sender
+client.SendJSON(WSMessage{Type: "message_ack", Payload: {id, created_at}})
 ```
 
 ---
@@ -110,6 +113,29 @@ messageService.SaveMessage(ctx, msgID, roomID, senderID, content, now)
 
 When a client reconnects, `registerClient` queries the DB for an active room.
 If found, `AddClientToRoom` is called automatically and a `room_rejoined` WS event is sent.
+
+---
+
+## Leave-room acknowledgement
+
+The sender's UI changes state only after a backend result:
+
+- `room_left` means PostgreSQL ended the room and in-memory/Redis notifications
+  were completed.
+- `room_leave_failed` means the database operation failed; the client remains in
+  the room and may retry.
+
+The frontend also treats a disconnected socket, a failed `send()`, or a
+five-second ACK timeout as failure instead of displaying a success toast.
+
+---
+
+## Shutdown
+
+The Hub runs with the application lifecycle context. Cancellation closes Redis
+pub/sub and sends `CloseGoingAway` to connected WebSocket clients. The main
+server waits for both the Hub and queue reconciliation worker before closing
+Redis and PostgreSQL.
 
 ---
 

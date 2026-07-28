@@ -1,15 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { useLanguage } from "@/contexts/theme";
 
 interface ChatMessageProps {
 	content: string;
 	isCurrentUser: boolean;
 	created_at?: number;
+	status?: "pending" | "sent" | "failed";
 }
 
-export function ChatMessage({ content, isCurrentUser, created_at }: ChatMessageProps) {
+export function ChatMessage({ content, isCurrentUser, created_at, status }: ChatMessageProps) {
 	const [showTime, setShowTime] = useState(false);
+	const { t } = useLanguage();
 
 	const timeStr = created_at
 		? new Date(created_at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -25,10 +28,22 @@ export function ChatMessage({ content, isCurrentUser, created_at }: ChatMessageP
 					isCurrentUser
 						? "bg-primary text-primary-foreground"
 						: "bg-muted text-foreground"
+				} ${status === "pending" ? "opacity-70" : ""} ${
+					status === "failed" ? "ring-1 ring-destructive" : ""
 				}`}
 			>
 				<p>{content}</p>
 			</div>
+			{isCurrentUser && status === "pending" && (
+				<span className="px-1 text-[10px] text-muted-foreground">
+					{t("messageSending")}
+				</span>
+			)}
+			{isCurrentUser && status === "failed" && (
+				<span className="px-1 text-[10px] text-destructive">
+					{t("messageFailed")}
+				</span>
+			)}
 			{showTime && timeStr && (
 				<span className="text-[10px] text-muted-foreground px-1">{timeStr}</span>
 			)}

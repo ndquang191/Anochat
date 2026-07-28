@@ -121,10 +121,11 @@ func messageModelToDomain(m *model.Message) *chat.Message {
 
 func messageDomainToModel(msg *chat.Message) *model.Message {
 	return &model.Message{
-		ID:       msg.ID,
-		RoomID:   msg.RoomID,
-		SenderID: msg.SenderID,
-		Content:  msg.Content,
+		ID:        msg.ID,
+		RoomID:    msg.RoomID,
+		SenderID:  msg.SenderID,
+		Content:   msg.Content,
+		CreatedAt: msg.CreatedAt,
 	}
 }
 

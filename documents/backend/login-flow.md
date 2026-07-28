@@ -87,6 +87,7 @@ If the user's `is_active = false` (banned): `401` account suspended.
 
 ---
 
-## Birthday Auto-Fill
+## Age
 
-After OAuth callback, the backend makes a best-effort call to the Google People API to fetch the user's birth year and compute age. This is non-blocking — if it fails, the profile just has no age set.
+The application does not request birthday access from Google. Age is optional
+and is entered directly by the user through profile settings.

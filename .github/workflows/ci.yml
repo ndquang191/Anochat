@@ -28,6 +28,8 @@ jobs:
         run: go vet ./...
       - name: Build
         run: go build -o /tmp/anochat-server ./cmd/server
+      - name: Build migration command
+        run: go build -o /tmp/anochat-migrate ./cmd/migrate
 
   frontend:
     name: Frontend

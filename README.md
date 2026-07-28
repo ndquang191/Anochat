@@ -85,19 +85,27 @@ QueryClientProvider
 ## Queue Matching
 
 The queue is stored in a Redis sorted set (`queue:waiting`, score = join timestamp ms).
-Matching uses a Lua script for atomicity — safe across multiple backend instances.
+Matching uses token-owned Redis reservations with a 30-second lease. Lua scripts
+reserve and finalize a pair atomically across backend instances, while PostgreSQL
+remains the source of truth for room creation.
 
 ```
 User A → POST /queue/join
            └── Lua script: ZRANGE queue:waiting → no match → ZADD
 
 User B → POST /queue/join
-           └── Lua script: ZRANGE queue:waiting → finds User A → ZREM User A
-                              └── CreateRoom(A, B)
-                                   └── Publish "match_found" → Redis user:A, user:B
-                                        ├── Hub (instance 1) → WS to User A
-                                        └── Hub (instance 2) → WS to User B
+           └── Lua script: reserve User A + User B (User A remains in queue)
+                  └── CreateRoom(A, B)
+                       ├── success → commit reservation + ZREM User A
+                       │              └── Publish "match_found" → Redis user:A, user:B
+                       └── failure → release reservation; User A can be matched again
 ```
+
+PostgreSQL also writes one `active_room_members` row per participant through a
+room trigger in the same transaction. Its primary key on `user_id` is the final
+guard against two active rooms for one user, including direct SQL writes. A
+background reconciliation pass removes stale Redis queue/reservation entries
+for users PostgreSQL already marks as active.
 
 ## WebSocket Hub (Distributed)
 
@@ -122,6 +130,7 @@ local client joins and unsubscribed when the last local client leaves.
 ```
 Users ──┐     Profiles (1:1)
         ├──── Rooms (user1_id, user2_id)
+        │       └──── ActiveRoomMembers (unique user_id)
         └──── Messages (sender_id) ──── Rooms (room_id)
 ```
 
@@ -139,8 +148,13 @@ Users ──┐     Profiles (1:1)
 ```bash
 cd api
 cp .env.example .env    # edit with your credentials
+go run ./cmd/migrate
 go run ./cmd/server
 ```
+
+Migrations are embedded, versioned SQL files under `api/pkg/database/migrations`.
+The production Compose stack runs the one-shot `migrate` service successfully
+before starting the API.
 
 ### Frontend
 

@@ -15,6 +15,7 @@ import (
 type RoomRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*chat.Room, error)
 	FindActiveByUserID(ctx context.Context, userID uuid.UUID) (*chat.Room, error)
+	ListActive(ctx context.Context) ([]*chat.Room, error)
 	Create(ctx context.Context, room *chat.Room) error
 	UpdateEndedAt(ctx context.Context, roomID uuid.UUID, endedAt time.Time) error
 	UpdateSessionConnection(ctx context.Context, roomID uuid.UUID, connected bool, changedAt time.Time) error
@@ -41,7 +42,8 @@ func (r *roomRepo) FindByID(ctx context.Context, id uuid.UUID) (*chat.Room, erro
 func (r *roomRepo) FindActiveByUserID(ctx context.Context, userID uuid.UUID) (*chat.Room, error) {
 	var m model.Room
 	if err := r.db.WithContext(ctx).
-		Where("(user1_id = ? OR user2_id = ?) AND ended_at IS NULL", userID, userID).
+		Joins("JOIN active_room_members arm ON arm.room_id = rooms.id").
+		Where("arm.user_id = ? AND rooms.ended_at IS NULL", userID).
 		First(&m).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
@@ -51,17 +53,34 @@ func (r *roomRepo) FindActiveByUserID(ctx context.Context, userID uuid.UUID) (*c
 	return roomModelToDomain(&m), nil
 }
 
+func (r *roomRepo) ListActive(ctx context.Context) ([]*chat.Room, error) {
+	var models []model.Room
+	if err := r.db.WithContext(ctx).
+		Where("ended_at IS NULL").
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+	rooms := make([]*chat.Room, len(models))
+	for i := range models {
+		rooms[i] = roomModelToDomain(&models[i])
+	}
+	return rooms, nil
+}
+
 func (r *roomRepo) Create(ctx context.Context, room *chat.Room) error {
 	m := roomDomainToModel(room)
 	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(m).Error; err != nil {
 			return err
 		}
-		return tx.Create(&model.RoomSession{
+		if err := tx.Create(&model.RoomSession{
 			RoomID:    m.ID,
 			Status:    "matched",
 			MatchedAt: m.CreatedAt,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -77,12 +96,15 @@ func (r *roomRepo) UpdateEndedAt(ctx context.Context, roomID uuid.UUID, endedAt 
 			Update("ended_at", endedAt).Error; err != nil {
 			return err
 		}
-		return tx.Model(&model.RoomSession{}).
+		if err := tx.Model(&model.RoomSession{}).
 			Where("room_id = ? AND ended_at IS NULL", roomID).
 			Updates(map[string]any{
 				"status":   "ended",
 				"ended_at": endedAt,
-			}).Error
+			}).Error; err != nil {
+			return err
+		}
+		return nil
 	})
 }
 

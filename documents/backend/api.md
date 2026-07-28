@@ -122,7 +122,7 @@ Upgrade to WebSocket. Requires valid `access_token` cookie.
 
 | Type | Payload | Description |
 |------|---------|-------------|
-| `send_message` | `{ "content": "..." }` | Send a message |
+| `send_message` | `{ "id": "uuid", "content": "..." }` | Send a message using a client-generated id |
 | `join_room` | `{ "room_id": "uuid" }` | Re-join room after reconnect |
 | `leave_room` | `{ "room_id": "uuid" }` | Leave current room |
 | `typing` | `{ "is_typing": true\|false }` | Typing indicator |
@@ -136,10 +136,13 @@ Upgrade to WebSocket. Requires valid `access_token` cookie.
 | `match_found` | `{ room_id, timestamp, message }` | Matched with a partner |
 | `room_joined` | `{ room_id, timestamp }` | `join_room` confirmed |
 | `receive_message` | `{ id, room_id, sender_id, content, created_at }` | Incoming message |
+| `message_ack` | `{ id, created_at }` | Sender confirmation after the message is persisted |
+| `message_failed` | `{ id, code, message }` | Sender-specific delivery failure |
 | `partner_typing` | `{ is_typing, user_id }` | Partner typing status |
 | `partner_left` | `{ room_id, timestamp, message }` | Partner left |
 | `room_left` | `{ room_id, timestamp }` | `leave_room` confirmed |
-| `error` | `{ message, code }` | e.g. `RATE_LIMIT_EXCEEDED` |
+| `room_leave_failed` | `{ room_id, code, message }` | Room state was not changed; client may retry |
+| `error` | `{ message, code }` | Non-message protocol error |
 
 ---
 

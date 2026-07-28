@@ -32,55 +32,66 @@ func (c *Client) handleMessage(message []byte) {
 }
 
 func (c *Client) handleSendMessage(payload map[string]interface{}) {
+	messageIDRaw, ok := payload["id"].(string)
+	if !ok {
+		c.sendMessageFailed("", "INVALID_MESSAGE_ID", "Message ID is required.")
+		return
+	}
+	messageID, err := uuid.Parse(messageIDRaw)
+	if err != nil {
+		c.sendMessageFailed(messageIDRaw, "INVALID_MESSAGE_ID", "Message ID is invalid.")
+		return
+	}
+
 	if c.RoomID == nil {
 		slog.Warn("User tried to send message without room", "user_id", c.UserID)
+		c.sendMessageFailed(messageIDRaw, "NOT_IN_ROOM", "You are not in a chat room.")
 		return
 	}
 
 	content, ok := payload["content"].(string)
 	if !ok || strings.TrimSpace(content) == "" {
+		c.sendMessageFailed(messageIDRaw, "INVALID_MESSAGE", "Message content is required.")
 		return
 	}
 	if messageExceedsLimit(content, c.Hub.maxMessageLength) {
-		c.SendJSON(WSMessage{
-			Type: "error",
-			Payload: map[string]interface{}{
-				"message": "Message is too long.",
-				"code":    "MESSAGE_TOO_LONG",
-			},
-		})
+		c.sendMessageFailed(messageIDRaw, "MESSAGE_TOO_LONG", "Message is too long.")
 		return
 	}
 
 	if !c.Hub.CheckMessageRateLimit(c.UserID) {
 		slog.Warn("Message rate limit exceeded", "user_id", c.UserID)
-		errorMsg := WSMessage{
-			Type: "error",
-			Payload: map[string]interface{}{
-				"message": "You are sending messages too quickly. Please slow down.",
-				"code":    "RATE_LIMIT_EXCEEDED",
-			},
-		}
-		c.SendJSON(errorMsg)
+		c.sendMessageFailed(
+			messageIDRaw,
+			"RATE_LIMIT_EXCEEDED",
+			"You are sending messages too quickly. Please slow down.",
+		)
 		return
 	}
 
-	msgID := uuid.New()
 	now := time.Now().UTC()
 	roomID := *c.RoomID
 	isSensitive := c.Hub.moderationService.ContainsBannedWord(content)
 	triggerMessage := &chat.Message{
-		ID:        msgID,
+		ID:        messageID,
 		RoomID:    roomID,
 		SenderID:  c.UserID,
 		Content:   content,
 		CreatedAt: now,
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.Hub.messageService.SaveMessage(ctx, messageID, roomID, c.UserID, content, now); err != nil {
+		slog.Error("Failed to save message", "error", err, "user_id", c.UserID, "message_id", messageID)
+		c.sendMessageFailed(messageIDRaw, "MESSAGE_SAVE_FAILED", "Message could not be saved.")
+		return
+	}
+
 	broadcastMsg := WSMessage{
 		Type: "receive_message",
 		Payload: map[string]interface{}{
-			"id":         msgID.String(),
+			"id":         messageID.String(),
 			"room_id":    roomID.String(),
 			"sender_id":  c.UserID.String(),
 			"content":    content,
@@ -99,18 +110,34 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 		Exclude: c.UserID,
 	}
 
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := c.Hub.messageService.SaveMessage(ctx, msgID, roomID, c.UserID, content, now); err != nil {
-			slog.Error("Failed to save message", "error", err, "user_id", c.UserID, "message_id", msgID)
-		}
-		if isSensitive {
-			c.createAutoReport(triggerMessage)
-		}
-	}()
+	c.sendMessageAck(messageID, now)
 
-	slog.Info("Message sent", "user_id", c.UserID, "room_id", roomID, "message_id", msgID)
+	if isSensitive {
+		go c.createAutoReport(triggerMessage)
+	}
+
+	slog.Info("Message sent", "user_id", c.UserID, "room_id", roomID, "message_id", messageID)
+}
+
+func (c *Client) sendMessageFailed(id, code, message string) {
+	c.SendJSON(WSMessage{
+		Type: "message_failed",
+		Payload: map[string]interface{}{
+			"id":      id,
+			"code":    code,
+			"message": message,
+		},
+	})
+}
+
+func (c *Client) sendMessageAck(id uuid.UUID, createdAt time.Time) {
+	c.SendJSON(WSMessage{
+		Type: "message_ack",
+		Payload: map[string]interface{}{
+			"id":         id.String(),
+			"created_at": createdAt.Unix(),
+		},
+	})
 }
 
 func (c *Client) createAutoReport(triggerMessage *chat.Message) {
@@ -175,13 +202,18 @@ func (c *Client) handleJoinRoom(payload map[string]interface{}) {
 
 func (c *Client) handleLeaveRoom(payload map[string]interface{}) {
 	if c.RoomID == nil {
+		c.sendRoomLeaveFailed("", "NOT_IN_ROOM", "You are not in a chat room.")
 		return
 	}
 
 	roomID := *c.RoomID
 
-	if err := c.Hub.roomService.LeaveRoom(context.Background(), roomID, c.UserID); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.Hub.roomService.LeaveRoom(ctx, roomID, c.UserID); err != nil {
 		slog.Error("Failed to leave room in database", "error", err, "user_id", c.UserID, "room_id", roomID)
+		c.sendRoomLeaveFailed(roomID.String(), "ROOM_LEAVE_FAILED", "The chat room could not be left.")
+		return
 	}
 
 	c.Hub.removeClientFromRoom(c, roomID)
@@ -198,4 +230,15 @@ func (c *Client) handleLeaveRoom(payload map[string]interface{}) {
 	c.SendJSON(confirmation)
 
 	slog.Info("User left room", "user_id", c.UserID, "room_id", roomID)
+}
+
+func (c *Client) sendRoomLeaveFailed(roomID, code, message string) {
+	c.SendJSON(WSMessage{
+		Type: "room_leave_failed",
+		Payload: map[string]interface{}{
+			"room_id": roomID,
+			"code":    code,
+			"message": message,
+		},
+	})
 }

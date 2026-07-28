@@ -64,6 +64,9 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
+echo "Applying database migrations"
+(cd "$repo_dir/api" && go run ./cmd/migrate)
+
 echo "Starting API on http://localhost:8080"
 if command -v air >/dev/null 2>&1; then
 	(cd "$repo_dir/api" && air) &

@@ -1,114 +1,249 @@
 package database
 
 import (
+	"embed"
+	"fmt"
+	"io/fs"
 	"log/slog"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 
-	"github.com/ndquang191/Anochat/api/internal/model"
+	"gorm.io/gorm"
 )
+
+const migrationAdvisoryLockID int64 = 0x414e4f43484154
+
+//go:embed migrations/*.sql
+var migrationFiles embed.FS
+
+type migration struct {
+	Version int64
+	Name    string
+	SQL     string
+}
 
 func RunMigrations() error {
 	if DB == nil {
 		return ErrDatabaseNotInitialized
 	}
 
-	slog.Info("Starting database migrations")
-
-	DB.Exec("SET session_replication_role = 'replica';")
-
-	err := DB.AutoMigrate(
-		&model.User{},
-		&model.Profile{},
-		&model.Room{},
-		&model.RoomSession{},
-		&model.Message{},
-		&model.BannedWord{},
-		&model.Report{},
-		&model.ReportMessage{},
-	)
-
-	DB.Exec("SET session_replication_role = 'origin';")
-
+	migrations, err := loadMigrations()
 	if err != nil {
-		errStr := err.Error()
-		if strings.Contains(errStr, "already exists") || strings.Contains(errStr, "unexpected EOF") {
-			slog.Warn("Migration constraint warning (safe to ignore)", "error", err)
-		} else {
-			slog.Error("Migration failed", "error", err)
+		return err
+	}
+
+	if err := DB.Exec(`
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version BIGINT PRIMARY KEY,
+			name TEXT NOT NULL,
+			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("create schema_migrations: %w", err)
+	}
+
+	for _, item := range migrations {
+		if err := applyMigration(DB, item); err != nil {
 			return err
 		}
 	}
 
-	// Existing suspended accounts predate the counters. Their full history
-	// cannot be reconstructed, but the current suspension is at least one ban.
-	if err := DB.Exec(`
-		UPDATE users
-		SET ban_count = 1,
-		    banned_at = COALESCE(banned_at, created_at)
-		WHERE is_active = false
-		  AND is_deleted = false
-		  AND ban_count = 0
-	`).Error; err != nil {
-		slog.Error("Failed to backfill ban counters", "error", err)
-		return err
-	}
-
-	if err := createIndexes(); err != nil {
-		if !strings.Contains(err.Error(), "already exists") {
-			slog.Error("Failed to create indexes", "error", err)
-			return err
-		}
-	}
-
-	// Preserve currently active rooms in the lifecycle report when upgrading.
-	if err := DB.Exec(`
-		INSERT INTO room_sessions (room_id, status, matched_at)
-		SELECT id, 'matched', created_at
-		FROM rooms
-		ON CONFLICT (room_id) DO NOTHING
-	`).Error; err != nil {
-		slog.Error("Failed to backfill room sessions", "error", err)
-		return err
-	}
-
-	slog.Info("All migrations completed successfully")
+	slog.Info("Database migrations are up to date", "count", len(migrations))
 	return nil
 }
 
-func createIndexes() error {
-	indexes := []string{
-		"CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
-		"CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active)",
-		"CREATE INDEX IF NOT EXISTS idx_users_is_deleted ON users(is_deleted)",
-		"CREATE INDEX IF NOT EXISTS idx_users_review_requested ON users(review_requested) WHERE is_active = false",
-		"CREATE INDEX IF NOT EXISTS idx_users_banned_admin_cursor ON users(review_requested DESC, review_requested_at DESC, banned_at DESC, created_at DESC, id DESC) WHERE is_active = false AND is_deleted = false",
-		"CREATE INDEX IF NOT EXISTS idx_profiles_is_male ON profiles(is_male)",
-		"CREATE INDEX IF NOT EXISTS idx_profiles_age ON profiles(age)",
-		"CREATE INDEX IF NOT EXISTS idx_rooms_user1_id ON rooms(user1_id)",
-		"CREATE INDEX IF NOT EXISTS idx_rooms_user2_id ON rooms(user2_id)",
-		"CREATE INDEX IF NOT EXISTS idx_rooms_created_at ON rooms(created_at)",
-		"CREATE INDEX IF NOT EXISTS idx_room_sessions_matched_at ON room_sessions(matched_at)",
-		"CREATE INDEX IF NOT EXISTS idx_room_sessions_status ON room_sessions(status)",
-		"CREATE INDEX IF NOT EXISTS idx_messages_room_id ON messages(room_id)",
-		"CREATE INDEX IF NOT EXISTS idx_messages_sender_id ON messages(sender_id)",
-		"CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)",
-		"CREATE INDEX IF NOT EXISTS idx_messages_room_created ON messages(room_id, created_at)",
-		"CREATE INDEX IF NOT EXISTS idx_messages_room_created_id ON messages(room_id, created_at DESC, id DESC)",
-		"CREATE INDEX IF NOT EXISTS idx_reports_reported_user_id ON reports(reported_user_id)",
-		"CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status)",
-		"CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at)",
-		"CREATE INDEX IF NOT EXISTS idx_reports_admin_grouping ON reports(status, reported_user_id, created_at DESC, id DESC)",
-		"CREATE INDEX IF NOT EXISTS idx_report_messages_report_id ON report_messages(report_id)",
-		"CREATE INDEX IF NOT EXISTS idx_report_messages_created_at ON report_messages(created_at)",
+func loadMigrations() ([]migration, error) {
+	entries, err := fs.ReadDir(migrationFiles, "migrations")
+	if err != nil {
+		return nil, fmt.Errorf("read embedded migrations: %w", err)
 	}
 
-	for _, indexSQL := range indexes {
-		if err := DB.Exec(indexSQL).Error; err != nil {
-			slog.Error("Failed to create index", "sql", indexSQL, "error", err)
-			return err
+	items := make([]migration, 0, len(entries))
+	seen := make(map[int64]string, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		versionText, _, ok := strings.Cut(entry.Name(), "_")
+		if !ok {
+			return nil, fmt.Errorf("invalid migration filename %q", entry.Name())
+		}
+		version, err := strconv.ParseInt(versionText, 10, 64)
+		if err != nil || version <= 0 {
+			return nil, fmt.Errorf("invalid migration version in %q", entry.Name())
+		}
+		if previous, exists := seen[version]; exists {
+			return nil, fmt.Errorf("duplicate migration version %d in %q and %q", version, previous, entry.Name())
+		}
+		body, err := migrationFiles.ReadFile("migrations/" + entry.Name())
+		if err != nil {
+			return nil, fmt.Errorf("read migration %q: %w", entry.Name(), err)
+		}
+		seen[version] = entry.Name()
+		items = append(items, migration{Version: version, Name: entry.Name(), SQL: string(body)})
+	}
+
+	sort.Slice(items, func(i, j int) bool { return items[i].Version < items[j].Version })
+	return items, nil
+}
+
+func applyMigration(db *gorm.DB, item migration) error {
+	startedAt := time.Now()
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", migrationAdvisoryLockID).Error; err != nil {
+			return fmt.Errorf("lock migration %d: %w", item.Version, err)
+		}
+
+		var applied bool
+		if err := tx.Raw(
+			"SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)",
+			item.Version,
+		).Scan(&applied).Error; err != nil {
+			return fmt.Errorf("check migration %d: %w", item.Version, err)
+		}
+		if applied {
+			return nil
+		}
+
+		statements, err := splitSQLStatements(item.SQL)
+		if err != nil {
+			return fmt.Errorf("parse migration %d (%s): %w", item.Version, item.Name, err)
+		}
+		for statementIndex, statement := range statements {
+			if err := tx.Exec(statement).Error; err != nil {
+				return fmt.Errorf(
+					"apply migration %d (%s), statement %d: %w",
+					item.Version,
+					item.Name,
+					statementIndex+1,
+					err,
+				)
+			}
+		}
+		if err := tx.Exec(
+			"INSERT INTO schema_migrations (version, name) VALUES (?, ?)",
+			item.Version,
+			item.Name,
+		).Error; err != nil {
+			return fmt.Errorf("record migration %d: %w", item.Version, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	slog.Info("Database migration checked", "version", item.Version, "name", item.Name, "duration", time.Since(startedAt))
+	return nil
+}
+
+func splitSQLStatements(source string) ([]string, error) {
+	var statements []string
+	var current strings.Builder
+	var dollarTag string
+	var quote byte
+	inLineComment := false
+	blockCommentDepth := 0
+
+	for index := 0; index < len(source); {
+		if inLineComment {
+			current.WriteByte(source[index])
+			if source[index] == '\n' {
+				inLineComment = false
+			}
+			index++
+			continue
+		}
+		if blockCommentDepth > 0 {
+			switch {
+			case strings.HasPrefix(source[index:], "/*"):
+				blockCommentDepth++
+				current.WriteString("/*")
+				index += 2
+			case strings.HasPrefix(source[index:], "*/"):
+				blockCommentDepth--
+				current.WriteString("*/")
+				index += 2
+			default:
+				current.WriteByte(source[index])
+				index++
+			}
+			continue
+		}
+		if dollarTag != "" {
+			if strings.HasPrefix(source[index:], dollarTag) {
+				current.WriteString(dollarTag)
+				index += len(dollarTag)
+				dollarTag = ""
+			} else {
+				current.WriteByte(source[index])
+				index++
+			}
+			continue
+		}
+		if quote != 0 {
+			current.WriteByte(source[index])
+			if source[index] == quote {
+				if index+1 < len(source) && source[index+1] == quote {
+					current.WriteByte(source[index+1])
+					index += 2
+					continue
+				}
+				quote = 0
+			}
+			index++
+			continue
+		}
+
+		switch {
+		case strings.HasPrefix(source[index:], "--"):
+			inLineComment = true
+			current.WriteString("--")
+			index += 2
+		case strings.HasPrefix(source[index:], "/*"):
+			blockCommentDepth = 1
+			current.WriteString("/*")
+			index += 2
+		case source[index] == '\'' || source[index] == '"':
+			quote = source[index]
+			current.WriteByte(source[index])
+			index++
+		case source[index] == '$':
+			tagEnd := index + 1
+			for tagEnd < len(source) &&
+				((source[tagEnd] >= 'a' && source[tagEnd] <= 'z') ||
+					(source[tagEnd] >= 'A' && source[tagEnd] <= 'Z') ||
+					(source[tagEnd] >= '0' && source[tagEnd] <= '9') ||
+					source[tagEnd] == '_') {
+				tagEnd++
+			}
+			if tagEnd < len(source) && source[tagEnd] == '$' {
+				dollarTag = source[index : tagEnd+1]
+				current.WriteString(dollarTag)
+				index = tagEnd + 1
+			} else {
+				current.WriteByte(source[index])
+				index++
+			}
+		case source[index] == ';':
+			if statement := strings.TrimSpace(current.String()); statement != "" {
+				statements = append(statements, statement)
+			}
+			current.Reset()
+			index++
+		default:
+			current.WriteByte(source[index])
+			index++
 		}
 	}
 
-	slog.Info("Database indexes created successfully")
-	return nil
+	if quote != 0 || dollarTag != "" || blockCommentDepth > 0 {
+		return nil, fmt.Errorf("unterminated SQL quote or comment")
+	}
+	if statement := strings.TrimSpace(current.String()); statement != "" {
+		statements = append(statements, statement)
+	}
+	return statements, nil
 }

@@ -7,6 +7,12 @@ import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
 import { playMessageSound, playLeaveSound } from "@/hooks/use-sound-notification";
 import { roomAPI } from "@/lib/api";
 import { prependUniqueMessages } from "@/lib/message-history";
+import {
+	reconcileAuthoritativeMessages,
+	updateMessageDeliveryStatus,
+} from "@/lib/message-delivery";
+
+const MESSAGE_ACK_TIMEOUT_MS = 10000;
 
 export interface UseWebSocketChatProps {
 	userId: string;
@@ -46,6 +52,24 @@ export function useWebSocketChat({
 	const paginationRoomRef = useRef<string | null>(null);
 	const isLoadingOlderRef = useRef(false);
 	const activeRoomIdRef = useRef<string | null>(null);
+	const pendingAckTimersRef = useRef<Map<string, number>>(new Map());
+
+	const clearPendingAck = useCallback((messageId: string) => {
+		const timer = pendingAckTimersRef.current.get(messageId);
+		if (timer !== undefined) {
+			window.clearTimeout(timer);
+			pendingAckTimersRef.current.delete(messageId);
+		}
+	}, []);
+
+	const clearAllPendingAcks = useCallback(() => {
+		for (const timer of pendingAckTimersRef.current.values()) {
+			window.clearTimeout(timer);
+		}
+		pendingAckTimersRef.current.clear();
+	}, []);
+
+	useEffect(() => clearAllPendingAcks, [clearAllPendingAcks]);
 
 	useEffect(() => {
 		onMatchFoundRef.current = onMatchFound;
@@ -85,12 +109,13 @@ export function useWebSocketChat({
 
 	useEffect(() => {
 		if (!initialMessages?.length) return;
-		setMessages((prev) => {
-			const existingIds = new Set(prev.map((m) => m.id));
-			const merged = [...prev, ...initialMessages.filter((m) => !existingIds.has(m.id))];
-			return merged.sort((a, b) => a.created_at - b.created_at);
-		});
-	}, [initialMessages]);
+		for (const message of initialMessages) {
+			clearPendingAck(message.id);
+		}
+		setMessages((prev) =>
+			reconcileAuthoritativeMessages(prev, initialMessages)
+		);
+	}, [initialMessages, clearPendingAck]);
 
 	useEffect(() => {
 		if (isConnected && roomId && hasJoinedRoomRef.current !== roomId) {
@@ -129,10 +154,19 @@ export function useWebSocketChat({
 
 		const handleDisconnected = () => {
 			setIsConnected(false);
+			clearAllPendingAcks();
+			setMessages((current) =>
+				current.map((message) =>
+					message.status === "pending"
+						? { ...message, status: "failed" }
+						: message
+				)
+			);
 		};
 
 		const handleMatchFound = (message: WebSocketMessage) => {
 			const room_id = message.payload.room_id as string;
+			clearAllPendingAcks();
 			activeRoomIdRef.current = room_id;
 			setRoomId(room_id);
 			setPartnerLeft(false);
@@ -156,7 +190,10 @@ export function useWebSocketChat({
 		};
 
 		const handleReceiveMessage = (message: WebSocketMessage) => {
-			const chatMessage = message.payload as unknown as ChatMessage;
+			const chatMessage = {
+				...(message.payload as unknown as ChatMessage),
+				status: "sent" as const,
+			};
 			if (chatMessage.sender_id !== userIdRef.current) {
 				playMessageSound();
 			}
@@ -168,7 +205,34 @@ export function useWebSocketChat({
 			});
 		};
 
+		const handleMessageAck = (message: WebSocketMessage) => {
+			const id = message.payload.id;
+			if (typeof id !== "string") {
+				return;
+			}
+			const createdAt =
+				typeof message.payload.created_at === "number"
+					? message.payload.created_at
+					: undefined;
+			clearPendingAck(id);
+			setMessages((current) =>
+				updateMessageDeliveryStatus(current, id, "sent", createdAt)
+			);
+		};
+
+		const handleMessageFailed = (message: WebSocketMessage) => {
+			const id = message.payload.id;
+			if (typeof id !== "string") {
+				return;
+			}
+			clearPendingAck(id);
+			setMessages((current) =>
+				updateMessageDeliveryStatus(current, id, "failed")
+			);
+		};
+
 		const handlePartnerLeft = () => {
+			clearAllPendingAcks();
 			activeRoomIdRef.current = null;
 			setRoomId(null);
 			setPartnerLeft(true);
@@ -183,6 +247,7 @@ export function useWebSocketChat({
 		};
 
 		const handleRoomLeft = () => {
+			clearAllPendingAcks();
 			activeRoomIdRef.current = null;
 			setRoomId(null);
 			setPartnerLeft(false);
@@ -198,6 +263,8 @@ export function useWebSocketChat({
 		client.on("match_found", handleMatchFound);
 		client.on("room_rejoined", handleRoomRejoined);
 		client.on("receive_message", handleReceiveMessage);
+		client.on("message_ack", handleMessageAck);
+		client.on("message_failed", handleMessageFailed);
 		client.on("partner_left", handlePartnerLeft);
 		client.on("room_left", handleRoomLeft);
 
@@ -207,10 +274,12 @@ export function useWebSocketChat({
 			client.off("match_found", handleMatchFound);
 			client.off("room_rejoined", handleRoomRejoined);
 			client.off("receive_message", handleReceiveMessage);
+			client.off("message_ack", handleMessageAck);
+			client.off("message_failed", handleMessageFailed);
 			client.off("partner_left", handlePartnerLeft);
 			client.off("room_left", handleRoomLeft);
 		};
-	}, [userId, invalidateUserState]);
+	}, [userId, invalidateUserState, clearPendingAck, clearAllPendingAcks]);
 
 	const loadOlderMessages = useCallback(async (): Promise<boolean> => {
 		if (
@@ -264,20 +333,36 @@ export function useWebSocketChat({
 				return;
 			}
 
-			const client = wsClient.current;
-			client.send("send_message", {
-				content,
-			});
-
-			// Optimistic update - show message immediately for the sender
+			const messageId = crypto.randomUUID();
 			const optimisticMessage: ChatMessage = {
-				id: crypto.randomUUID(),
+				id: messageId,
 				room_id: roomId,
 				sender_id: userIdRef.current,
 				content,
 				created_at: Math.floor(Date.now() / 1000),
+				status: "pending",
 			};
 			setMessages((prev) => [...prev, optimisticMessage]);
+
+			const client = wsClient.current;
+			const sent = client.send("send_message", {
+				id: messageId,
+				content,
+			});
+			if (!sent) {
+				setMessages((current) =>
+					updateMessageDeliveryStatus(current, messageId, "failed")
+				);
+				return;
+			}
+
+			const timer = window.setTimeout(() => {
+				pendingAckTimersRef.current.delete(messageId);
+				setMessages((current) =>
+					updateMessageDeliveryStatus(current, messageId, "failed")
+				);
+			}, MESSAGE_ACK_TIMEOUT_MS);
+			pendingAckTimersRef.current.set(messageId, timer);
 		},
 		[roomId, isConnected]
 	);
@@ -296,26 +381,6 @@ export function useWebSocketChat({
 		[isConnected]
 	);
 
-	const leaveRoom = useCallback(() => {
-		if (!roomId || !isConnected) {
-			return;
-		}
-
-		const client = wsClient.current;
-		client.send("leave_room", {
-			room_id: roomId,
-		});
-
-		activeRoomIdRef.current = null;
-		setRoomId(null);
-		setPartnerLeft(false);
-		setMessages([]);
-		setNextCursor(null);
-		setHasMoreMessages(false);
-		hasJoinedRoomRef.current = null;
-		invalidateUserState();
-	}, [roomId, isConnected, invalidateUserState]);
-
 	return {
 		messages,
 		sendMessage,
@@ -326,7 +391,6 @@ export function useWebSocketChat({
 		isLoadingOlder,
 		loadOlderError,
 		loadOlderMessages,
-		leaveRoom,
 		joinRoom,
 	};
 }

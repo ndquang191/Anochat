@@ -144,6 +144,13 @@ func (r *roomRepoStub) FindActiveByUserID(context.Context, uuid.UUID) (*chat.Roo
 	return r.room, nil
 }
 
+func (r *roomRepoStub) ListActive(context.Context) ([]*chat.Room, error) {
+	if r.room == nil {
+		return nil, nil
+	}
+	return []*chat.Room{r.room}, nil
+}
+
 func (r *roomRepoStub) Create(context.Context, *chat.Room) error {
 	return nil
 }

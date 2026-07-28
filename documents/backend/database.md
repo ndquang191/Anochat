@@ -49,6 +49,25 @@ A room is **active** when `ended_at IS NULL`.
 
 ---
 
+## `active_room_members`
+
+Database-enforced ownership for active rooms. These rows are inserted in the
+same transaction as the room and removed in the transaction that ends it.
+
+```sql
+user_id    UUID        PK, FK → users.id (CASCADE)
+room_id    UUID        FK → rooms.id (CASCADE)
+created_at TIMESTAMPTZ not null
+```
+
+The `rooms_active_membership_trigger` inserts/removes these rows whenever a room
+is created, ended, or changes participants. Because `user_id` is the primary
+key, PostgreSQL rejects any concurrent room creation that would place one user
+in two active rooms, regardless of whether that user appears as `user1_id` or
+`user2_id`. This also protects direct SQL writes that bypass the Go repository.
+
+---
+
 ## `messages`
 
 ```sql
@@ -94,6 +113,21 @@ created_at       TIMESTAMP   autoCreateTime
 
 ## Notes
 
-- No `queues` table — the matchmaking queue is a Redis sorted set (`queue:waiting`, score = join timestamp ms).
+- No `queues` table — the matchmaking queue is a Redis sorted set
+  (`queue:waiting`, score = join timestamp ms). In-flight matches use
+  token-owned, 30-second Redis reservations until room creation is finalized.
 - `rooms` has no `category`, `is_sensitive`, or `is_deleted` columns.
 - `profiles` has no `city` column — removed in an earlier refactor.
+
+## Migrations
+
+Schema changes are versioned SQL files in `api/pkg/database/migrations` and are
+recorded in `schema_migrations`. Each migration runs in a transaction under a
+PostgreSQL advisory lock. Run them explicitly before the API:
+
+```bash
+cd api
+go run ./cmd/migrate
+```
+
+The API server no longer runs `AutoMigrate` during startup.

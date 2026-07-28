@@ -34,9 +34,10 @@ var (
 	ErrNotRoomMember = &AppError{HTTPStatus: http.StatusForbidden, Message: "Bạn không phải thành viên của phòng chat này"}
 
 	// Queue
-	ErrHasActiveRoom  = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Bạn đang có phòng chat đang hoạt động, vui lòng rời phòng trước khi tham gia hàng chờ"}
-	ErrAlreadyInQueue = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Bạn đã ở trong hàng chờ rồi"}
-	ErrNotInQueue     = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Bạn không có trong hàng chờ"}
+	ErrHasActiveRoom   = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Bạn đang có phòng chat đang hoạt động, vui lòng rời phòng trước khi tham gia hàng chờ"}
+	ErrAlreadyInQueue  = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Bạn đã ở trong hàng chờ rồi"}
+	ErrMatchInProgress = &AppError{HTTPStatus: http.StatusConflict, Message: "Yêu cầu ghép đôi của bạn đang được xử lý"}
+	ErrNotInQueue      = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Bạn không có trong hàng chờ"}
 
 	// Input / general
 	ErrInvalidBody     = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Dữ liệu gửi lên không hợp lệ"}

@@ -13,6 +13,7 @@ import { useQueue } from "@/hooks/use-queue";
 import { playMatchSound } from "@/hooks/use-sound-notification";
 import { BannedNotice } from "@/components/chat/banned-notice";
 import { GenericErrorState } from "@/components/generic-error-state";
+import { toast } from "sonner";
 
 function RippleEffect({ active, onClick }: { active: boolean; onClick: () => void }) {
 	return (
@@ -140,14 +141,20 @@ const Page = () => {
 		);
 	}
 
-	const handleCTA = () => {
+	const handleCTA = async () => {
 		if (isQueueLoading) return;
-		setShowEndedChat(false);
-		if (inQueue) {
-			leaveQueue();
-			return;
+
+		try {
+			setShowEndedChat(false);
+			if (inQueue) {
+				await leaveQueue();
+				return;
+			}
+			await joinQueue();
+		} catch (error) {
+			console.error("Queue operation failed:", error);
+			toast.error(error instanceof Error ? error.message : t("somethingWentWrong"));
 		}
-		joinQueue();
 	};
 
 	return (

@@ -21,6 +21,9 @@ frontend/yarn-error.log*
 api/bin/
 api/dist/
 api/tmp/
+api/main
+api/server
+api/reset
 api/*.exe
 api/*.exe~
 api/*.dll

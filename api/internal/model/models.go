@@ -55,6 +55,18 @@ type Room struct {
 	Messages []Message `gorm:"foreignKey:RoomID;constraint:OnDelete:CASCADE" json:"messages,omitempty"`
 }
 
+// ActiveRoomMember is the database-enforced ownership record for a user who is
+// currently in a room. UserID is the primary key, so PostgreSQL rejects any
+// attempt to place the same user in two active rooms, regardless of which room
+// user column they occupy.
+type ActiveRoomMember struct {
+	UserID    uuid.UUID `gorm:"type:uuid;primaryKey" json:"user_id"`
+	RoomID    uuid.UUID `gorm:"type:uuid;not null;index" json:"room_id"`
+	CreatedAt time.Time `gorm:"type:timestamptz;not null;autoCreateTime" json:"created_at"`
+
+	Room *Room `gorm:"foreignKey:RoomID;constraint:OnDelete:CASCADE" json:"room,omitempty"`
+}
+
 // RoomSession keeps non-sensitive lifecycle data after the live room is deleted.
 type RoomSession struct {
 	RoomID         uuid.UUID  `gorm:"type:uuid;primaryKey" json:"room_id"`
@@ -123,6 +135,10 @@ func (Profile) TableName() string {
 
 func (Room) TableName() string {
 	return "rooms"
+}
+
+func (ActiveRoomMember) TableName() string {
+	return "active_room_members"
 }
 
 func (RoomSession) TableName() string {

@@ -14,11 +14,5 @@ func Database(cfg *config.Config) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	if err := database.RunMigrations(); err != nil {
-		slog.Error("Failed to run migrations", "error", err)
-		database.CloseDatabase()
-		return nil, err
-	}
-
 	return database.GetDB(), nil
 }

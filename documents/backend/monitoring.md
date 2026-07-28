@@ -11,7 +11,7 @@
 | Info | Normal operations: login, match found, room created |
 | Warn | Recoverable issues: rate limit hit, Redis error (fail-open) |
 | Error | Requires investigation: DB error, WS failure |
-| Debug | Birthday API misses, verbose queue state |
+| Debug | Verbose queue and reconnect state |
 
 ### What to log
 

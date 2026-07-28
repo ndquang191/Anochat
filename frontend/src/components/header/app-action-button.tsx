@@ -17,6 +17,8 @@ interface ButtonConfig {
 	spinning: boolean;
 }
 
+const ROOM_LEAVE_ACK_TIMEOUT_MS = 5000;
+
 export function AppActionButton() {
 	const { room, inQueue } = useAuth();
 	const { t } = useLanguage();
@@ -39,7 +41,41 @@ export function AppActionButton() {
 		if (!confirmed) return;
 
 		const client = getWebSocketClient();
-		client.send("leave_room", { room_id: room.id });
+		await new Promise<void>((resolve, reject) => {
+			const cleanup = () => {
+				clearTimeout(timeoutId);
+				client.off("room_left", handleRoomLeft);
+				client.off("room_leave_failed", handleRoomLeaveFailed);
+				client.off("disconnected", handleDisconnected);
+			};
+			const handleRoomLeft = (message: { payload: Record<string, unknown> }) => {
+				if (message.payload.room_id !== room.id) return;
+				cleanup();
+				resolve();
+			};
+			const handleRoomLeaveFailed = (message: { payload: Record<string, unknown> }) => {
+				if (message.payload.room_id && message.payload.room_id !== room.id) return;
+				cleanup();
+				reject(new Error(t("leaveChatRoomFailed")));
+			};
+			const handleDisconnected = () => {
+				cleanup();
+				reject(new Error(t("leaveChatRoomFailed")));
+			};
+
+			client.on("room_left", handleRoomLeft);
+			client.on("room_leave_failed", handleRoomLeaveFailed);
+			client.on("disconnected", handleDisconnected);
+			const timeoutId = setTimeout(() => {
+				cleanup();
+				reject(new Error(t("leaveChatRoomFailed")));
+			}, ROOM_LEAVE_ACK_TIMEOUT_MS);
+
+			if (!client.send("leave_room", { room_id: room.id })) {
+				cleanup();
+				reject(new Error(t("leaveChatRoomFailed")));
+			}
+		});
 		invalidateUserState();
 		toast.success(t("leaveChatRoomSuccess"));
 	}, [alertDialog, invalidateUserState, room, t]);
@@ -60,7 +96,9 @@ export function AppActionButton() {
 			}
 		} catch (error) {
 			console.error("Operation failed:", error);
-			toast.error(t("somethingWentWrong"));
+			toast.error(
+				error instanceof Error ? error.message : t("somethingWentWrong")
+			);
 		}
 	}, [inQueue, inRoom, isLoading, joinQueue, leaveQueue, leaveRoom, t]);
 

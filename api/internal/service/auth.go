@@ -93,11 +93,6 @@ func (s *AuthService) ProcessOAuthCallback(ctx context.Context, code string) (*O
 		return nil, err
 	}
 
-	// Auto-calculate age from Google birthday (best-effort, silently ignored if unavailable)
-	if age := s.getAgeFromGoogle(ctx, token); age != nil {
-		s.userService.UpdateProfile(ctx, user.ID, nil, nil, age, nil)
-	}
-
 	if user.Email == nil {
 		return nil, fmt.Errorf("user email is nil")
 	}
@@ -117,50 +112,6 @@ func (s *AuthService) ProcessOAuthCallback(ctx context.Context, code string) (*O
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}, nil
-}
-
-type googleBirthdayResponse struct {
-	Birthdays []struct {
-		Date struct {
-			Year  int `json:"year"`
-			Month int `json:"month"`
-			Day   int `json:"day"`
-		} `json:"date"`
-	} `json:"birthdays"`
-}
-
-func (s *AuthService) getAgeFromGoogle(ctx context.Context, token *oauth2.Token) *int {
-	client := s.oauthConfig.Client(ctx, token)
-	resp, err := client.Get("https://people.googleapis.com/v1/people/me?personFields=birthdays")
-	if err != nil {
-		slog.Debug("Failed to fetch birthday from Google People API", "error", err)
-		return nil
-	}
-	if resp.StatusCode != http.StatusOK {
-		slog.Debug("Google People API returned non-OK status", "status", resp.StatusCode)
-		return nil
-	}
-	defer resp.Body.Close()
-
-	var data googleBirthdayResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil
-	}
-
-	for _, b := range data.Birthdays {
-		if b.Date.Year <= 0 {
-			continue
-		}
-		now := time.Now()
-		age := now.Year() - b.Date.Year
-		if b.Date.Month > 0 && b.Date.Day > 0 {
-			if now.Before(time.Date(now.Year(), time.Month(b.Date.Month), b.Date.Day, 0, 0, 0, 0, time.UTC)) {
-				age--
-			}
-		}
-		return &age
-	}
-	return nil
 }
 
 func (s *AuthService) getUserInfoFromToken(ctx context.Context, token *oauth2.Token) (*identity.GoogleUserInfo, error) {

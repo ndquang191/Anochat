@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"github.com/ndquang191/Anochat/api/internal/service"
 	"github.com/ndquang191/Anochat/api/pkg/metrics"
 	"github.com/redis/go-redis/v9"
@@ -99,10 +100,18 @@ func NewHub(
 	}
 }
 
-func (h *Hub) Run() {
-	go h.runPubSubListener()
+func (h *Hub) Run(ctx context.Context) {
+	go h.runPubSubListener(ctx)
+	defer func() {
+		if err := h.pubsub.Close(); err != nil {
+			slog.Warn("Failed to close WebSocket Redis subscription", "error", err)
+		}
+		h.closeClients()
+	}()
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case client := <-h.register:
 			h.registerClient(client)
 		case client := <-h.unregister:
@@ -116,14 +125,40 @@ func (h *Hub) Run() {
 }
 
 // runPubSubListener forwards incoming Redis pub/sub messages into the deliver channel.
-func (h *Hub) runPubSubListener() {
+func (h *Hub) runPubSubListener(ctx context.Context) {
 	ch := h.pubsub.Channel()
-	for msg := range ch {
+	for {
 		select {
-		case h.deliver <- msg:
-		default:
-			slog.Warn("Hub deliver channel full, dropping Redis message", "channel", msg.Channel)
+		case <-ctx.Done():
+			return
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			select {
+			case h.deliver <- msg:
+			default:
+				slog.Warn("Hub deliver channel full, dropping Redis message", "channel", msg.Channel)
+			}
 		}
+	}
+}
+
+func (h *Hub) closeClients() {
+	h.mutex.RLock()
+	clients := make([]*Client, 0, len(h.clients))
+	for _, client := range h.clients {
+		clients = append(clients, client)
+	}
+	h.mutex.RUnlock()
+
+	for _, client := range clients {
+		_ = client.Conn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"),
+			time.Now().Add(time.Second),
+		)
+		_ = client.Conn.Close()
 	}
 }
 
