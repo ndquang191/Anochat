@@ -1,66 +1,55 @@
 # Anochat
 
-Anonymous chat application with real-time matching and messaging.
+Anonymous chat application with real-time matchmaking, WebSocket messaging,
+moderation, and horizontal backend coordination through Redis.
+
+## Features
+
+- Google OAuth 2.0 with short-lived access tokens and rotating refresh tokens
+  stored in HTTP-only cookies
+- Anonymous profiles with nickname, age, gender, and visibility controls
+- Redis-backed matchmaking with atomic reservations and stale-state
+  reconciliation
+- PostgreSQL-enforced invariant preventing one user from joining two active
+  rooms
+- Distributed WebSocket delivery through Redis pub/sub
+- Optimistic messages with server acknowledgements and cursor-based history
+- Reporting, banned-word management, user suspension, review requests, and an
+  administrator dashboard
+- Vietnamese and English UI, responsive layout, and theme preferences
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              FRONTEND (Next.js 15)                          │
-│                                                                             │
-│  ┌──────────┐  ┌──────────────┐  ┌────────────┐  ┌──────────────────────┐  │
-│  │  Pages    │  │  Contexts    │  │   Hooks    │  │   Libraries          │  │
-│  │ /login    │  │ AuthProvider │  │ useQueue   │  │ api.ts (REST)        │  │
-│  │ /callback │  │ AlertDialog  │  │ useWsChat  │  │ websocket.ts (WS)    │  │
-│  │ /  (main) │  │ AppProvider  │  │ useUserSt. │  │ query-client.ts (RQ) │  │
-│  └──────────┘  └──────────────┘  └────────────┘  └──────────────────────┘  │
-└────────────────────────┬──────────────────┬─────────────────────────────────┘
-                         │ REST (fetch)     │ WebSocket
-                         ▼                  ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            BACKEND (Go / Gin)                               │
-│                                                                             │
-│  ┌─────────────────────────── Middleware ──────────────────────────────┐    │
-│  │  CORS  →  Rate Limit (Redis)  →  Auth (JWT cookie)                 │    │
-│  └────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌────────────┐  ┌───────────────┐      │
-│  │ AuthHandler  │  │ UserHandler │  │QueueHandler│  │  WS Handler   │      │
-│  └──────┬──────┘  └──────┬──────┘  └─────┬──────┘  └───────┬───────┘      │
-│         │                │               │                  │               │
-│  ┌──────▼──────┐  ┌──────▼──────┐  ┌─────▼──────┐  ┌───────▼───────┐      │
-│  │ AuthService │  │ UserService │  │QueueService│  │  WebSocket    │      │
-│  │ (OAuth+JWT) │  │             │  │  (Redis)   │◄─┤  Hub          │      │
-│  └──────┬──────┘  └──────┬──────┘  └─────┬──────┘  │  (goroutine)  │      │
-│         │                │               │          └───────┬───────┘      │
-│  ┌──────▼──────────────▼───────────────▼──────────────────▼────────┐       │
-│  │              Repositories (GORM)                                 │       │
-│  │  UserRepo  │  ProfileRepo  │  RoomRepo  │  MessageRepo          │       │
-│  └──────────────────────────┬────────────────────────────────────--┘       │
-└─────────────────────────────┼───────────────────────────────────────────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              ▼                               ▼
-     ┌────────────────┐              ┌────────────────────────────┐
-     │  PostgreSQL     │              │  Redis                     │
-     │  Users          │              │  rate limit: rl:{ip}       │
-     │  Profiles       │              │  msg rate:  msgrl:{userID} │
-     │  Rooms          │              │  refresh:   refresh:{hash} │
-     │  Messages       │              │  queue:     queue:waiting  │
-     └────────────────┘              │  pub/sub:   room:{roomID}  │
-                                     │             user:{userID}  │
-                                     └────────────────────────────┘
+Browser
+  ├── HTTPS / REST ────────┐
+  └── Secure WebSocket ────┤
+                           ▼
+                 Next.js frontend
+                           │
+                           ▼
+                  Go API (Gin)
+             handler → service → repository
+                    │
+          ┌─────────┴──────────┐
+          ▼                    ▼
+       Redis               PostgreSQL
+       queue               users and profiles
+       reservations        rooms and messages
+       rate limits         moderation evidence
+       refresh sessions    room lifecycle records
+       pub/sub
 ```
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Next.js 15, React 19, React Query, TypeScript |
+| Frontend | Next.js 15, React 19, TanStack Query 5, TypeScript |
 | Backend | Go, Gin, GORM, Gorilla WebSocket |
 | Database | PostgreSQL |
-| Cache / Broker | Redis (rate limiting, auth tokens, queue, pub/sub) |
-| Auth | Google OAuth 2.0, JWT (HTTP-only `access_token` cookie) |
+| Coordination | Redis (queue, reservations, rate limits, refresh sessions, pub/sub) |
+| Auth | Google OAuth 2.0, JWT access and rotating refresh cookies |
 | Logging | Zap (via slog interface) |
 
 ## Data Flow
@@ -70,17 +59,14 @@ QueryClientProvider
   └── ErrorBoundary
        └── AuthProvider ← useUserState() ← GET /user/state (cached)
             └── AlertDialogProvider
-                 ├── Sidebar     (reads same cached query)
-                 ├── Header      (invalidates on actions)
+                 ├── AppShellSidebar (reads the shared query)
+                 ├── AppHeader       (account and navigation actions)
                  └── Page        (useQueue + useWebSocketChat)
 ```
 
-**React Query cache keys:**
-
-| Key | Behavior |
-|-----|----------|
-| `["user-state"]` | staleTime 30s, shared by AuthProvider + Sidebar |
-| `["queue-status"]` | refetchInterval 5s while in queue |
+The `["user-state"]` query has a 30-second `staleTime` and is shared by the auth
+provider, sidebar, and chat page. Queue actions invalidate this query; match
+notifications update the client through WebSocket.
 
 ## Queue Matching
 
@@ -128,24 +114,46 @@ local client joins and unsubscribed when the last local client leaves.
 ## Database Schema
 
 ```
-Users ──┐     Profiles (1:1)
-        ├──── Rooms (user1_id, user2_id)
-        │       └──── ActiveRoomMembers (unique user_id)
-        └──── Messages (sender_id) ──── Rooms (room_id)
+Users ── Profiles (1:1)
+  ├── Rooms ── ActiveRoomMembers (unique user_id)
+  │     └── Messages
+  ├── Reports ── ReportMessages
+  └── BannedWords (admin-managed)
 ```
+
+`RoomSessions` preserve non-message lifecycle statistics independently of rooms.
 
 ## Getting Started
 
 ### Prerequisites
 
 - Go 1.26.5
-- Bun 1.3+
-- PostgreSQL
-- Redis
+- Bun 1.3.14
+- Docker with Compose v2 (recommended for local PostgreSQL and Redis)
 
-### Backend
+### Quick Start
+
+`start.sh` starts local PostgreSQL and Redis, creates development env files when
+missing, applies migrations, and runs both applications:
 
 ```bash
+./start.sh
+```
+
+Open `http://localhost:3000`. The example backend configuration enables the
+development-only `Dev A` and `Dev B` logins, so Google OAuth credentials are not
+required for local testing.
+
+Stop the application processes with `Ctrl+C`, then stop local infrastructure:
+
+```bash
+./end.sh
+```
+
+### Manual Backend
+
+```bash
+docker compose up -d --wait postgres redis
 cd api
 cp .env.example .env    # edit with your credentials
 go run ./cmd/migrate
@@ -156,7 +164,7 @@ Migrations are embedded, versioned SQL files under `api/pkg/database/migrations`
 The production Compose stack runs the one-shot `migrate` service successfully
 before starting the API.
 
-### Frontend
+### Manual Frontend
 
 ```bash
 cd frontend
@@ -171,13 +179,18 @@ See `api/.env.example` and `frontend/.env.example` for the complete schemas.
 The backend loads `api/.env` for local development; deployed environments should
 inject the same variables through their secret/configuration manager.
 
+`SERVER_ENV` must be `development`, `test`, or `production`. Existing process
+environment variables take precedence over `api/.env`. Next.js exposes
+`NEXT_PUBLIC_*` values at build time, so production frontend values must be set
+before `bun run build`.
+
 ### Docker Compose
 
-`docker-compose.yml` is the local development stack and binds all service ports
-to localhost. Start it with:
+`docker-compose.yml` runs only local PostgreSQL and Redis and binds their ports
+to localhost:
 
 ```bash
-OAUTH_JWT_SECRET=local-development-secret docker compose up --build
+docker compose up -d --wait postgres redis
 ```
 
 Production uses external PostgreSQL and Redis services:
@@ -187,9 +200,18 @@ cp .env.production.example .env.production
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
 ```
 
-Add `--profile monitoring` to the production command to enable Prometheus and
-Grafana. Production services bind only the API and optional Grafana ports to
-localhost for a reverse proxy.
+The production Compose file builds and deploys the backend only. Deploy the
+Next.js frontend separately with production `NEXT_PUBLIC_API_URL`,
+`NEXT_PUBLIC_SITE_URL`, and `NEXT_PUBLIC_DEV_AUTH_ENABLED=false`.
+
+The one-shot `migrate` service must complete before the API starts. Confirm the
+deployment through the public reverse proxy:
+
+```bash
+curl https://api.example.com/healthz
+```
+
+The endpoint returns `503` if PostgreSQL or Redis is unavailable.
 
 ### Reset the Local Database
 
@@ -213,9 +235,41 @@ UPDATE users SET is_admin = true WHERE email = 'admin@example.com';
 
 Reload the application after changing the role.
 
+## Quality Checks
+
+```bash
+# Backend
+cd api
+go test ./...
+go vet ./...
+go build -o /tmp/anochat-server ./cmd/server
+go build -o /tmp/anochat-migrate ./cmd/migrate
+
+# Frontend
+cd frontend
+bun install --frozen-lockfile
+bun run test
+bun run lint
+bun run build
+```
+
+GitHub Actions runs these checks for every push and pull request. It also
+validates both Compose files and builds the API Docker image. The repository
+currently provides CI only; deployment to a VPS is still a manual operation.
+
+## Documentation
+
+General, code-adjacent documentation remains in [`documents/`](documents/):
+
+- REST and WebSocket API reference
+- Database schema
+- Backend and frontend development rules
+- Monitoring and testing guides
+
 ## Scaling
 
-The backend is stateless with respect to WebSocket sessions — all shared state
-(queue, room membership, rate limits, auth tokens) lives in Redis. You can run
-multiple backend instances behind a load balancer with a single Redis node.
-Redis Cluster or Sentinel is only needed if Redis itself becomes a bottleneck.
+Each backend instance owns its local WebSocket connections. Redis coordinates
+the queue, reservations, rate limits, refresh sessions, and cross-instance
+notifications; PostgreSQL remains the source of truth for rooms, messages, and
+moderation data. Multiple API instances can therefore run behind a load
+balancer while sharing PostgreSQL and Redis.

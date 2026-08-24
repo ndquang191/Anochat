@@ -1,5 +1,9 @@
 # Monitoring & Logging Guide
 
+> Prometheus and Grafana deployment is currently disabled. The backend
+> instrumentation and configuration files are retained for a future monitoring
+> rollout; the production Compose stack runs only migration and API services.
+
 ## Logging
 
 **Library:** `log/slog` (structured), backed by Zap
