@@ -1,0 +1,132 @@
+name: Deploy API
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: GitHub environment to deploy
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+      image_tag:
+        description: Existing image tag to deploy (use a commit SHA for rollback)
+        required: false
+        type: string
+
+concurrency:
+  group: production-api
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/anochat-api
+
+jobs:
+  prepare:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.release.outputs.image_tag }}
+      should_build: ${{ steps.release.outputs.should_build }}
+      target: ${{ steps.release.outputs.target }}
+    steps:
+      - id: release
+        env:
+          REQUESTED_TAG: ${{ inputs.image_tag }}
+          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+          REQUESTED_TARGET: ${{ inputs.target }}
+        run: |
+          if [ -n "$REQUESTED_TARGET" ]; then
+            echo "target=$REQUESTED_TARGET" >> "$GITHUB_OUTPUT"
+          else
+            echo "target=production" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "$REQUESTED_TAG" ]; then
+            echo "image_tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          elif [ -n "$VERIFIED_SHA" ]; then
+            echo "image_tag=$VERIFIED_SHA" >> "$GITHUB_OUTPUT"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "image_tag=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.image_tag }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: [prepare, publish]
+    if: always() && needs.prepare.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ needs.prepare.outputs.target }}
+      url: ${{ vars.API_PUBLIC_URL }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Upload deployment configuration
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DEPLOY_ENV_FILE: ${{ secrets.DEPLOY_ENV_FILE }}
+        run: |
+          printf '%s\n' "$DEPLOY_ENV_FILE" > /tmp/anochat-deploy.env
+          chmod 600 /tmp/anochat-deploy.env
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" 'install -m 700 -d /opt/anochat'
+          scp -P "$VPS_PORT" docker-compose.prod.yml "$VPS_USER@$VPS_HOST:/opt/anochat/docker-compose.prod.yml"
+          scp -P "$VPS_PORT" /tmp/anochat-deploy.env "$VPS_USER@$VPS_HOST:/opt/anochat/.env.production"
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" 'chmod 600 /opt/anochat/.env.production'
+      - name: Deploy and verify
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          IMAGE: ghcr.io/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image_tag }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "docker login ghcr.io --username '$GHCR_USERNAME' --password-stdin"
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd /opt/anochat && ANOCHAT_API_IMAGE='$IMAGE' docker compose --env-file .env.production -f docker-compose.prod.yml pull && ANOCHAT_API_IMAGE='$IMAGE' docker compose --env-file .env.production -f docker-compose.prod.yml up -d --wait"
+          curl --fail --retry 6 --retry-delay 5 --retry-all-errors "${{ vars.API_PUBLIC_URL }}/healthz"

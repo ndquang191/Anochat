@@ -5,6 +5,7 @@
 - **api.md** — REST and WebSocket API reference
 - **database.md** — Database schema
 - **monitoring.md** — Logging and metrics guide
+- **deployment.md** — Production deployment, rollback, and incident runbook
 - **development-rules.md** — Go coding standards
 - **testing.md** — Testing strategy and guidelines
 

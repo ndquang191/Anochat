@@ -43,14 +43,14 @@ Browser
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 15, React 19, TanStack Query 5, TypeScript |
-| Backend | Go, Gin, GORM, Gorilla WebSocket |
-| Database | PostgreSQL |
+| Layer        | Technology                                                          |
+| ------------ | ------------------------------------------------------------------- |
+| Frontend     | Next.js 15, React 19, TanStack Query 5, TypeScript                  |
+| Backend      | Go, Gin, GORM, Gorilla WebSocket                                    |
+| Database     | PostgreSQL                                                          |
 | Coordination | Redis (queue, reservations, rate limits, refresh sessions, pub/sub) |
-| Auth | Google OAuth 2.0, JWT access and rotating refresh cookies |
-| Logging | Zap (via slog interface) |
+| Auth         | Google OAuth 2.0, JWT access and rotating refresh cookies           |
+| Logging      | Zap (via slog interface)                                            |
 
 ## Data Flow
 
@@ -105,6 +105,7 @@ Instance 1                  Redis               Instance 2
 ```
 
 **Channel naming:**
+
 - `room:{roomID}` — broadcast to all clients in a room (excludes sender)
 - `user:{userID}` — direct notification to a specific user (match_found, etc.)
 
@@ -254,8 +255,12 @@ bun run build
 ```
 
 GitHub Actions runs these checks for every push and pull request. It also
-validates both Compose files and builds the API Docker image. The repository
-currently provides CI only; deployment to a VPS is still a manual operation.
+validates both Compose files and builds the API Docker image. After CI succeeds
+on `main`, the API deployment workflow publishes an immutable GHCR image and
+deploys it through the protected `production` environment. See
+[`documents/backend/deployment.md`](documents/backend/deployment.md) for required
+secrets, approval, rollback, and incident procedures. Frontend deployment remains
+independent because its public environment values are fixed at build time.
 
 ## Documentation
 
