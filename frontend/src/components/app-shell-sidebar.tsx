@@ -2,15 +2,9 @@
 
 import * as React from "react";
 import {
-	ChevronUp,
 	Flag,
-	Languages,
 	LogOut,
 	MessageCircle,
-	Palette,
-	SlidersHorizontal,
-	Volume2,
-	VolumeX,
 	Settings,
 	Shield,
 	User,
@@ -32,15 +26,14 @@ import { cn } from "@/lib/utils";
 import { BrandLogo } from "@/components/brand-logo";
 import { useAuth } from "@/contexts/auth";
 import { useAdmin } from "@/contexts/admin";
-import { useLanguage, useTheme } from "@/contexts/theme";
+import { useLanguage } from "@/contexts/theme";
 import { moderationAPI, userAPI } from "@/lib/api";
-import { useUserState, useInvalidateUserState } from "@/hooks/queries/use-user-state";
-import { changeThemeWithTransition, ThemeToggle } from "@/components/theme-toggle";
-import { AccountSettingsDialog } from "@/components/account-settings-dialog";
 import {
-	changeLanguageWithTransition,
-	LanguageToggle,
-} from "@/components/language-toggle";
+	useUserState,
+	useInvalidateUserState,
+} from "@/hooks/queries/use-user-state";
+import { AccountSettingsDialog } from "@/components/account-settings-dialog";
+import { SidebarPreferences } from "@/components/sidebar-preferences";
 import { useAlertDialogContext } from "@/contexts/alert-dialog";
 import { toast } from "sonner";
 
@@ -66,14 +59,10 @@ const defaultUserData: UserData = {
 	isVisible: true,
 };
 
-const themeOrder = ["blue", "dark", "pink"] as const;
-const preferenceIconButtonClass =
-	"shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer";
-
 function deriveUserData(
 	user: ReturnType<typeof useAuth>["user"],
 	data: ReturnType<typeof useUserState>["data"],
-	fallbackName: string
+	fallbackName: string,
 ): UserData {
 	if (!user) return defaultUserData;
 	const profile = data?.profile;
@@ -106,9 +95,10 @@ export function AppShellSidebar({
 	const preferencesPanelId = React.useId();
 	const [reported, setReported] = React.useState(false);
 	const { isAdminOpen, setIsAdminOpen } = useAdmin();
-	const [localOverrides, setLocalOverrides] = React.useState<Partial<UserData>>({});
-	const { language, setLanguage, t } = useLanguage();
-	const { theme, setTheme, soundEnabled, toggleSound } = useTheme();
+	const [localOverrides, setLocalOverrides] = React.useState<Partial<UserData>>(
+		{},
+	);
+	const { t } = useLanguage();
 	const { logout, user, room } = useAuth();
 	const { data, isLoading } = useUserState();
 	const invalidateUserState = useInvalidateUserState();
@@ -134,17 +124,6 @@ export function AppShellSidebar({
 		if (!confirmed) return;
 
 		await logout();
-	};
-
-	const cycleTheme = (origin: HTMLElement) => {
-		const currentIndex = themeOrder.indexOf(theme);
-		const nextTheme = themeOrder[(currentIndex + 1) % themeOrder.length];
-		changeThemeWithTransition(nextTheme, theme, setTheme, origin);
-	};
-
-	const cycleLanguage = (origin: HTMLElement) => {
-		const nextLanguage = language === "vi" ? "en" : "vi";
-		changeLanguageWithTransition(nextLanguage, language, setLanguage, origin);
 	};
 
 	const getGenderDisplay = (genderValue: string) => {
@@ -237,7 +216,7 @@ export function AppShellSidebar({
 				<BrandLogo
 					className={cn(
 						"pb-2 pt-4",
-						state === "collapsed" ? "justify-center px-2" : "px-6"
+						state === "collapsed" ? "justify-center px-2" : "px-6",
 					)}
 					showSlogan={state === "expanded"}
 				/>
@@ -251,21 +230,17 @@ export function AppShellSidebar({
 										"grid transition-[grid-template-rows,opacity] duration-300 ease-out",
 										userData.isVisible
 											? "grid-rows-[1fr] opacity-100"
-											: "grid-rows-[0fr] opacity-0"
+											: "grid-rows-[0fr] opacity-0",
 									)}
 								>
 									<div className="overflow-hidden">
 										<div
 											className={cn(
 												"flex items-start justify-between gap-3 transition-transform duration-300 ease-out",
-												userData.isVisible
-													? "translate-y-0"
-													: "-translate-y-2"
+												userData.isVisible ? "translate-y-0" : "-translate-y-2",
 											)}
 										>
-											<div
-												className="flex min-w-0 flex-1 flex-col gap-1"
-											>
+											<div className="flex min-w-0 flex-1 flex-col gap-1">
 												{isLoading && !data ? (
 													<Skeleton className="h-5 w-28 rounded" />
 												) : (
@@ -303,7 +278,7 @@ export function AppShellSidebar({
 								<div
 									className={cn(
 										"flex items-center justify-between rounded-md bg-muted/50 px-3 py-2 transition-[margin] duration-300 ease-out",
-										userData.isVisible ? "mt-3" : "mt-0"
+										userData.isVisible ? "mt-3" : "mt-0",
 									)}
 								>
 									<Label
@@ -330,21 +305,25 @@ export function AppShellSidebar({
 										className="flex cursor-pointer items-center gap-2 rounded-md border border-border/50 bg-background/60 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
 										title={isAdminOpen ? t("chat") : t("admin")}
 									>
-										{isAdminOpen ? <MessageCircle size={14} /> : <Shield size={14} />}
+										{isAdminOpen ? (
+											<MessageCircle size={14} />
+										) : (
+											<Shield size={14} />
+										)}
 										<span>{isAdminOpen ? t("chat") : t("admin")}</span>
 									</button>
 								)}
-							{partner && !reported && (
-								<button
-									type="button"
-									onClick={handleReport}
-									className="flex cursor-pointer items-center gap-2 rounded-md border border-border/50 bg-background/60 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
-									title={t("reportUser")}
-								>
-									<Flag size={14} />
-									<span>{t("reportUser")}</span>
-								</button>
-							)}
+								{partner && !reported && (
+									<button
+										type="button"
+										onClick={handleReport}
+										className="flex cursor-pointer items-center gap-2 rounded-md border border-border/50 bg-background/60 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
+										title={t("reportUser")}
+									>
+										<Flag size={14} />
+										<span>{t("reportUser")}</span>
+									</button>
+								)}
 								<button
 									type="button"
 									onClick={handleLogout}
@@ -366,112 +345,11 @@ export function AppShellSidebar({
 					{state === "expanded" && (
 						<SidebarGroup className="mt-auto">
 							<SidebarGroupContent>
-								<div className="mx-3 mb-3 mt-auto">
-									<div
-										className={cn(
-											"grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out",
-											isPreferencesOpen
-												? "mb-2 grid-rows-[1fr] opacity-100"
-												: "mb-0 grid-rows-[0fr] opacity-0"
-										)}
-									>
-										<div className="overflow-hidden">
-											<div
-												id={preferencesPanelId}
-												aria-hidden={!isPreferencesOpen}
-												inert={!isPreferencesOpen}
-												className="rounded-md border border-border/50 bg-card p-4 shadow-sm"
-											>
-												<div className="flex flex-col gap-3">
-													<div className="flex items-center justify-start gap-3">
-														<button
-															type="button"
-															onClick={(event) =>
-																cycleTheme(event.currentTarget)
-															}
-															className={preferenceIconButtonClass}
-															aria-label={t("theme")}
-															title={t("theme")}
-														>
-															<Palette size={16} aria-hidden="true" />
-														</button>
-														<ThemeToggle />
-													</div>
-													<div className="flex items-center justify-start gap-3">
-														<button
-															type="button"
-															onClick={(event) =>
-																cycleLanguage(event.currentTarget)
-															}
-															className={preferenceIconButtonClass}
-															aria-label={t("interfaceLanguage")}
-															title={t("interfaceLanguage")}
-														>
-															<Languages size={16} aria-hidden="true" />
-														</button>
-														<LanguageToggle />
-													</div>
-													<div className="flex min-h-8 items-center justify-start gap-3">
-														<button
-															type="button"
-															onClick={toggleSound}
-															className={preferenceIconButtonClass}
-															aria-label={
-																soundEnabled
-																	? t("turnOffSound")
-																	: t("turnOnSound")
-															}
-															title={
-																soundEnabled
-																	? t("turnOffSound")
-																	: t("turnOnSound")
-															}
-														>
-															{soundEnabled ? (
-																<Volume2 size={16} aria-hidden="true" />
-															) : (
-																<VolumeX size={16} aria-hidden="true" />
-															)}
-														</button>
-														<Switch
-															checked={soundEnabled}
-															onCheckedChange={() => toggleSound()}
-															aria-label={
-																soundEnabled
-																	? t("turnOffSound")
-																	: t("turnOnSound")
-															}
-															title={
-																soundEnabled
-																	? t("turnOffSound")
-																	: t("turnOnSound")
-															}
-														/>
-													</div>
-												</div>
-											</div>
-										</div>
-									</div>
-									<button
-										type="button"
-										onClick={() => setIsPreferencesOpen((open) => !open)}
-										aria-expanded={isPreferencesOpen}
-										aria-controls={preferencesPanelId}
-										className="flex w-full cursor-pointer items-center justify-between rounded-md border border-border/50 bg-background/60 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-									>
-										<span className="flex items-center gap-2">
-											<SlidersHorizontal size={16} />
-											<span>{t("settings")}</span>
-										</span>
-										<ChevronUp
-											size={16}
-											className={cn(
-												"transition-transform duration-200",
-												isPreferencesOpen && "rotate-180"
-											)}
-										/>
-									</button>
-								</div>
+								<SidebarPreferences
+									open={isPreferencesOpen}
+									onOpenChange={setIsPreferencesOpen}
+									panelId={preferencesPanelId}
+								/>
 							</SidebarGroupContent>
 						</SidebarGroup>
 					)}
