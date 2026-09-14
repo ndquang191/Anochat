@@ -1,6 +1,12 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+	createContext,
+	useContext,
+	useEffect,
+	useState,
+	type ReactNode,
+} from "react";
 import { setSoundEnabled } from "@/hooks/use-sound-notification";
 import {
 	isLanguage,
@@ -10,6 +16,7 @@ import {
 	translate,
 } from "@/lib/i18n";
 import { setCookie } from "@/lib/cookies";
+import { secureStorage } from "@/lib/secure-storage";
 
 export type Theme = "blue" | "dark" | "pink";
 
@@ -49,18 +56,48 @@ export function ThemeProvider({
 	useEffect(() => {
 		try {
 			const savedTheme = localStorage.getItem("theme") as Theme | null;
-			if (savedTheme === "dark" || savedTheme === "pink" || savedTheme === "blue") {
+			if (
+				savedTheme === "dark" ||
+				savedTheme === "pink" ||
+				savedTheme === "blue"
+			) {
 				setThemeState(savedTheme);
 				applyTheme(savedTheme);
 			}
-
-			const savedSound = localStorage.getItem("soundEnabled");
-			if (savedSound === "false") {
-				setSoundEnabledState(false);
-				setSoundEnabled(false);
-			}
 		} catch {}
 
+		let active = true;
+		void secureStorage
+			.get<boolean>("sound-enabled")
+			.then(async (savedSound) => {
+				let resolvedSound = savedSound;
+				let legacySound: string | null = null;
+				try {
+					legacySound = localStorage.getItem("soundEnabled");
+				} catch {}
+				if (
+					resolvedSound === null &&
+					(legacySound === "true" || legacySound === "false")
+				) {
+					resolvedSound = legacySound === "true";
+					if (await secureStorage.set("sound-enabled", resolvedSound)) {
+						try {
+							localStorage.removeItem("soundEnabled");
+						} catch {}
+					}
+				} else if (savedSound !== null) {
+					try {
+						localStorage.removeItem("soundEnabled");
+					} catch {}
+				}
+				if (active && typeof resolvedSound === "boolean") {
+					setSoundEnabledState(resolvedSound);
+					setSoundEnabled(resolvedSound);
+				}
+			});
+		return () => {
+			active = false;
+		};
 	}, []);
 
 	const setTheme = (value: Theme) => {
@@ -85,9 +122,7 @@ export function ThemeProvider({
 		const next = !soundEnabled;
 		setSoundEnabledState(next);
 		setSoundEnabled(next);
-		try {
-			localStorage.setItem("soundEnabled", String(next));
-		} catch {}
+		void secureStorage.set("sound-enabled", next);
 	};
 
 	return (

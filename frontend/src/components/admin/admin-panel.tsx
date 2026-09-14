@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BannedWordsTab } from "./banned-words-tab";
 import { ReportsTab } from "./reports-tab";
 import { BannedUsersTab } from "./banned-users-tab";
 import { OverviewTab } from "./overview-tab";
 import { useLanguage } from "@/contexts/theme";
 import type { TranslationKey } from "@/lib/i18n";
+import { secureStorage } from "@/lib/secure-storage";
 
 type Tab = "overview" | "words" | "reports" | "banned";
 
@@ -17,21 +18,53 @@ const TABS: { id: Tab; labelKey: TranslationKey }[] = [
 	{ id: "words", labelKey: "adminBannedWords" },
 ];
 
+function readLegacyTab(): Tab | null {
+	try {
+		return localStorage.getItem("admin_active_tab") as Tab | null;
+	} catch {
+		return null;
+	}
+}
+
+function removeLegacyTab() {
+	try {
+		localStorage.removeItem("admin_active_tab");
+	} catch {}
+}
+
 export function AdminPanel() {
 	const { t } = useLanguage();
-	const [activeTab, setActiveTab] = useState<Tab>(() => {
-		if (typeof window !== "undefined") {
-			const savedTab = localStorage.getItem("admin_active_tab") as Tab | null;
-			return savedTab && TABS.some((tab) => tab.id === savedTab)
-				? savedTab
-				: "overview";
-		}
-		return "overview";
-	});
+	const [activeTab, setActiveTab] = useState<Tab>("overview");
+
+	useEffect(() => {
+		let active = true;
+		void secureStorage.get<Tab>("admin-active-tab").then(async (savedTab) => {
+			let resolvedTab = savedTab;
+			const legacyTab = readLegacyTab();
+			if (
+				!resolvedTab &&
+				legacyTab &&
+				TABS.some((tab) => tab.id === legacyTab)
+			) {
+				resolvedTab = legacyTab;
+				if (await secureStorage.set("admin-active-tab", legacyTab)) {
+					removeLegacyTab();
+				}
+			} else if (savedTab) {
+				removeLegacyTab();
+			}
+			if (active && resolvedTab && TABS.some((tab) => tab.id === resolvedTab)) {
+				setActiveTab(resolvedTab);
+			}
+		});
+		return () => {
+			active = false;
+		};
+	}, []);
 
 	const handleTabChange = (tab: Tab) => {
 		setActiveTab(tab);
-		localStorage.setItem("admin_active_tab", tab);
+		void secureStorage.set("admin-active-tab", tab);
 	};
 
 	return (
