@@ -148,7 +148,7 @@ Upgrade to WebSocket. Requires valid `access_token` cookie.
 
 ## Admin Endpoints
 
-All require auth (no separate admin role enforced yet).
+All require an authenticated, active user with the administrator role.
 
 | Method | Path | Description |
 |--------|------|-------------|

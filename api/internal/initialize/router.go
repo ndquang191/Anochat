@@ -150,6 +150,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 			active.POST("/report", moderationHandler.CreateReport)
 
 			admin := active.Group("/admin")
+			admin.Use(middleware.RequireAdmin())
 			{
 				admin.GET("/overview", adminStatsHandler.GetOverview)
 				admin.GET("/words", moderationHandler.ListWords)
