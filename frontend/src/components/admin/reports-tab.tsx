@@ -6,8 +6,7 @@ import { moderationAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
 import type { ReportGroupDTO, ReportGroupPageDTO } from "@/types";
@@ -40,33 +39,33 @@ export function ChatViewer({
 	});
 
 	if (isLoading)
-		return <p className="text-sm text-muted-foreground p-4">{t("loading")}</p>;
+		return <p className="px-6 py-8 text-center text-sm text-muted-foreground">{t("loading")}</p>;
 	if (messages.length === 0)
 		return (
-			<p className="text-sm text-muted-foreground p-4">
+			<p className="px-6 py-8 text-center text-sm text-muted-foreground">
 				{t("adminNoEvidenceMessages")}
 			</p>
 		);
 
 	return (
-		<ScrollArea className="h-[380px] pr-2">
-			<div className="flex flex-col gap-0.5">
+		<div className="max-h-[min(55vh,380px)] overflow-y-auto px-6 py-3">
+			<div className="flex flex-col gap-2">
 				{messages.map((m) => {
 					const isReported = m.sender_id === reportedUserId;
 					return (
 						<div
 							key={m.id}
-							className={`flex ${isReported ? "justify-end" : "justify-start"} py-0.5`}
+							className={`flex ${isReported ? "justify-end" : "justify-start"}`}
 						>
 							<div
-								className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${
+								className={`max-w-[82%] rounded-2xl border px-3.5 py-2.5 text-sm shadow-xs ${
 									isReported
-										? "bg-secondary text-secondary-foreground"
-										: "bg-muted text-muted-foreground"
+										? "rounded-br-md border-destructive/20 bg-destructive/10 text-foreground"
+										: "rounded-bl-md border-border/60 bg-muted/70 text-foreground"
 								}`}
 							>
-								<p>{m.content}</p>
-								<p className="text-xs opacity-50 mt-0.5">
+								<p className="break-words leading-relaxed">{m.content}</p>
+								<p className={`mt-1 text-[11px] text-muted-foreground ${isReported ? "text-right" : "text-left"}`}>
 									{new Date(m.created_at * 1000).toLocaleTimeString(locale)}
 								</p>
 							</div>
@@ -74,7 +73,7 @@ export function ChatViewer({
 					);
 				})}
 			</div>
-		</ScrollArea>
+		</div>
 	);
 }
 
@@ -179,12 +178,10 @@ export function ReportsTab() {
 			)}
 
 			<Dialog open={!!viewing} onOpenChange={(open) => !open && setViewing(null)}>
-				<DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
-					<DialogHeader>
-						<DialogTitle>
-							{viewing?.reported_user_name ?? viewing?.reported_user_id.slice(0, 8)}
-						</DialogTitle>
-					</DialogHeader>
+				<DialogContent className="max-h-[90vh] gap-0 overflow-hidden p-0 sm:max-w-lg">
+					<DialogTitle className="sr-only">
+						{viewing?.reported_user_name ?? viewing?.reported_user_id.slice(0, 8)}
+					</DialogTitle>
 
 					{viewing && (
 						<>
@@ -192,7 +189,7 @@ export function ReportsTab() {
 								reportId={viewing.latest_report_id}
 								reportedUserId={viewing.reported_user_id}
 							/>
-							<div className="pt-2 border-t">
+							<div className="shrink-0 border-t bg-background px-6 py-4">
 								<Button
 									className="w-full"
 									onClick={() => banMutation.mutate(viewing.reported_user_id)}

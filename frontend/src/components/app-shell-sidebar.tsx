@@ -44,6 +44,7 @@ interface UserData {
 	nickname: string;
 	nicknameChangeAvailableAt: number | null;
 	age: number | null;
+	birthYear: number | null;
 	gender: string;
 	isVisible: boolean;
 }
@@ -55,6 +56,7 @@ const defaultUserData: UserData = {
 	nickname: "",
 	nicknameChangeAvailableAt: null,
 	age: null,
+	birthYear: null,
 	gender: "other",
 	isVisible: true,
 };
@@ -67,6 +69,9 @@ function deriveUserData(
 	if (!user) return defaultUserData;
 	const profile = data?.profile;
 	const nickname = profile?.nickname?.trim() ?? "";
+	const birthYear =
+		profile?.birth_year ??
+		(profile?.age == null ? null : new Date().getFullYear() - profile.age);
 	return {
 		id: user.id,
 		email: user.email || "",
@@ -74,6 +79,7 @@ function deriveUserData(
 		nickname,
 		nicknameChangeAvailableAt: profile?.nickname_change_available_at ?? null,
 		age: profile?.age ?? null,
+		birthYear,
 		gender:
 			profile?.is_male === true
 				? "male"
@@ -90,6 +96,7 @@ export function AppShellSidebar({
 }: React.HTMLAttributes<HTMLDivElement>) {
 	const { state } = useSidebar();
 	const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
+	const autoOpenedSettingsForUser = React.useRef<string | null>(null);
 	const [isPreferencesOpen, setIsPreferencesOpen] = React.useState(false);
 	const [isVisibilityUpdating, setIsVisibilityUpdating] = React.useState(false);
 	const preferencesPanelId = React.useId();
@@ -99,7 +106,7 @@ export function AppShellSidebar({
 		{},
 	);
 	const { t } = useLanguage();
-	const { logout, user, room } = useAuth();
+	const { logout, user, room, isBanned } = useAuth();
 	const { data, isLoading } = useUserState();
 	const invalidateUserState = useInvalidateUserState();
 	const alertDialog = useAlertDialogContext();
@@ -112,6 +119,23 @@ export function AppShellSidebar({
 	React.useEffect(() => {
 		setReported(false);
 	}, [room?.id]);
+
+	React.useEffect(() => {
+		if (isBanned) {
+			setIsSettingsOpen(false);
+			return;
+		}
+		if (
+			user &&
+			autoOpenedSettingsForUser.current !== user.id &&
+			!isLoading &&
+			data?.profile?.birth_year == null &&
+			data?.profile?.age == null
+		) {
+			autoOpenedSettingsForUser.current = user.id;
+			setIsSettingsOpen(true);
+		}
+	}, [data?.profile?.age, data?.profile?.birth_year, isBanned, isLoading, user]);
 
 	const handleLogout = async () => {
 		const confirmed = await alertDialog.open({
@@ -149,6 +173,7 @@ export function AppShellSidebar({
 				is_hidden: !isVisible,
 			});
 			invalidateUserState();
+			toast.success(t(isVisible ? "profileMadePublic" : "profileHidden"));
 		} catch {
 			setLocalOverrides((prev) => ({
 				...prev,
@@ -162,12 +187,16 @@ export function AppShellSidebar({
 
 	const handleSaveSettings = async (newSettings: {
 		nickname: string;
-		age: number | null;
+		birthYear: number | null;
 		gender: string;
 	}) => {
 		const response = await userAPI.updateProfile({
 			nickname: newSettings.nickname,
-			age: newSettings.age,
+			birth_year: newSettings.birthYear,
+			age:
+				newSettings.birthYear === null
+					? null
+					: new Date().getFullYear() - newSettings.birthYear,
 			is_male:
 				newSettings.gender === "male"
 					? true
@@ -184,7 +213,11 @@ export function AppShellSidebar({
 				response.data?.nickname_change_available_at ??
 				prev.nicknameChangeAvailableAt ??
 				null,
-			age: newSettings.age,
+			age:
+				newSettings.birthYear === null
+					? null
+					: new Date().getFullYear() - newSettings.birthYear,
+			birthYear: newSettings.birthYear,
 			gender: newSettings.gender,
 		}));
 		invalidateUserState();
@@ -359,12 +392,12 @@ export function AppShellSidebar({
 			</Sidebar>
 
 			<AccountSettingsDialog
-				open={isSettingsOpen}
+				open={isSettingsOpen && !isBanned}
 				onOpenChange={setIsSettingsOpen}
 				initialData={{
 					nickname: userData.nickname,
 					nicknameChangeAvailableAt: userData.nicknameChangeAvailableAt,
-					age: userData.age,
+					birthYear: userData.birthYear,
 					gender: userData.gender,
 				}}
 				onSave={handleSaveSettings}

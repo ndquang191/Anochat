@@ -132,7 +132,7 @@ func DisplayNameChangeAvailableAt(profile *identity.Profile, now time.Time) *tim
 	return &next
 }
 
-func (s *UserService) UpdateProfile(ctx context.Context, userID uuid.UUID, nickname *string, isMale *bool, age *int, isHidden *bool) (*identity.Profile, error) {
+func (s *UserService) UpdateProfile(ctx context.Context, userID uuid.UUID, nickname *string, isMale *bool, birthYear *int, isHidden *bool) (*identity.Profile, error) {
 	profile, err := s.GetProfile(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -168,8 +168,8 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID uuid.UUID, nickn
 	if isMale != nil {
 		profile.IsMale = isMale
 	}
-	if age != nil {
-		profile.Age = age
+	if birthYear != nil {
+		profile.BirthYear = birthYear
 	}
 	if isHidden != nil {
 		profile.IsHidden = *isHidden

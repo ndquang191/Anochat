@@ -7,7 +7,6 @@ import { ShineBorder } from "@/components/ui/shine-border";
 import { Button } from "@/components/ui/button";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, absoluteUrl } from "@/lib/site";
 
-const pageTitle = "Chat ẩn danh với người lạ tại Việt Nam";
 const pageDescription =
 	"AnoChat là landing page cho nhu cầu anonymous chat VN: kết nối ngẫu nhiên, nói chuyện với người lạ, giữ trải nghiệm riêng tư và vào phòng chat rất nhanh.";
 
@@ -51,7 +50,7 @@ const faqs = [
 const keywordPills = ["Ẩn danh mặc định", "Ghép đôi ngẫu nhiên", "Rời đi bất cứ lúc nào"];
 
 export const metadata: Metadata = {
-	title: pageTitle,
+	title: SITE_NAME,
 	description: pageDescription,
 	keywords: [
 		"anonymous chat VN",
@@ -68,7 +67,7 @@ export const metadata: Metadata = {
 		follow: true,
 	},
 	openGraph: {
-		title: `${pageTitle} | ${SITE_NAME}`,
+		title: SITE_NAME,
 		description: pageDescription,
 		url: absoluteUrl("/home"),
 		siteName: SITE_NAME,
@@ -83,7 +82,7 @@ export const metadata: Metadata = {
 	},
 	twitter: {
 		card: "summary",
-		title: `${pageTitle} | ${SITE_NAME}`,
+		title: SITE_NAME,
 		description: pageDescription,
 		images: [absoluteUrl("/icon.svg")],
 	},

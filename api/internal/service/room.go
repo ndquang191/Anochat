@@ -15,6 +15,11 @@ import (
 type RoomService struct {
 	roomRepo    repository.RoomRepository
 	messageRepo repository.MessageRepository
+	recordRecentPair func(context.Context, uuid.UUID, uuid.UUID)
+}
+
+func (s *RoomService) SetRecentPairRecorder(recorder func(context.Context, uuid.UUID, uuid.UUID)) {
+	s.recordRecentPair = recorder
 }
 
 func NewRoomService(roomRepo repository.RoomRepository, messageRepo repository.MessageRepository) *RoomService {
@@ -75,6 +80,9 @@ func (s *RoomService) LeaveRoom(ctx context.Context, roomID, userID uuid.UUID) e
 	now := time.Now()
 	if err := s.roomRepo.UpdateEndedAt(ctx, roomID, now); err != nil {
 		return err
+	}
+	if s.recordRecentPair != nil {
+		s.recordRecentPair(ctx, room.User1ID, room.User2ID)
 	}
 
 	go s.cleanupRoom(context.Background(), roomID)

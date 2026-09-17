@@ -23,9 +23,7 @@ export function middleware(request: NextRequest) {
     }
 
     if (!isLoggedIn) {
-        const loginUrl = new URL("/login", request.url);
-        loginUrl.searchParams.set("redirect", pathname);
-        return NextResponse.redirect(loginUrl);
+        return NextResponse.redirect(new URL("/login", request.url));
     }
 
     return NextResponse.next();

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/chat"
 	"github.com/ndquang191/Anochat/api/internal/domain/identity"
+	"github.com/ndquang191/Anochat/api/internal/domain/matching"
 	"github.com/ndquang191/Anochat/api/internal/dto"
 	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/internal/service"
@@ -37,6 +38,14 @@ func nicknameChangeAvailableAt(profile *identity.Profile) *int64 {
 	}
 	unix := next.Unix()
 	return &unix
+}
+
+func profileAge(profile *identity.Profile, now time.Time) *int {
+	if profile == nil || profile.BirthYear == nil {
+		return nil
+	}
+	age := now.Year() - *profile.BirthYear
+	return &age
 }
 
 func NewUserHandler(
@@ -94,9 +103,25 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 		resp.Profile = &dto.ProfileDTO{
 			Nickname:                  profile.Nickname,
 			NicknameChangeAvailableAt: nicknameChangeAvailableAt(profile),
-			Age:                       profile.Age,
+			Age:                       profileAge(profile, time.Now().UTC()),
+			BirthYear:                 profile.BirthYear,
 			IsMale:                    profile.IsMale,
 			IsHidden:                  profile.IsHidden,
+			MatchPreference:           profile.MatchPreference,
+		}
+		if settings, effectiveMode, settingsErr := h.queueService.MatchSettingsForProfile(c.Request.Context(), profile); settingsErr == nil {
+			matchSettings := &dto.MatchSettingsDTO{
+				DefaultMode: settings.DefaultMode, AllowUserChoice: settings.AllowUserChoice,
+				UserPreference: profile.MatchPreference, EffectiveMode: effectiveMode,
+				QueueDisplayMode: settings.QueueDisplayMode, QueueCountMinimum: settings.QueueCountMinimum,
+				QueueMessageVI: settings.QueueMessageVI, QueueMessageEN: settings.QueueMessageEN,
+			}
+			if resp.InQueue && settings.QueueDisplayMode == matching.QueueDisplayCount {
+				if count, countErr := h.queueService.QueueSize(c.Request.Context()); countErr == nil && count >= int64(settings.QueueCountMinimum) {
+					matchSettings.QueueCount = &count
+				}
+			}
+			resp.MatchSettings = matchSettings
 		}
 	}
 
@@ -122,7 +147,7 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 					partnerDTO.Name = partnerUser.Name
 					partnerDTO.Nickname = partnerUser.Profile.Nickname
 					partnerDTO.Profile = &dto.ProfileDTO{
-						Age:      partnerUser.Profile.Age,
+						Age:      profileAge(partnerUser.Profile, time.Now().UTC()),
 						IsMale:   partnerUser.Profile.IsMale,
 						IsHidden: false,
 					}
@@ -265,23 +290,27 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	if req.Age != nil && (*req.Age < h.config.User.MinAge || *req.Age > h.config.User.MaxAge) {
+	currentYear := time.Now().UTC().Year()
+	if req.BirthYear != nil && (*req.BirthYear < currentYear-h.config.User.MaxAge || *req.BirthYear > currentYear-h.config.User.MinAge) {
 		dto.Fail(c, http.StatusBadRequest, fmt.Sprintf("Tuoi phai nam trong khoang tu %d den %d", h.config.User.MinAge, h.config.User.MaxAge))
 		return
 	}
 
-	profile, err := h.userService.UpdateProfile(c.Request.Context(), userID, req.Nickname, req.IsMale, req.Age, req.IsHidden)
+	profile, err := h.userService.UpdateProfile(c.Request.Context(), userID, req.Nickname, req.IsMale, req.BirthYear, req.IsHidden)
 	if err != nil {
 		dto.FailErr(c, err)
 		return
 	}
+	h.queueService.RefreshQueuedUser(c.Request.Context(), userID, profile)
 
 	dto.OKWithMessage(c, "Profile updated successfully", dto.ProfileDTO{
 		Nickname:                  profile.Nickname,
 		NicknameChangeAvailableAt: nicknameChangeAvailableAt(profile),
-		Age:                       profile.Age,
+		Age:                       profileAge(profile, time.Now().UTC()),
+		BirthYear:                 profile.BirthYear,
 		IsMale:                    profile.IsMale,
 		IsHidden:                  profile.IsHidden,
+		MatchPreference:           profile.MatchPreference,
 	})
 }
 

@@ -1,44 +1,44 @@
 "use client";
 
-import React, { useCallback, useEffect } from "react";
-import { DoorOpen, RotateCw } from "lucide-react";
-import { useQueue } from "@/hooks/use-queue";
+import { useCallback, useEffect, useState } from "react";
+import { DoorOpen, UserRoundSearch } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { useLanguage } from "@/contexts/theme";
 import { useInvalidateUserState } from "@/hooks/queries/use-user-state";
 import { toast } from "sonner";
 import { getWebSocketClient } from "@/lib/websocket";
 import { useAlertDialogContext } from "@/contexts/alert-dialog";
-
-interface ButtonConfig {
-	bgColor: string;
-	icon: React.ReactNode;
-	title: string;
-	spinning: boolean;
-}
+import { Button } from "@/components/ui/button";
+import { useQueue } from "@/hooks/use-queue";
 
 const ROOM_LEAVE_ACK_TIMEOUT_MS = 5000;
 
 export function AppActionButton() {
-	const { room, inQueue } = useAuth();
+	const { room } = useAuth();
 	const { t } = useLanguage();
 	const invalidateUserState = useInvalidateUserState();
-	const { isLoading, joinQueue, leaveQueue } = useQueue();
 	const alertDialog = useAlertDialogContext();
+	const { joinQueue } = useQueue();
+	const [isLoading, setIsLoading] = useState(false);
+	const [partnerLeft, setPartnerLeft] = useState(false);
 
-	const inRoom = !!room;
+	useEffect(() => {
+		const client = getWebSocketClient();
+		const handlePartnerLeft = () => setPartnerLeft(true);
+		const handleRoomActive = () => setPartnerLeft(false);
+
+		client.on("partner_left", handlePartnerLeft);
+		client.on("match_found", handleRoomActive);
+		client.on("room_rejoined", handleRoomActive);
+		return () => {
+			client.off("partner_left", handlePartnerLeft);
+			client.off("match_found", handleRoomActive);
+			client.off("room_rejoined", handleRoomActive);
+		};
+	}, []);
 
 	const leaveRoom = useCallback(async () => {
 		if (!room) return;
-
-		const confirmed = await alertDialog.open({
-			title: t("leaveChatRoom"),
-			description: t("leaveChatRoomConfirmDescription"),
-			confirmText: t("leaveChatRoom"),
-			cancelText: t("cancel"),
-		});
-
-		if (!confirmed) return;
 
 		const client = getWebSocketClient();
 		await new Promise<void>((resolve, reject) => {
@@ -77,32 +77,42 @@ export function AppActionButton() {
 			}
 		});
 		invalidateUserState();
-		toast.success(t("leaveChatRoomSuccess"));
-	}, [alertDialog, invalidateUserState, room, t]);
+	}, [invalidateUserState, room, t]);
 
 	const handleClick = useCallback(async () => {
-		if (isLoading) return;
+		if ((!room && !partnerLeft) || isLoading) return;
+		if (!partnerLeft) {
+			const confirmed = await alertDialog.open({
+				title: t("leaveChatRoom"),
+				description: t("leaveChatRoomConfirmDescription"),
+				confirmText: t("leaveChatRoom"),
+				cancelText: t("cancel"),
+			});
+			if (!confirmed) return;
+		}
 
+		setIsLoading(true);
 		try {
-			if (inRoom) {
-				await leaveRoom();
-				return;
-			}
-
-			if (inQueue) {
-				await leaveQueue();
-			} else {
+			if (partnerLeft) {
 				await joinQueue();
+				setPartnerLeft(false);
+			} else {
+				await leaveRoom();
+				toast.success(t("leaveChatRoomSuccess"));
 			}
 		} catch (error) {
 			console.error("Operation failed:", error);
 			toast.error(
 				error instanceof Error ? error.message : t("somethingWentWrong")
 			);
+		} finally {
+			setIsLoading(false);
 		}
-	}, [inQueue, inRoom, isLoading, joinQueue, leaveQueue, leaveRoom, t]);
+	}, [alertDialog, isLoading, joinQueue, leaveRoom, partnerLeft, room, t]);
 
 	useEffect(() => {
+		if (!room && !partnerLeft) return;
+
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if (!(event.ctrlKey && event.key === "Enter")) return;
 			if (event.repeat) return;
@@ -113,52 +123,25 @@ export function AppActionButton() {
 
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [handleClick]);
+	}, [handleClick, partnerLeft, room]);
 
-	const getButtonConfig = (): ButtonConfig => {
-		if (inRoom) {
-			return {
-				bgColor: "bg-primary hover:bg-primary/90",
-				icon: <DoorOpen size={18} />,
-				title: t("leaveChatRoomShortcut"),
-				spinning: false,
-			};
-		}
-		if (inQueue) {
-			return {
-				bgColor: "bg-primary hover:bg-primary/90",
-				icon: <RotateCw size={18} />,
-				title: t("leaveQueueShortcut"),
-				spinning: true,
-			};
-		}
-		return {
-			bgColor: "bg-primary hover:bg-primary/90",
-			icon: <RotateCw size={18} />,
-			title: t("joinQueueShortcut"),
-			spinning: false,
-		};
-	};
+	if (!room && !partnerLeft) return null;
 
-	const config = getButtonConfig();
+	const title = partnerLeft
+		? t("findNewPartnerShortcut")
+		: t("leaveChatRoomShortcut");
+	const Icon = partnerLeft ? UserRoundSearch : DoorOpen;
 
 	return (
-		<button
+		<Button
 			onClick={handleClick}
 			disabled={isLoading}
-			className={`relative h-10 w-10 rounded-full transform transition-all duration-300 ease-in-out ${
-				isLoading ? "cursor-not-allowed opacity-70" : "hover:scale-110"
-			} ${config.bgColor}`}
-			aria-label={config.title}
-			title={config.title}
+			size="icon"
+			className="shrink-0"
+			aria-label={title}
+			title={title}
 		>
-			<div
-				className={`absolute inset-0 flex items-center justify-center text-white ${
-					config.spinning ? "animate-spin" : ""
-				}`}
-			>
-				{config.icon}
-			</div>
-		</button>
+			<Icon aria-hidden="true" />
+		</Button>
 	);
 }

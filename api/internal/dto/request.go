@@ -20,26 +20,53 @@ type UpdateBannedWordRequest struct {
 
 // UpdateProfileRequest is the body for PUT /profile.
 type UpdateProfileRequest struct {
-	Nickname *string `json:"nickname"`
-	Age      *int    `json:"age"`
-	IsMale   *bool   `json:"is_male"`
-	IsHidden *bool   `json:"is_hidden"`
+	Nickname  *string `json:"nickname"`
+	BirthYear *int    `json:"birth_year"`
+	IsMale    *bool   `json:"is_male"`
+	IsHidden  *bool   `json:"is_hidden"`
+}
+
+type UpdateMatchPreferenceRequest struct {
+	Mode string `json:"mode" binding:"required"`
+}
+
+type UpdateAdminMatchSettingsRequest struct {
+	DefaultMode            string `json:"default_mode" binding:"required"`
+	AllowUserChoice        *bool  `json:"allow_user_choice" binding:"required"`
+	RematchCooldownSeconds int    `json:"rematch_cooldown_seconds"`
+	QueueDisplayMode       string `json:"queue_display_mode" binding:"required"`
+	QueueCountMinimum      int    `json:"queue_count_minimum" binding:"required,min=1,max=1000"`
+	QueueMessageVI         string `json:"queue_message_vi" binding:"max=500"`
+	QueueMessageEN         string `json:"queue_message_en" binding:"max=500"`
+}
+
+type MatchSettingsDTO struct {
+	DefaultMode       string  `json:"default_mode"`
+	AllowUserChoice   bool    `json:"allow_user_choice"`
+	UserPreference    *string `json:"user_preference,omitempty"`
+	EffectiveMode     string  `json:"effective_mode"`
+	QueueDisplayMode  string  `json:"queue_display_mode"`
+	QueueCountMinimum int     `json:"queue_count_minimum"`
+	QueueMessageVI    string  `json:"queue_message_vi"`
+	QueueMessageEN    string  `json:"queue_message_en"`
+	QueueCount        *int64  `json:"queue_count,omitempty"`
 }
 
 // UserStateResponse is returned by GET /user/state.
 type UserStateResponse struct {
-	User               *UserDTO     `json:"user,omitempty"`
-	Profile            *ProfileDTO  `json:"profile,omitempty"`
-	Room               *RoomDTO     `json:"room"`
-	Messages           []MessageDTO `json:"messages"`
-	MessagesNextCursor *string      `json:"messages_next_cursor,omitempty"`
-	MessagesHasMore    bool         `json:"messages_has_more"`
-	InQueue            bool         `json:"in_queue"`
-	IsAdmin            bool         `json:"is_admin"`
-	IsBanned           bool         `json:"is_banned"`
-	BanCount           int          `json:"ban_count"`
-	ReviewRequestCount int          `json:"review_request_count"`
-	ReviewRequested    bool         `json:"review_requested"`
+	User               *UserDTO          `json:"user,omitempty"`
+	Profile            *ProfileDTO       `json:"profile,omitempty"`
+	Room               *RoomDTO          `json:"room"`
+	Messages           []MessageDTO      `json:"messages"`
+	MessagesNextCursor *string           `json:"messages_next_cursor,omitempty"`
+	MessagesHasMore    bool              `json:"messages_has_more"`
+	InQueue            bool              `json:"in_queue"`
+	IsAdmin            bool              `json:"is_admin"`
+	IsBanned           bool              `json:"is_banned"`
+	BanCount           int               `json:"ban_count"`
+	ReviewRequestCount int               `json:"review_request_count"`
+	ReviewRequested    bool              `json:"review_requested"`
+	MatchSettings      *MatchSettingsDTO `json:"match_settings,omitempty"`
 }
 
 // UserDTO is the user data in API responses.
@@ -58,8 +85,10 @@ type ProfileDTO struct {
 	Nickname                  *string `json:"nickname,omitempty"`
 	NicknameChangeAvailableAt *int64  `json:"nickname_change_available_at,omitempty"`
 	Age                       *int    `json:"age"`
+	BirthYear                 *int    `json:"birth_year"`
 	IsMale                    *bool   `json:"is_male"`
 	IsHidden                  bool    `json:"is_hidden"`
+	MatchPreference           *string `json:"match_preference,omitempty"`
 }
 
 // RoomDTO is the room data in API responses.

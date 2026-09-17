@@ -18,6 +18,7 @@ type ProfileRepository interface {
 	Create(ctx context.Context, profile *identity.Profile) error
 	Update(ctx context.Context, profile *identity.Profile) error
 	UpdateWithNicknameCooldown(ctx context.Context, profile *identity.Profile, cutoff time.Time) error
+	UpdateMatchPreference(ctx context.Context, userID uuid.UUID, preference *string) error
 }
 
 type profileRepo struct{ db *gorm.DB }
@@ -62,10 +63,11 @@ func (r *profileRepo) Update(ctx context.Context, profile *identity.Profile) err
 		Model(&model.Profile{}).
 		Where("user_id = ?", profile.UserID).
 		Updates(map[string]any{
-			"is_male":    profile.IsMale,
-			"age":        profile.Age,
-			"is_hidden":  profile.IsHidden,
-			"updated_at": profile.UpdatedAt,
+			"is_male":          profile.IsMale,
+			"birth_year":       profile.BirthYear,
+			"is_hidden":        profile.IsHidden,
+			"match_preference": profile.MatchPreference,
+			"updated_at":       profile.UpdatedAt,
 		}).Error
 }
 
@@ -82,8 +84,9 @@ func (r *profileRepo) UpdateWithNicknameCooldown(
 			"nickname":            profile.Nickname,
 			"nickname_updated_at": profile.NicknameUpdatedAt,
 			"is_male":             profile.IsMale,
-			"age":                 profile.Age,
+			"birth_year":          profile.BirthYear,
 			"is_hidden":           profile.IsHidden,
+			"match_preference":    profile.MatchPreference,
 			"updated_at":          profile.UpdatedAt,
 		})
 	if result.Error != nil {
@@ -95,6 +98,12 @@ func (r *profileRepo) UpdateWithNicknameCooldown(
 	return nil
 }
 
+func (r *profileRepo) UpdateMatchPreference(ctx context.Context, userID uuid.UUID, preference *string) error {
+	return r.db.WithContext(ctx).Model(&model.Profile{}).
+		Where("user_id = ?", userID).
+		Updates(map[string]any{"match_preference": preference, "updated_at": time.Now().UTC()}).Error
+}
+
 // --- mapping helpers ---
 
 func profileModelToDomain(m *model.Profile) *identity.Profile {
@@ -103,8 +112,9 @@ func profileModelToDomain(m *model.Profile) *identity.Profile {
 		Nickname:          m.Nickname,
 		NicknameUpdatedAt: m.NicknameUpdatedAt,
 		IsMale:            m.IsMale,
-		Age:               m.Age,
+		BirthYear:         m.BirthYear,
 		IsHidden:          m.IsHidden,
+		MatchPreference:   m.MatchPreference,
 		UpdatedAt:         m.UpdatedAt,
 	}
 }
@@ -115,8 +125,9 @@ func profileDomainToModel(p *identity.Profile) *model.Profile {
 		Nickname:          p.Nickname,
 		NicknameUpdatedAt: p.NicknameUpdatedAt,
 		IsMale:            p.IsMale,
-		Age:               p.Age,
+		BirthYear:         p.BirthYear,
 		IsHidden:          p.IsHidden,
+		MatchPreference:   p.MatchPreference,
 		UpdatedAt:         p.UpdatedAt,
 	}
 }

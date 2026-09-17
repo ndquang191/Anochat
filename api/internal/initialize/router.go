@@ -65,6 +65,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	bannedWordRepo := repository.NewBannedWordRepository(db)
 	reportRepo := repository.NewReportRepository(db)
 	adminStatsRepo := repository.NewAdminStatsRepository(db)
+	matchSettingsRepo := repository.NewMatchSettingsRepository(db)
 
 	if count, err := userRepo.Count(context.Background()); err == nil {
 		metrics.TotalUsers.Set(float64(count))
@@ -83,6 +84,9 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	messageService := service.NewMessageService(messageRepo)
 	authService := service.NewAuthService(userService, oauthConfig, cfg.OAuth.JWTSecret, redisClient, cfg.OAuth.AccessTokenExpiry, cfg.OAuth.RefreshTokenExpiry)
 	queueService := service.NewQueueService(roomService, roomRepo, redisClient)
+	queueService.SetMatchmakingRepositories(profileRepo, matchSettingsRepo)
+	roomService.SetRecentPairRecorder(queueService.RecordRecentPair)
+	matchSettingsService := service.NewMatchSettingsService(matchSettingsRepo, userService, queueService)
 	moderationService := service.NewModerationService(bannedWordRepo, reportRepo, userRepo, roomRepo)
 	adminStatsService := service.NewAdminStatsService(adminStatsRepo, redisClient)
 	if err := moderationService.LoadWords(context.Background()); err != nil {
@@ -106,6 +110,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	wsHandler := handler.NewWebSocketHandler(wsHub, authService, cfg)
 	moderationHandler := handler.NewModerationHandler(moderationService)
 	adminStatsHandler := handler.NewAdminStatsHandler(adminStatsService)
+	matchSettingsHandler := handler.NewMatchSettingsHandler(matchSettingsService)
 
 	authMiddleware := middleware.AuthMiddleware(authService, userRepo, cfg)
 
@@ -139,6 +144,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 		{
 			active.GET("/metrics", middleware.RequireAdmin(), gin.WrapH(promhttp.Handler()))
 			active.PUT("/profile", userHandler.UpdateProfile)
+			active.PUT("/match-settings", matchSettingsHandler.UpdateUser)
 			active.POST("/room/leave", userHandler.LeaveCurrentRoom)
 			active.GET("/rooms/:id/messages", userHandler.GetRoomMessages)
 
@@ -153,6 +159,8 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 			admin.Use(middleware.RequireAdmin())
 			{
 				admin.GET("/overview", adminStatsHandler.GetOverview)
+				admin.GET("/match-settings", matchSettingsHandler.GetAdmin)
+				admin.PUT("/match-settings", matchSettingsHandler.UpdateAdmin)
 				admin.GET("/words", moderationHandler.ListWords)
 				admin.POST("/words", moderationHandler.AddWord)
 				admin.PUT("/words/:id", moderationHandler.UpdateWord)

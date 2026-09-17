@@ -16,13 +16,14 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useLanguage } from "@/contexts/theme";
 import { cn } from "@/lib/utils";
+import { MAX_AGE, MIN_AGE } from "@/types";
 
 const selectedGenderClass =
 	"border-primary bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary dark:border-primary/80 dark:bg-primary/20 dark:text-primary dark:ring-1 dark:ring-primary/50 dark:hover:bg-primary/30 dark:hover:text-primary";
 
 interface AccountSettingsData {
 	nickname: string;
-	age: number | null;
+	birthYear: number | null;
 	gender: string;
 }
 
@@ -43,7 +44,9 @@ export function AccountSettingsDialog({
 }: AccountSettingsDialogProps) {
 	const { language, t } = useLanguage();
 	const [nickname, setNickname] = React.useState(initialData.nickname);
-	const [age, setAge] = React.useState(initialData.age);
+	const [birthYearInput, setBirthYearInput] = React.useState(
+		initialData.birthYear?.toString() ?? "",
+	);
 	const [gender, setGender] = React.useState(() => {
 		const validGenders = ["male", "female"];
 		return validGenders.includes(initialData.gender) ? initialData.gender : "male";
@@ -53,13 +56,13 @@ export function AccountSettingsDialog({
 	React.useEffect(() => {
 		if (open) {
 			setNickname(initialData.nickname);
-			setAge(initialData.age);
+			setBirthYearInput(initialData.birthYear?.toString() ?? "");
 			const validGenders = ["male", "female"];
 			setGender(validGenders.includes(initialData.gender) ? initialData.gender : "male");
 		}
 	}, [
 		open,
-		initialData.age,
+		initialData.birthYear,
 		initialData.gender,
 		initialData.nickname,
 		initialData.nicknameChangeAvailableAt,
@@ -74,6 +77,26 @@ export function AccountSettingsDialog({
 	const nicknameLength = Array.from(normalizedNickname).length;
 	const nicknameInvalid =
 		normalizedNickname !== "" && (nicknameLength < 2 || nicknameLength > 32);
+	const currentYear = new Date().getFullYear();
+	const minimumBirthYear = currentYear - MAX_AGE;
+	const maximumBirthYear = currentYear - MIN_AGE;
+	const birthYearComplete = birthYearInput.length === 4;
+	const birthYear = birthYearComplete ? Number(birthYearInput) : null;
+	const birthYearInvalid =
+		birthYearComplete &&
+		birthYear !== null &&
+		(birthYear < minimumBirthYear || birthYear > maximumBirthYear);
+	const birthYearIncomplete = birthYearInput.length > 0 && !birthYearComplete;
+	const age =
+		birthYearComplete && birthYear !== null
+			? currentYear - birthYear
+			: null;
+	const birthYearHint =
+		age !== null && age < 15
+			? t("birthYearYoungHint")
+			: age !== null && age > 90
+				? t("birthYearOldHint")
+				: t("birthYearHint");
 
 	const handleSave = async () => {
 		setIsLoading(true);
@@ -81,7 +104,7 @@ export function AccountSettingsDialog({
 		try {
 			await onSave({
 				nickname: normalizedNickname,
-				age,
+				birthYear,
 				gender,
 			});
 			toast.success(t("userInfoSaveSuccess"));
@@ -99,9 +122,13 @@ export function AccountSettingsDialog({
 			<DialogContent className="z-[9998] h-fit max-h-[95vh] overflow-y-auto sm:max-w-[460px]">
 				<DialogHeader>
 					<DialogTitle>{t("accountSettings")}</DialogTitle>
-					<DialogDescription>{t("accountSettingsDescription")}</DialogDescription>
+					<DialogDescription>
+						{initialData.birthYear === null
+							? t("completeProfileHint")
+							: t("accountSettingsDescription")}
+					</DialogDescription>
 				</DialogHeader>
-				<div className="grid gap-4 py-4">
+				<div className="grid gap-4 py-1">
 					<div className="grid grid-cols-4 items-start gap-4">
 						<Label htmlFor="display-name" className="pt-2 text-right">
 							{t("displayName")}
@@ -126,22 +153,26 @@ export function AccountSettingsDialog({
 							</p>
 						</div>
 					</div>
-					<div className="grid grid-cols-4 items-center gap-4">
-						<Label htmlFor="age" className="text-right">
-							{t("age")}
+					<div className="grid grid-cols-4 items-start gap-4">
+						<Label htmlFor="birth-year" className="pt-2 text-right">
+							{t("birthYear")}
 						</Label>
-						<Input
-							id="age"
-							type="number"
-							value={age || ""}
-							onChange={(e) =>
-								setAge(e.target.value ? parseInt(e.target.value, 10) : null)
-							}
-							className="col-span-3"
-							placeholder={t("agePlaceholder")}
-							min="1"
-							max="120"
-						/>
+						<div className="col-span-3 space-y-1.5">
+							<Input
+								id="birth-year"
+								type="text"
+								inputMode="numeric"
+								pattern="[0-9]{4}"
+								maxLength={4}
+								value={birthYearInput}
+								onChange={(e) => {
+									const value = e.target.value.replace(/\D/g, "").slice(0, 4);
+									setBirthYearInput(value);
+								}}
+								placeholder={t("birthYearPlaceholder")}
+							/>
+							<p className="text-xs text-muted-foreground">{birthYearHint}</p>
+						</div>
 					</div>
 					<div className="grid grid-cols-4 items-center gap-4">
 						<Label className="text-right">{t("gender")}</Label>
@@ -187,7 +218,15 @@ export function AccountSettingsDialog({
 					>
 						{t("cancel")}
 					</Button>
-					<Button onClick={handleSave} disabled={isLoading || nicknameInvalid}>
+					<Button
+						onClick={handleSave}
+						disabled={
+							isLoading ||
+							nicknameInvalid ||
+							birthYearInvalid ||
+							birthYearIncomplete
+						}
+					>
 						{isLoading ? t("saving") : t("saveChanges")}
 					</Button>
 				</DialogFooter>

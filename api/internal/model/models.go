@@ -33,8 +33,9 @@ type Profile struct {
 	Nickname          *string    `gorm:"type:text" json:"nickname"`
 	NicknameUpdatedAt *time.Time `gorm:"type:timestamptz" json:"nickname_updated_at"`
 	IsMale            *bool      `gorm:"type:boolean" json:"is_male"`
-	Age               *int       `gorm:"type:integer" json:"age"`
+	BirthYear         *int       `gorm:"type:integer;column:birth_year" json:"birth_year"`
 	IsHidden          bool       `gorm:"default:false" json:"is_hidden"`
+	MatchPreference   *string    `gorm:"type:varchar(20);column:match_preference" json:"match_preference"`
 	UpdatedAt         time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 
 	// Relationships
@@ -123,6 +124,20 @@ type ReportMessage struct {
 
 	Report *Report `gorm:"foreignKey:ReportID;constraint:OnDelete:CASCADE"`
 }
+
+type MatchSettings struct {
+	ID                     bool      `gorm:"primaryKey;default:true"`
+	DefaultMode            string    `gorm:"type:varchar(20);not null"`
+	AllowUserChoice        bool      `gorm:"not null"`
+	RematchCooldownSeconds int       `gorm:"not null"`
+	QueueDisplayMode       string    `gorm:"type:varchar(16);not null"`
+	QueueCountMinimum      int       `gorm:"not null"`
+	QueueMessageVI         string    `gorm:"type:text;not null"`
+	QueueMessageEN         string    `gorm:"type:text;not null"`
+	UpdatedAt              time.Time `gorm:"autoUpdateTime"`
+}
+
+func (MatchSettings) TableName() string { return "match_settings" }
 
 // TableName methods to ensure correct table names
 func (User) TableName() string {

@@ -36,7 +36,8 @@ type Profile struct {
 	Nickname          *string
 	NicknameUpdatedAt *time.Time
 	IsMale            *bool
-	Age               *int
+	BirthYear         *int
 	IsHidden          bool
+	MatchPreference   *string
 	UpdatedAt         time.Time
 }

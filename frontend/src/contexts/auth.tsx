@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useCallback, useState, useEffect, ReactNode } from "react";
-import { UserDTO, RoomDTO, MessageDTO } from "@/types";
+import { UserDTO, RoomDTO, MessageDTO, MatchSettingsDTO } from "@/types";
 import { setCookie, getCookie, deleteCookie } from "@/lib/cookies";
 import { authAPI, userAPI } from "@/lib/api";
 import { resetWebSocketClient } from "@/lib/websocket";
@@ -22,6 +22,7 @@ interface AuthContextType {
 	banCount: number;
 	reviewRequestCount: number;
 	reviewRequested: boolean;
+	matchSettings: MatchSettingsDTO | null;
 	loading: boolean;
 	hasError: boolean;
 	login: () => Promise<void>;
@@ -107,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		banCount: data?.ban_count ?? 0,
 		reviewRequestCount: data?.review_request_count ?? 0,
 		reviewRequested: data?.review_requested ?? false,
+		matchSettings: data?.match_settings ?? null,
 		loading: !mounted || (sessionPresent && isLoading),
 		hasError: sessionPresent && isError,
 		login,

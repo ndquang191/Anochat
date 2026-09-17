@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import type { AdminOverviewDTO, ApiResponse, UserStateResponse, ProfileDTO, BannedWordDTO, ReportGroupPageDTO, BannedUserPageDTO, MessagePageDTO } from "@/types";
+import type { AdminMatchSettingsDTO, AdminOverviewDTO, ApiResponse, UserStateResponse, ProfileDTO, BannedWordDTO, ReportGroupPageDTO, BannedUserPageDTO, MessagePageDTO, MatchMode, MatchSettingsDTO } from "@/types";
 import { translateStored } from "@/lib/i18n";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -112,17 +112,22 @@ export const userAPI = {
 
 	updateProfile: async (data: {
 		nickname?: string | null;
+		birth_year?: number | null;
 		age?: number | null;
 		is_male?: boolean | null;
 		is_hidden?: boolean;
 	}) => {
-		const result = await apiCall<ProfileDTO>("/profile", {
+		return apiCall<ProfileDTO>("/profile", {
 			method: "PUT",
 			body: JSON.stringify(data),
 		});
-		toast.success(translateStored("profileUpdated"));
-		return result;
 	},
+
+	updateMatchPreference: (mode: MatchMode) =>
+		apiCall<MatchSettingsDTO>("/match-settings", {
+			method: "PUT",
+			body: JSON.stringify({ mode }),
+		}),
 };
 
 export const authAPI = {
@@ -200,6 +205,13 @@ export const moderationAPI = {
 
 export const adminAPI = {
 	getOverview: () => apiCall<AdminOverviewDTO>("/admin/overview"),
+	getMatchSettings: () =>
+		apiCall<AdminMatchSettingsDTO>("/admin/match-settings"),
+	updateMatchSettings: (settings: AdminMatchSettingsDTO) =>
+		apiCall<AdminMatchSettingsDTO>("/admin/match-settings", {
+			method: "PUT",
+			body: JSON.stringify(settings),
+		}),
 };
 
 export const roomAPI = {

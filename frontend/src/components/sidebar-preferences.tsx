@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import {
 	ChevronUp,
 	Languages,
@@ -17,8 +19,13 @@ import {
 	changeThemeWithTransition,
 } from "@/components/theme-toggle";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLanguage, useTheme } from "@/contexts/theme";
 import { cn } from "@/lib/utils";
+import { userAPI } from "@/lib/api";
+import { useUserState, useInvalidateUserState } from "@/hooks/queries/use-user-state";
+import type { MatchMode } from "@/types";
+import { toast } from "sonner";
 
 const themeOrder = ["blue", "dark", "pink"] as const;
 const iconButtonClass =
@@ -37,6 +44,9 @@ export function SidebarPreferences({
 }: SidebarPreferencesProps) {
 	const { language, setLanguage, t } = useLanguage();
 	const { theme, setTheme, soundEnabled, toggleSound } = useTheme();
+	const { data } = useUserState();
+	const invalidateUserState = useInvalidateUserState();
+	const [isUpdatingMatchMode, setIsUpdatingMatchMode] = useState(false);
 	const soundLabel = soundEnabled ? t("turnOffSound") : t("turnOnSound");
 
 	const cycleTheme = (origin: HTMLElement) => {
@@ -48,6 +58,19 @@ export function SidebarPreferences({
 	const cycleLanguage = (origin: HTMLElement) => {
 		const nextLanguage = language === "vi" ? "en" : "vi";
 		changeLanguageWithTransition(nextLanguage, language, setLanguage, origin);
+	};
+
+	const updateMatchMode = async (mode: MatchMode) => {
+		setIsUpdatingMatchMode(true);
+		try {
+			await userAPI.updateMatchPreference(mode);
+			invalidateUserState();
+			toast.success(t("matchPreferenceSaved"));
+		} catch {
+			toast.error(t("matchPreferenceSaveFailed"));
+		} finally {
+			setIsUpdatingMatchMode(false);
+		}
 	};
 
 	return (
@@ -113,6 +136,22 @@ export function SidebarPreferences({
 									title={soundLabel}
 								/>
 							</div>
+							{data?.match_settings?.allow_user_choice && (
+								<div className="space-y-2 border-t pt-3">
+									<label className="text-xs font-medium text-muted-foreground">{t("matchMode")}</label>
+									<Select
+										value={data.match_settings.user_preference ?? data.match_settings.default_mode}
+										onValueChange={(value) => void updateMatchMode(value as MatchMode)}
+										disabled={isUpdatingMatchMode}
+									>
+										<SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+										<SelectContent>
+											<SelectItem value="mixed">{t("matchModeMixed")}</SelectItem>
+											<SelectItem value="opposite_sex">{t("matchModeOpposite")}</SelectItem>
+										</SelectContent>
+									</Select>
+								</div>
+							)}
 						</div>
 					</div>
 				</div>

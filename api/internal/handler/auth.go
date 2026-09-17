@@ -33,7 +33,7 @@ func NewAuthHandler(authService *service.AuthService, oauthConfig *oauth2.Config
 func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 	state := generateOAuthState()
 	c.SetCookie("oauth_state", state, 300, "/", "", h.config.IsProduction(), true)
-	url := h.oauthConfig.AuthCodeURL(state)
+	url := h.oauthConfig.AuthCodeURL(state, oauth2.SetAuthURLParam("prompt", "select_account"))
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 

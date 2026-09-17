@@ -5,14 +5,16 @@ import { BannedWordsTab } from "./banned-words-tab";
 import { ReportsTab } from "./reports-tab";
 import { BannedUsersTab } from "./banned-users-tab";
 import { OverviewTab } from "./overview-tab";
+import { MatchSettingsTab } from "./match-settings-tab";
 import { useLanguage } from "@/contexts/theme";
 import type { TranslationKey } from "@/lib/i18n";
 import { secureStorage } from "@/lib/secure-storage";
 
-type Tab = "overview" | "words" | "reports" | "banned";
+type Tab = "overview" | "settings" | "words" | "reports" | "banned";
 
 const TABS: { id: Tab; labelKey: TranslationKey }[] = [
 	{ id: "overview", labelKey: "adminOverview" },
+	{ id: "settings", labelKey: "adminSettings" },
 	{ id: "reports", labelKey: "adminReports" },
 	{ id: "banned", labelKey: "adminBannedUsers" },
 	{ id: "words", labelKey: "adminBannedWords" },
@@ -89,6 +91,7 @@ export function AdminPanel() {
 			{/* Content */}
 			<div className="flex-1 overflow-y-auto px-6 py-3">
 				{activeTab === "overview" && <OverviewTab />}
+				{activeTab === "settings" && <MatchSettingsTab />}
 				{activeTab === "words" && <BannedWordsTab />}
 				{activeTab === "reports" && <ReportsTab />}
 				{activeTab === "banned" && <BannedUsersTab />}

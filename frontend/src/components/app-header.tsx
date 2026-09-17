@@ -16,7 +16,6 @@ export default function AppHeader({ trigger }: HeaderProps) {
 	const { isAdminOpen, setIsAdminOpen } = useAdmin();
 	const { t } = useLanguage();
 	const partner = room?.partner;
-
 	const isHidden = partner?.profile?.is_hidden;
 	const partnerName = isHidden
 		? t("anonymous")
@@ -33,7 +32,7 @@ export default function AppHeader({ trigger }: HeaderProps) {
 	if (isAdminOpen) {
 		return (
 			<header className="absolute left-0 right-0 top-0 flex h-16 shrink-0 items-center justify-between border-b-2 px-4">
-				<div className="flex items-center gap-2">
+				<div className="flex items-center gap-1.5">
 					{trigger}
 					<span className="text-base font-semibold">{t("adminPanel")}</span>
 				</div>
@@ -50,14 +49,14 @@ export default function AppHeader({ trigger }: HeaderProps) {
 
 	return (
 		<header className="absolute left-0 right-0 top-0 flex h-16 shrink-0 items-center justify-between border-b-2 px-4">
-			<div className="flex items-center gap-2">
+			<div className="flex items-center gap-1.5">
 				{trigger}
 				{partner && (
 					<div className="flex min-w-0 items-center gap-2">
 						<span className="truncate text-base font-semibold">{partnerName}</span>
 						{partnerAge && (
 							<span
-								className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold tabular-nums ${ageBadgeClass}`}
+								className={`flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md border px-1 text-[11px] font-semibold tabular-nums ${ageBadgeClass}`}
 								aria-label={t("yearsOld", { age: partnerAge })}
 								title={t("yearsOld", { age: partnerAge })}
 							>

@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { useLanguage } from "@/contexts/theme";
 import { translateStored } from "@/lib/i18n";
@@ -31,7 +32,7 @@ export default function CallbackPage() {
 	return (
 		<div className="flex min-h-svh w-full items-center justify-center p-6">
 			<div className="text-center">
-				<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
+				<Loader2 className="mx-auto mb-4 size-8 animate-spin text-primary" aria-hidden="true" />
 				<h1 className="text-2xl font-bold mb-2">{t("processing")}</h1>
 				<p className="text-gray-600">{t("loading")}</p>
 			</div>

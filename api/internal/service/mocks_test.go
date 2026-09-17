@@ -107,6 +107,11 @@ func (m *mockProfileRepo) UpdateWithNicknameCooldown(ctx context.Context, profil
 	return args.Error(0)
 }
 
+func (m *mockProfileRepo) UpdateMatchPreference(ctx context.Context, userID uuid.UUID, preference *string) error {
+	args := m.Called(ctx, userID, preference)
+	return args.Error(0)
+}
+
 // --- BannedWordRepository mock ---
 
 type mockBannedWordRepo struct{ mock.Mock }

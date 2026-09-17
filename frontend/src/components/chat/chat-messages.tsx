@@ -212,7 +212,7 @@ export function ChatMessages({
 		<div
 			ref={scrollContainerRef}
 			onScroll={handleScroll}
-			className="flex-1 min-h-0 overflow-y-auto overscroll-none px-2 pt-2"
+			className="flex-1 min-h-0 overflow-y-auto overscroll-none px-4 pt-2"
 		>
 				{(isLoadingOlder || loadOlderError) && (
 					<div className="pointer-events-none sticky top-2 z-10 flex h-0 justify-center">

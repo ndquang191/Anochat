@@ -66,6 +66,13 @@ key, PostgreSQL rejects any concurrent room creation that would place one user
 in two active rooms, regardless of whether that user appears as `user1_id` or
 `user2_id`. This also protects direct SQL writes that bypass the Go repository.
 
+## `match_settings`
+
+Singleton administrator configuration for matching behavior. It stores the
+default match mode, whether users may choose a mode, the recent-partner
+cooldown, and queue display mode, threshold, and localized waiting messages.
+Recent partner pairs themselves are ephemeral Redis data.
+
 ---
 
 ## `messages`

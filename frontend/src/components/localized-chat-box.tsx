@@ -48,6 +48,7 @@ export default function LocalizedChatBox() {
 			onPartnerLeft: () => {
 				toast.info(t("partnerLeft"), {
 					description: t("partnerLeftDescription"),
+					descriptionClassName: "!text-foreground",
 				});
 			},
 		});

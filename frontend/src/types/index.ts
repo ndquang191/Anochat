@@ -12,8 +12,35 @@ export interface ProfileDTO {
 	nickname?: string;
 	nickname_change_available_at?: number;
 	age?: number;
+	birth_year?: number;
 	is_male?: boolean;
 	is_hidden: boolean;
+	match_preference?: MatchMode;
+}
+
+export type MatchMode = "mixed" | "opposite_sex";
+export type QueueDisplayMode = "hidden" | "message" | "count";
+
+export interface MatchSettingsDTO {
+	default_mode: MatchMode;
+	allow_user_choice: boolean;
+	user_preference?: MatchMode;
+	effective_mode: MatchMode;
+	queue_display_mode: QueueDisplayMode;
+	queue_count_minimum: number;
+	queue_message_vi: string;
+	queue_message_en: string;
+	queue_count?: number;
+}
+
+export interface AdminMatchSettingsDTO {
+	default_mode: MatchMode;
+	allow_user_choice: boolean;
+	rematch_cooldown_seconds: number;
+	queue_display_mode: QueueDisplayMode;
+	queue_count_minimum: number;
+	queue_message_vi: string;
+	queue_message_en: string;
 }
 
 export interface RoomDTO {
@@ -44,6 +71,7 @@ export interface UserStateResponse {
 	ban_count: number;
 	review_request_count: number;
 	review_requested: boolean;
+	match_settings?: MatchSettingsDTO;
 }
 
 export interface MessagePageDTO {

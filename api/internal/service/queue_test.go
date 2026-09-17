@@ -9,6 +9,8 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/chat"
+	"github.com/ndquang191/Anochat/api/internal/domain/identity"
+	"github.com/ndquang191/Anochat/api/internal/domain/matching"
 	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/pkg/apperr"
 	"github.com/redis/go-redis/v9"
@@ -16,6 +18,16 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+type stubMatchSettingsRepo struct{ settings matching.Settings }
+
+func (s *stubMatchSettingsRepo) Get(context.Context) (matching.Settings, error) {
+	return s.settings, nil
+}
+func (s *stubMatchSettingsRepo) Update(_ context.Context, settings matching.Settings) error {
+	s.settings = settings
+	return nil
+}
 
 func newTestRedis(t *testing.T) *redis.Client {
 	t.Helper()
@@ -94,6 +106,127 @@ func TestJoinQueue_Match(t *testing.T) {
 	assert.False(t, qs.IsInQueue(user2))
 
 	notifier.AssertCalled(t, "NotifyMatch", user1, user2, mock.AnythingOfType("uuid.UUID"))
+	matchedAt, err := qs.rdb.ZScore(context.Background(), recentPartnersKeyPrefix+user1.String(), user2.String()).Result()
+	require.NoError(t, err)
+	assert.InDelta(t, time.Now().UnixMilli(), matchedAt, 1000)
+}
+
+func TestJoinQueue_SkipsRecentPartner(t *testing.T) {
+	qs, roomRepo, _, notifier := newQueueServiceWithMocks(t)
+	settings := &stubMatchSettingsRepo{settings: matching.Settings{
+		DefaultMode:            matching.ModeMixed,
+		RematchCooldownSeconds: 24 * 60 * 60,
+	}}
+	qs.SetMatchmakingRepositories(nil, settings)
+	user1, user2, user3 := uuid.New(), uuid.New(), uuid.New()
+	for _, id := range []uuid.UUID{user1, user2, user3} {
+		roomRepo.On("FindActiveByUserID", mock.Anything, id).Return(nil, repository.ErrNotFound)
+	}
+
+	qs.RecordRecentPair(context.Background(), user1, user2)
+	require.NoError(t, qs.JoinQueue(context.Background(), user1))
+	require.NoError(t, qs.JoinQueue(context.Background(), user2))
+	assert.True(t, qs.IsInQueue(user1))
+	assert.True(t, qs.IsInQueue(user2))
+
+	roomRepo.On("Create", mock.Anything, mock.AnythingOfType("*chat.Room")).Return(nil).Once()
+	notifier.On("NotifyMatch", mock.MatchedBy(func(id uuid.UUID) bool {
+		return id == user1 || id == user2
+	}), user3, mock.AnythingOfType("uuid.UUID")).Return().Once()
+	require.NoError(t, qs.JoinQueue(context.Background(), user3))
+	assert.NotEqual(t, qs.IsInQueue(user1), qs.IsInQueue(user2), "exactly one recent partner should remain queued")
+	notifier.AssertExpectations(t)
+}
+
+func TestReprocessQueue_AppliesCooldownChangesToExistingMatchHistory(t *testing.T) {
+	qs, roomRepo, _, notifier := newQueueServiceWithMocks(t)
+	settings := &stubMatchSettingsRepo{settings: matching.Settings{
+		DefaultMode:            matching.ModeMixed,
+		RematchCooldownSeconds: 24 * 60 * 60,
+	}}
+	qs.SetMatchmakingRepositories(nil, settings)
+	user1, user2 := uuid.New(), uuid.New()
+	for _, id := range []uuid.UUID{user1, user2} {
+		roomRepo.On("FindActiveByUserID", mock.Anything, id).Return(nil, repository.ErrNotFound)
+	}
+
+	qs.RecordRecentPair(context.Background(), user1, user2)
+	require.NoError(t, qs.JoinQueue(context.Background(), user1))
+	require.NoError(t, qs.JoinQueue(context.Background(), user2))
+	assert.True(t, qs.IsInQueue(user1))
+	assert.True(t, qs.IsInQueue(user2))
+
+	settings.settings.RematchCooldownSeconds = 0
+	roomRepo.On("Create", mock.Anything, mock.AnythingOfType("*chat.Room")).Return(nil).Once()
+	notifier.On("NotifyMatch", user2, user1, mock.AnythingOfType("uuid.UUID")).Return().Once()
+	require.NoError(t, qs.ReprocessQueue(context.Background()))
+	assert.False(t, qs.IsInQueue(user1))
+	assert.False(t, qs.IsInQueue(user2))
+	notifier.AssertExpectations(t)
+}
+
+func TestJoinQueue_OppositeSexSkipsSameGender(t *testing.T) {
+	qs, roomRepo, _, notifier := newQueueServiceWithMocks(t)
+	profiles := new(mockProfileRepo)
+	settings := &stubMatchSettingsRepo{settings: matching.Settings{DefaultMode: matching.ModeOppositeSex}}
+	qs.SetMatchmakingRepositories(profiles, settings)
+	male1, male2, female := uuid.New(), uuid.New(), uuid.New()
+	for _, id := range []uuid.UUID{male1, male2, female} {
+		roomRepo.On("FindActiveByUserID", mock.Anything, id).Return(nil, repository.ErrNotFound)
+	}
+	isMale, isFemale := true, false
+	profiles.On("FindByUserID", mock.Anything, male1).Return(&identity.Profile{UserID: male1, IsMale: &isMale}, nil)
+	profiles.On("FindByUserID", mock.Anything, male2).Return(&identity.Profile{UserID: male2, IsMale: &isMale}, nil)
+	profiles.On("FindByUserID", mock.Anything, female).Return(&identity.Profile{UserID: female, IsMale: &isFemale}, nil)
+
+	require.NoError(t, qs.JoinQueue(context.Background(), male1))
+	require.NoError(t, qs.JoinQueue(context.Background(), male2))
+	assert.True(t, qs.IsInQueue(male1))
+	assert.True(t, qs.IsInQueue(male2))
+
+	roomRepo.On("Create", mock.Anything, mock.AnythingOfType("*chat.Room")).Return(nil).Once()
+	notifier.On("NotifyMatch", male1, female, mock.AnythingOfType("uuid.UUID")).Return().Once()
+	require.NoError(t, qs.JoinQueue(context.Background(), female))
+	assert.False(t, qs.IsInQueue(male1))
+	assert.True(t, qs.IsInQueue(male2))
+	notifier.AssertExpectations(t)
+}
+
+func TestJoinQueue_OppositeSexRequiresGender(t *testing.T) {
+	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
+	profiles := new(mockProfileRepo)
+	settings := &stubMatchSettingsRepo{settings: matching.Settings{DefaultMode: matching.ModeOppositeSex}}
+	qs.SetMatchmakingRepositories(profiles, settings)
+	userID := uuid.New()
+	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+	profiles.On("FindByUserID", mock.Anything, userID).Return(&identity.Profile{UserID: userID}, nil)
+
+	err := qs.JoinQueue(context.Background(), userID)
+	assert.ErrorIs(t, err, apperr.ErrGenderRequired)
+	assert.False(t, qs.IsInQueue(userID))
+}
+
+func TestReprocessQueue_AppliesAdminChangeToWaitingUsers(t *testing.T) {
+	qs, roomRepo, _, notifier := newQueueServiceWithMocks(t)
+	profiles := new(mockProfileRepo)
+	settings := &stubMatchSettingsRepo{settings: matching.Settings{DefaultMode: matching.ModeOppositeSex}}
+	qs.SetMatchmakingRepositories(profiles, settings)
+	user1, user2 := uuid.New(), uuid.New()
+	isMale := true
+	for _, id := range []uuid.UUID{user1, user2} {
+		roomRepo.On("FindActiveByUserID", mock.Anything, id).Return(nil, repository.ErrNotFound)
+		profiles.On("FindByUserID", mock.Anything, id).Return(&identity.Profile{UserID: id, IsMale: &isMale}, nil)
+	}
+	require.NoError(t, qs.JoinQueue(context.Background(), user1))
+	require.NoError(t, qs.JoinQueue(context.Background(), user2))
+
+	settings.settings.DefaultMode = matching.ModeMixed
+	roomRepo.On("Create", mock.Anything, mock.AnythingOfType("*chat.Room")).Return(nil).Once()
+	notifier.On("NotifyMatch", user2, user1, mock.AnythingOfType("uuid.UUID")).Return().Once()
+	require.NoError(t, qs.ReprocessQueue(context.Background()))
+	assert.False(t, qs.IsInQueue(user1))
+	assert.False(t, qs.IsInQueue(user2))
+	notifier.AssertExpectations(t)
 }
 
 func TestJoinQueue_CreateRoomFailureReleasesReservation(t *testing.T) {

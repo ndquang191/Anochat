@@ -62,12 +62,12 @@ func TestGetUserByID_NotFound(t *testing.T) {
 func TestGetUserWithProfile(t *testing.T) {
 	svc, userRepo, _ := newUserServiceWithMocks()
 	userID := uuid.New()
-	age := 25
+	age := 2001
 	expected := &identity.User{
 		ID: userID,
 		Profile: &identity.Profile{
-			UserID: userID,
-			Age:    &age,
+			UserID:    userID,
+			BirthYear: &age,
 		},
 	}
 
@@ -77,7 +77,7 @@ func TestGetUserWithProfile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, userID, user.ID)
 	assert.NotNil(t, user.Profile)
-	assert.Equal(t, 25, *user.Profile.Age)
+	assert.Equal(t, 2001, *user.Profile.BirthYear)
 	userRepo.AssertExpectations(t)
 }
 
@@ -111,14 +111,14 @@ func TestGetOrCreateUser_New(t *testing.T) {
 func TestGetProfile_Existing(t *testing.T) {
 	svc, _, profileRepo := newUserServiceWithMocks()
 	userID := uuid.New()
-	age := 20
-	expected := &identity.Profile{UserID: userID, Age: &age}
+	age := 2006
+	expected := &identity.Profile{UserID: userID, BirthYear: &age}
 
 	profileRepo.On("FindByUserID", mock.Anything, userID).Return(expected, nil)
 
 	profile, err := svc.GetProfile(context.Background(), userID)
 	require.NoError(t, err)
-	assert.Equal(t, 20, *profile.Age)
+	assert.Equal(t, 2006, *profile.BirthYear)
 	profileRepo.AssertExpectations(t)
 }
 
@@ -150,20 +150,20 @@ func TestUpdateProfile(t *testing.T) {
 	profileRepo.On("UpdateWithNicknameCooldown", mock.Anything, mock.MatchedBy(func(p *identity.Profile) bool {
 		return p.Nickname != nil && *p.Nickname == "newname" &&
 			p.IsMale != nil && *p.IsMale == true &&
-			p.Age != nil && *p.Age == 25 &&
+			p.BirthYear != nil && *p.BirthYear == 2001 &&
 			p.IsHidden == true
 	}), mock.AnythingOfType("time.Time")).Return(nil)
 
 	nickname := "newname"
 	isMale := true
-	age := 25
+	age := 2001
 	isHidden := true
 
 	profile, err := svc.UpdateProfile(context.Background(), userID, &nickname, &isMale, &age, &isHidden)
 	require.NoError(t, err)
 	assert.Equal(t, "newname", *profile.Nickname)
 	assert.True(t, *profile.IsMale)
-	assert.Equal(t, 25, *profile.Age)
+	assert.Equal(t, 2001, *profile.BirthYear)
 	assert.True(t, profile.IsHidden)
 	assert.NotNil(t, profile.NicknameUpdatedAt)
 	assert.False(t, profile.UpdatedAt.IsZero())
@@ -226,11 +226,11 @@ func TestUpdateProfile_SameDisplayNameDoesNotConsumeCooldown(t *testing.T) {
 		return p.NicknameUpdatedAt != nil && p.NicknameUpdatedAt.Equal(recently)
 	})).Return(nil)
 
-	age := 30
+	age := 1996
 	profile, err := svc.UpdateProfile(context.Background(), userID, &nickname, nil, &age, nil)
 
 	require.NoError(t, err)
-	assert.Equal(t, 30, *profile.Age)
+	assert.Equal(t, 1996, *profile.BirthYear)
 	assert.Equal(t, recently, *profile.NicknameUpdatedAt)
 	profileRepo.AssertExpectations(t)
 }

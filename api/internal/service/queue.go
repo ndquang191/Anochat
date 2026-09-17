@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/chat"
+	"github.com/ndquang191/Anochat/api/internal/domain/identity"
 	"github.com/ndquang191/Anochat/api/internal/domain/matching"
 	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/pkg/apperr"
@@ -21,6 +22,9 @@ const (
 	queueKey                   = "queue:waiting"
 	queueReservationsKey       = "queue:reservations"
 	queueReservationTokensKey  = "queue:reservation_tokens"
+	queueMetadataKey           = "queue:metadata"
+	recentPartnersKeyPrefix    = "match:recent:"
+	recentMatchHistoryTTL      = 7 * 24 * time.Hour
 	matchReservationTTL        = 30 * time.Second
 	matchReservationCleanupTTL = 2 * time.Second
 	queueReconcileInterval     = 15 * time.Second
@@ -43,16 +47,51 @@ var matchOrJoinScript = redis.NewScript(`
 local queue = KEYS[1]
 local reservations = KEYS[2]
 local reservationTokens = KEYS[3]
+local metadata = KEYS[4]
 local userID = ARGV[1]
 local score = tonumber(ARGV[2])
 local now = tonumber(ARGV[3])
 local expiresAt = tonumber(ARGV[4])
 local token = ARGV[5]
+local userGender = ARGV[6]
+local userPreference = ARGV[7]
+local defaultMode = ARGV[8]
+local allowUserChoice = ARGV[9]
+local rematchCooldown = tonumber(ARGV[10])
+
+local function effectiveMode(preference)
+    if allowUserChoice == "1" and (preference == "mixed" or preference == "opposite_sex") then
+        return preference
+    end
+    return defaultMode
+end
+
+local function compatible(candidate, candidateMetadata)
+	if rematchCooldown > 0 then
+		local matchedAt = redis.call("ZSCORE", "match:recent:" .. userID, candidate)
+		if matchedAt ~= false and tonumber(matchedAt) + rematchCooldown > now then
+			return false
+		end
+	end
+    if candidateMetadata == false then
+        candidateMetadata = "u|"
+    end
+    local separator = string.find(candidateMetadata, "|", 1, true)
+    local candidateGender = string.sub(candidateMetadata, 1, separator - 1)
+    local candidatePreference = string.sub(candidateMetadata, separator + 1)
+    local userMode = effectiveMode(userPreference)
+    local candidateMode = effectiveMode(candidatePreference)
+    if userMode == "mixed" and candidateMode == "mixed" then
+        return true
+    end
+    return userGender ~= "u" and candidateGender ~= "u" and userGender ~= candidateGender
+end
 
 local expiredUsers = redis.call("ZRANGEBYSCORE", reservations, "-inf", now)
 for _, expiredUser in ipairs(expiredUsers) do
     redis.call("ZREM", reservations, expiredUser)
     redis.call("HDEL", reservationTokens, expiredUser)
+	if redis.call("ZSCORE", queue, expiredUser) == false then redis.call("HDEL", metadata, expiredUser) end
 end
 
 if redis.call("ZSCORE", reservations, userID) ~= false then
@@ -67,7 +106,9 @@ local candidates = redis.call("ZRANGE", queue, 0, -1, "WITHSCORES")
 for index = 1, #candidates, 2 do
     local candidate = candidates[index]
     local partnerScore = candidates[index + 1]
-    if candidate ~= userID and redis.call("ZSCORE", reservations, candidate) == false then
+    if candidate ~= userID and redis.call("ZSCORE", reservations, candidate) == false
+        and compatible(candidate, redis.call("HGET", metadata, candidate)) then
+		redis.call("HSET", metadata, userID, userGender .. "|" .. userPreference)
         redis.call("ZADD", reservations, expiresAt, userID, expiresAt, candidate)
         redis.call("HSET", reservationTokens, userID, token, candidate, token)
         return "reserved:" .. candidate .. ":" .. partnerScore
@@ -75,7 +116,67 @@ for index = 1, #candidates, 2 do
 end
 
 redis.call("ZADD", queue, score, userID)
+redis.call("HSET", metadata, userID, userGender .. "|" .. userPreference)
 return "waiting"
+`)
+
+var matchQueuedUserScript = redis.NewScript(`
+local queue = KEYS[1]
+local reservations = KEYS[2]
+local reservationTokens = KEYS[3]
+local metadata = KEYS[4]
+local userID = ARGV[1]
+local now = tonumber(ARGV[2])
+local expiresAt = tonumber(ARGV[3])
+local token = ARGV[4]
+local defaultMode = ARGV[5]
+local allowUserChoice = ARGV[6]
+local rematchCooldown = tonumber(ARGV[7])
+
+local expiredUsers = redis.call("ZRANGEBYSCORE", reservations, "-inf", now)
+for _, expiredUser in ipairs(expiredUsers) do
+    redis.call("ZREM", reservations, expiredUser)
+    redis.call("HDEL", reservationTokens, expiredUser)
+	if redis.call("ZSCORE", queue, expiredUser) == false then redis.call("HDEL", metadata, expiredUser) end
+end
+
+local userMetadata = redis.call("HGET", metadata, userID)
+if redis.call("ZSCORE", queue, userID) == false or userMetadata == false
+    or redis.call("ZSCORE", reservations, userID) ~= false then
+    return "none"
+end
+
+local function parts(value)
+    local separator = string.find(value, "|", 1, true)
+    return string.sub(value, 1, separator - 1), string.sub(value, separator + 1)
+end
+local function effectiveMode(preference)
+    if allowUserChoice == "1" and (preference == "mixed" or preference == "opposite_sex") then return preference end
+    return defaultMode
+end
+local userGender, userPreference = parts(userMetadata)
+local candidates = redis.call("ZRANGE", queue, 0, -1, "WITHSCORES")
+for index = 1, #candidates, 2 do
+    local candidate = candidates[index]
+	local matchedAt = redis.call("ZSCORE", "match:recent:" .. userID, candidate)
+	local cooldownActive = rematchCooldown > 0 and matchedAt ~= false
+		and tonumber(matchedAt) + rematchCooldown > now
+    if candidate ~= userID and redis.call("ZSCORE", reservations, candidate) == false
+		and not cooldownActive then
+        local candidateMetadata = redis.call("HGET", metadata, candidate)
+        if candidateMetadata ~= false then
+            local candidateGender, candidatePreference = parts(candidateMetadata)
+            local bothMixed = effectiveMode(userPreference) == "mixed" and effectiveMode(candidatePreference) == "mixed"
+            local opposite = userGender ~= "u" and candidateGender ~= "u" and userGender ~= candidateGender
+            if bothMixed or opposite then
+                redis.call("ZADD", reservations, expiresAt, userID, expiresAt, candidate)
+                redis.call("HSET", reservationTokens, userID, token, candidate, token)
+                return "reserved:" .. candidate .. ":" .. candidates[index + 1]
+            end
+        end
+    end
+end
+return "none"
 `)
 
 // finishMatchReservationScript only commits or releases a reservation when the
@@ -85,6 +186,7 @@ var finishMatchReservationScript = redis.NewScript(`
 local queue = KEYS[1]
 local reservations = KEYS[2]
 local reservationTokens = KEYS[3]
+local metadata = KEYS[4]
 local userID = ARGV[1]
 local partnerID = ARGV[2]
 local token = ARGV[3]
@@ -97,6 +199,9 @@ end
 
 if action == "commit" then
     redis.call("ZREM", queue, userID, partnerID)
+	redis.call("HDEL", metadata, userID, partnerID)
+else
+	if redis.call("ZSCORE", queue, userID) == false then redis.call("HDEL", metadata, userID) end
 end
 
 redis.call("ZREM", reservations, userID, partnerID)
@@ -111,6 +216,7 @@ var removeFromQueueScript = redis.NewScript(`
 local queue = KEYS[1]
 local reservations = KEYS[2]
 local reservationTokens = KEYS[3]
+local metadata = KEYS[4]
 local userID = ARGV[1]
 local now = tonumber(ARGV[2])
 
@@ -118,13 +224,16 @@ local expiredUsers = redis.call("ZRANGEBYSCORE", reservations, "-inf", now)
 for _, expiredUser in ipairs(expiredUsers) do
     redis.call("ZREM", reservations, expiredUser)
     redis.call("HDEL", reservationTokens, expiredUser)
+	if redis.call("ZSCORE", queue, expiredUser) == false then redis.call("HDEL", metadata, expiredUser) end
 end
 
 if redis.call("ZSCORE", reservations, userID) ~= false then
     return -1
 end
 
-return redis.call("ZREM", queue, userID)
+local removed = redis.call("ZREM", queue, userID)
+if removed > 0 then redis.call("HDEL", metadata, userID) end
+return removed
 `)
 
 // reconcileActiveRoomsScript treats PostgreSQL's active-room membership as the
@@ -134,6 +243,7 @@ var reconcileActiveRoomsScript = redis.NewScript(`
 local queue = KEYS[1]
 local reservations = KEYS[2]
 local reservationTokens = KEYS[3]
+local metadata = KEYS[4]
 
 local removed = 0
 for index = 1, #ARGV, 3 do
@@ -144,12 +254,14 @@ for index = 1, #ARGV, 3 do
     local queueScore = redis.call("ZSCORE", queue, userID)
     if queueScore ~= false and tonumber(queueScore) <= roomCreatedAt then
         removed = removed + redis.call("ZREM", queue, userID)
+		redis.call("HDEL", metadata, userID)
     end
 
     local reservationExpiry = redis.call("ZSCORE", reservations, userID)
     if reservationExpiry ~= false and tonumber(reservationExpiry) < reservationCutoff then
         redis.call("ZREM", reservations, userID)
         redis.call("HDEL", reservationTokens, userID)
+		if redis.call("ZSCORE", queue, userID) == false then redis.call("HDEL", metadata, userID) end
     end
 end
 return removed
@@ -160,6 +272,37 @@ type QueueService struct {
 	roomRepo      repository.RoomRepository
 	rdb           *redis.Client
 	matchNotifier matching.MatchNotifier
+	profileRepo   repository.ProfileRepository
+	settingsRepo  repository.MatchSettingsRepository
+}
+
+func boolFlag(value bool) string {
+	if value {
+		return "1"
+	}
+	return "0"
+}
+
+func preferenceValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func genderValue(value *bool) string {
+	if value == nil {
+		return "u"
+	}
+	if *value {
+		return "m"
+	}
+	return "f"
+}
+
+func (qs *QueueService) SetMatchmakingRepositories(profileRepo repository.ProfileRepository, settingsRepo repository.MatchSettingsRepository) {
+	qs.profileRepo = profileRepo
+	qs.settingsRepo = settingsRepo
 }
 
 func NewQueueService(
@@ -174,8 +317,144 @@ func NewQueueService(
 	}
 }
 
+func (qs *QueueService) RecordRecentPair(ctx context.Context, user1ID, user2ID uuid.UUID) {
+	matchedAt := time.Now().UnixMilli()
+	oldestRetained := time.Now().Add(-recentMatchHistoryTTL).UnixMilli()
+	pipe := qs.rdb.TxPipeline()
+	key1, key2 := recentPartnersKeyPrefix+user1ID.String(), recentPartnersKeyPrefix+user2ID.String()
+	pipe.ZRemRangeByScore(ctx, key1, "-inf", strconv.FormatInt(oldestRetained, 10))
+	pipe.ZAdd(ctx, key1, redis.Z{Score: float64(matchedAt), Member: user2ID.String()})
+	pipe.Expire(ctx, key1, recentMatchHistoryTTL)
+	pipe.ZRemRangeByScore(ctx, key2, "-inf", strconv.FormatInt(oldestRetained, 10))
+	pipe.ZAdd(ctx, key2, redis.Z{Score: float64(matchedAt), Member: user1ID.String()})
+	pipe.Expire(ctx, key2, recentMatchHistoryTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
+		slog.Warn("Failed to record recent match", "user1", user1ID, "user2", user2ID, "error", err)
+	}
+}
+
+func (qs *QueueService) QueueSize(ctx context.Context) (int64, error) {
+	return qs.rdb.ZCard(ctx, queueKey).Result()
+}
+
 func (qs *QueueService) SetMatchNotifier(notifier matching.MatchNotifier) {
 	qs.matchNotifier = notifier
+}
+
+func (qs *QueueService) matchData(ctx context.Context, userID uuid.UUID) (string, *string, matching.Settings, error) {
+	settings := matching.Settings{DefaultMode: matching.ModeMixed}
+	if qs.settingsRepo != nil {
+		var err error
+		settings, err = qs.settingsRepo.Get(ctx)
+		if err != nil {
+			return "", nil, settings, fmt.Errorf("get match settings: %w", err)
+		}
+	}
+	if qs.profileRepo == nil {
+		return "u", nil, settings, nil
+	}
+	profile, err := qs.profileRepo.FindByUserID(ctx, userID)
+	if err != nil {
+		return "", nil, settings, fmt.Errorf("get queue profile: %w", err)
+	}
+	return genderValue(profile.IsMale), profile.MatchPreference, settings, nil
+}
+
+func (qs *QueueService) MatchSettingsForProfile(ctx context.Context, profile *identity.Profile) (matching.Settings, string, error) {
+	settings := matching.Settings{DefaultMode: matching.ModeMixed}
+	if qs.settingsRepo != nil {
+		var err error
+		settings, err = qs.settingsRepo.Get(ctx)
+		if err != nil {
+			return settings, "", err
+		}
+	}
+	return settings, settings.EffectiveMode(profile.MatchPreference), nil
+}
+
+func (qs *QueueService) completeReservedMatch(ctx context.Context, userID, partnerID uuid.UUID, token string, partnerJoinMs float64) error {
+	room, err := qs.roomService.CreateRoom(ctx, partnerID, userID)
+	if err != nil {
+		if _, releaseErr := qs.finishMatchReservationWithRetry(userID, partnerID, token, "release"); releaseErr != nil {
+			slog.Error("Failed to release match reservation", "error", releaseErr, "user1", partnerID, "user2", userID)
+		}
+		return fmt.Errorf("failed to create room: %w", err)
+	}
+	if committed, commitErr := qs.finishMatchReservationWithRetry(userID, partnerID, token, "commit"); commitErr != nil {
+		slog.Error("Failed to commit match reservation", "error", commitErr, "room_id", room.ID)
+	} else if !committed {
+		if reconcileErr := qs.reconcileRooms(context.Background(), []*chat.Room{room}); reconcileErr != nil {
+			slog.Error("Failed to reconcile expired match reservation", "error", reconcileErr, "room_id", room.ID)
+		}
+	}
+	qs.RecordRecentPair(ctx, partnerID, userID)
+	metrics.MatchDuration.Observe(time.Since(time.UnixMilli(int64(partnerJoinMs))).Seconds())
+	qs.updateQueueMetric(ctx)
+	if qs.matchNotifier != nil {
+		qs.matchNotifier.NotifyMatch(partnerID, userID, room.ID)
+	}
+	return nil
+}
+
+func (qs *QueueService) RefreshQueuedUser(ctx context.Context, userID uuid.UUID, profile *identity.Profile) {
+	if profile == nil || !qs.IsInQueue(userID) {
+		return
+	}
+	metadata := genderValue(profile.IsMale) + "|" + preferenceValue(profile.MatchPreference)
+	if err := qs.rdb.HSet(ctx, queueMetadataKey, userID.String(), metadata).Err(); err != nil {
+		slog.Warn("Failed to refresh queue metadata", "user_id", userID, "error", err)
+		return
+	}
+	if err := qs.ReprocessQueue(ctx); err != nil {
+		slog.Warn("Failed to reprocess queue", "error", err)
+	}
+}
+
+func (qs *QueueService) ReprocessQueue(ctx context.Context) error {
+	settings := matching.Settings{DefaultMode: matching.ModeMixed}
+	if qs.settingsRepo != nil {
+		var err error
+		settings, err = qs.settingsRepo.Get(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	members, err := qs.rdb.ZRange(ctx, queueKey, 0, -1).Result()
+	if err != nil {
+		return err
+	}
+	for _, member := range members {
+		userID, parseErr := uuid.Parse(member)
+		if parseErr != nil {
+			continue
+		}
+		now := time.Now()
+		token := uuid.NewString()
+		result, runErr := matchQueuedUserScript.Run(ctx, qs.rdb,
+			[]string{queueKey, queueReservationsKey, queueReservationTokensKey, queueMetadataKey},
+			member, now.UnixMilli(), now.Add(matchReservationTTL).UnixMilli(), token,
+			settings.DefaultMode, boolFlag(settings.AllowUserChoice),
+			int64(settings.RematchCooldownSeconds)*1000).Text()
+		if runErr != nil {
+			return runErr
+		}
+		if !strings.HasPrefix(result, "reserved:") {
+			continue
+		}
+		parts := strings.SplitN(strings.TrimPrefix(result, "reserved:"), ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		partnerID, parseErr := uuid.Parse(parts[0])
+		if parseErr != nil {
+			continue
+		}
+		partnerScore, _ := strconv.ParseFloat(parts[1], 64)
+		if err := qs.completeReservedMatch(ctx, userID, partnerID, token, partnerScore); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
@@ -189,18 +468,30 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
 		return fmt.Errorf("failed to check active room: %w", err)
 	}
 
+	gender, preference, settings, err := qs.matchData(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if settings.EffectiveMode(preference) == matching.ModeOppositeSex && gender == "u" {
+		return apperr.ErrGenderRequired
+	}
 	now := time.Now()
 	score := float64(now.UnixMilli())
 	reservationToken := uuid.NewString()
 	result, err := matchOrJoinScript.Run(
 		ctx,
 		qs.rdb,
-		[]string{queueKey, queueReservationsKey, queueReservationTokensKey},
+		[]string{queueKey, queueReservationsKey, queueReservationTokensKey, queueMetadataKey},
 		userID.String(),
 		score,
 		now.UnixMilli(),
 		now.Add(matchReservationTTL).UnixMilli(),
 		reservationToken,
+		gender,
+		preferenceValue(preference),
+		settings.DefaultMode,
+		boolFlag(settings.AllowUserChoice),
+		int64(settings.RematchCooldownSeconds)*1000,
 	).Text()
 	if err != nil {
 		return fmt.Errorf("queue script error: %w", err)
@@ -225,35 +516,7 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
 		}
 
 		partnerJoinMs, _ := strconv.ParseFloat(parts[1], 64)
-		room, err := qs.roomService.CreateRoom(ctx, partnerID, userID)
-		if err != nil {
-			if released, releaseErr := qs.finishMatchReservationWithRetry(userID, partnerID, reservationToken, "release"); releaseErr != nil {
-				slog.Error("Failed to release match reservation", "error", releaseErr, "user1", partnerID, "user2", userID)
-			} else if !released {
-				slog.Warn("Match reservation expired before release", "user1", partnerID, "user2", userID)
-			}
-			slog.Error("Failed to create room for match", "error", err, "user1", partnerID, "user2", userID)
-			return fmt.Errorf("failed to create room: %w", err)
-		}
-
-		if committed, commitErr := qs.finishMatchReservationWithRetry(userID, partnerID, reservationToken, "commit"); commitErr != nil {
-			slog.Error("Failed to commit match reservation", "error", commitErr, "room_id", room.ID, "user1", partnerID, "user2", userID)
-		} else if !committed {
-			slog.Warn("Match reservation expired before commit", "room_id", room.ID, "user1", partnerID, "user2", userID)
-			if reconcileErr := qs.reconcileRooms(context.Background(), []*chat.Room{room}); reconcileErr != nil {
-				slog.Error("Failed to reconcile expired match reservation", "error", reconcileErr, "room_id", room.ID)
-			}
-		}
-
-		waitSeconds := time.Since(time.UnixMilli(int64(partnerJoinMs))).Seconds()
-		metrics.MatchDuration.Observe(waitSeconds)
-
-		qs.updateQueueMetric(ctx)
-		slog.Info("Match found", "room_id", room.ID, "user1_id", partnerID, "user2_id", userID, "wait_seconds", waitSeconds)
-
-		if qs.matchNotifier != nil {
-			qs.matchNotifier.NotifyMatch(partnerID, userID, room.ID)
-		}
+		return qs.completeReservedMatch(ctx, userID, partnerID, reservationToken, partnerJoinMs)
 
 	case result == "waiting":
 		qs.updateQueueMetric(ctx)
@@ -295,7 +558,7 @@ func (qs *QueueService) finishMatchReservation(
 	result, err := finishMatchReservationScript.Run(
 		ctx,
 		qs.rdb,
-		[]string{queueKey, queueReservationsKey, queueReservationTokensKey},
+		[]string{queueKey, queueReservationsKey, queueReservationTokensKey, queueMetadataKey},
 		userID.String(),
 		partnerID.String(),
 		token,
@@ -311,7 +574,7 @@ func (qs *QueueService) LeaveQueue(ctx context.Context, userID uuid.UUID) error 
 	removed, err := removeFromQueueScript.Run(
 		ctx,
 		qs.rdb,
-		[]string{queueKey, queueReservationsKey, queueReservationTokensKey},
+		[]string{queueKey, queueReservationsKey, queueReservationTokensKey, queueMetadataKey},
 		userID.String(),
 		time.Now().UnixMilli(),
 	).Int()
@@ -345,7 +608,7 @@ func (qs *QueueService) UserDisconnected(userID uuid.UUID) {
 	removed, err := removeFromQueueScript.Run(
 		ctx,
 		qs.rdb,
-		[]string{queueKey, queueReservationsKey, queueReservationTokensKey},
+		[]string{queueKey, queueReservationsKey, queueReservationTokensKey, queueMetadataKey},
 		userID.String(),
 		time.Now().UnixMilli(),
 	).Int()
@@ -373,6 +636,9 @@ func (qs *QueueService) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			qs.reconcileAllActiveRooms(ctx)
+			if err := qs.ReprocessQueue(ctx); err != nil {
+				slog.Warn("Failed to reprocess waiting queue", "error", err)
+			}
 		}
 	}
 }
@@ -407,7 +673,7 @@ func (qs *QueueService) reconcileRooms(ctx context.Context, rooms []*chat.Room) 
 		if _, err := reconcileActiveRoomsScript.Run(
 			ctx,
 			qs.rdb,
-			[]string{queueKey, queueReservationsKey, queueReservationTokensKey},
+			[]string{queueKey, queueReservationsKey, queueReservationTokensKey, queueMetadataKey},
 			entries...,
 		).Result(); err != nil {
 			return err

@@ -46,6 +46,7 @@ export default function ChatBox() {
 			onPartnerLeft: () => {
 				toast.info(t("partnerLeft"), {
 					description: t("partnerLeftDescription"),
+					descriptionClassName: "!text-foreground",
 				});
 			},
 		});

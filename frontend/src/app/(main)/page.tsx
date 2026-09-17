@@ -57,15 +57,25 @@ const Page = () => {
 		inQueue,
 		isBanned,
 		reviewRequested,
+		matchSettings: queueSettings,
 		loading: authLoading,
 		hasError: authError,
 	} = useAuth();
 	const { isAdminOpen } = useAdmin();
-	const { t } = useLanguage();
+	const { language, t } = useLanguage();
 	const invalidateUserState = useInvalidateUserState();
 	const isAdmin = user?.is_admin === true;
 	const { joinQueue, leaveQueue, isLoading: isQueueLoading } = useQueue();
 	const [showEndedChat, setShowEndedChat] = useState(false);
+	const queueDetail = (() => {
+		if (!inQueue || !queueSettings || queueSettings.queue_display_mode === "hidden") return null;
+		if (queueSettings.queue_display_mode === "count" && queueSettings.queue_count !== undefined) {
+			const step = queueSettings.queue_count_minimum;
+			const approximateCount = Math.floor(queueSettings.queue_count / step) * step;
+			return t("peopleWaiting", { count: approximateCount });
+		}
+		return language === "vi" ? queueSettings.queue_message_vi : queueSettings.queue_message_en;
+	})();
 
 	useEffect(() => {
 		if (!user || !inQueue) return;
@@ -158,16 +168,21 @@ const Page = () => {
 	};
 
 	return (
-		<div className="flex h-full w-full items-center justify-center">
-			<div className="flex flex-col items-center gap-1">
+		<div className="relative h-full w-full">
+			<div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
 				<RippleEffect active={inQueue} onClick={handleCTA} />
-				<div className="space-y-1 text-center">
+			</div>
+			<div className="absolute left-0 top-[calc(50%+5rem)] w-full px-4">
+				<div className="mx-auto max-w-md space-y-1 text-center">
 					<h2 className="text-sm font-semibold md:text-base">
 						{inQueue ? t("queueing") : t("noChatRoom")}
 					</h2>
-					<p className="text-xs text-muted-foreground md:text-sm">
-						{inQueue ? t("leaveQueue") : t("findPartnerDescription")}
-					</p>
+					{(!inQueue || !queueDetail) && (
+						<p className="text-xs text-muted-foreground md:text-sm">
+							{inQueue ? t("leaveQueue") : t("findPartnerDescription")}
+						</p>
+					)}
+					{queueDetail && <p className="mx-auto max-w-md text-xs text-muted-foreground md:text-sm">{queueDetail}</p>}
 				</div>
 			</div>
 		</div>

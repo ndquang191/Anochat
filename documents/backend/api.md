@@ -95,6 +95,24 @@ Join the matchmaking queue. Match notification is delivered via WebSocket `match
 
 Leave the queue without being matched.
 
+An administrator-configured cooldown can prevent two recent partners from
+matching again for 6 hours, 12 hours, 24 hours, or 7 days. Recent pairs are
+stored in Redis and expire automatically.
+
+### PUT `/match-settings`
+
+Save the current user's matchmaking preference. Body: `{ "mode": "mixed" | "opposite_sex" }`.
+This endpoint returns `403` while the admin has disabled user choice. The effective
+settings are also included in `GET /user/state` as `match_settings`.
+
+### GET/PUT `/admin/match-settings`
+
+Admin-only matchmaking policy. In addition to `default_mode` and
+`allow_user_choice`, the payload configures `rematch_cooldown_seconds`, queue
+display mode (`hidden`, `message`, or `count`), count threshold, and localized
+waiting messages. Updating matching policy immediately re-evaluates users
+already waiting.
+
 ---
 
 ### POST `/room/leave`
@@ -161,6 +179,8 @@ All require an authenticated, active user with the administrator role.
 | POST | `/admin/users/:id/unban` | Unban a user |
 | GET | `/admin/users/banned` | List banned users |
 | GET | `/admin/rooms/:id/messages` | List messages in a room |
+| GET | `/admin/match-settings` | Read matchmaking and queue display settings |
+| PUT | `/admin/match-settings` | Update matchmaking and queue display settings |
 
 ---
 
