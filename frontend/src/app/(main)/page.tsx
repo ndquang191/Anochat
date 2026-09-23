@@ -169,10 +169,10 @@ const Page = () => {
 
 	return (
 		<div className="relative h-full w-full">
-			<div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+			<div className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 sm:top-1/2">
 				<RippleEffect active={inQueue} onClick={handleCTA} />
 			</div>
-			<div className="absolute left-0 top-[calc(50%+5rem)] w-full px-4">
+			<div className="absolute left-0 top-[calc(46%+5rem)] w-full px-4 sm:top-[calc(50%+5rem)]">
 				<div className="mx-auto max-w-md space-y-1 text-center">
 					<h2 className="text-sm font-semibold md:text-base">
 						{inQueue ? t("queueing") : t("noChatRoom")}
