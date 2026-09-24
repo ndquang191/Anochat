@@ -13,6 +13,7 @@ import {
 	absoluteUrl,
 	getMetadataBase,
 } from "@/lib/site";
+import { Analytics } from "@vercel/analytics/next";
 
 const nunito = Nunito({ subsets: ["latin", "vietnamese"] });
 const changaOne = Changa_One({ subsets: ["latin"], weight: "400", variable: "--font-changa-one" });
@@ -67,6 +68,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 					{children}
 					<Toaster />
 				</AppProvider>
+				<Analytics />
 			</body>
 		</html>
 	);

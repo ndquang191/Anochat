@@ -158,7 +158,10 @@ func TestReprocessQueue_AppliesCooldownChangesToExistingMatchHistory(t *testing.
 
 	settings.settings.RematchCooldownSeconds = 0
 	roomRepo.On("Create", mock.Anything, mock.AnythingOfType("*chat.Room")).Return(nil).Once()
-	notifier.On("NotifyMatch", user2, user1, mock.AnythingOfType("uuid.UUID")).Return().Once()
+	queuedUser := mock.MatchedBy(func(id uuid.UUID) bool {
+		return id == user1 || id == user2
+	})
+	notifier.On("NotifyMatch", queuedUser, queuedUser, mock.AnythingOfType("uuid.UUID")).Return().Once()
 	require.NoError(t, qs.ReprocessQueue(context.Background()))
 	assert.False(t, qs.IsInQueue(user1))
 	assert.False(t, qs.IsInQueue(user2))
@@ -222,7 +225,10 @@ func TestReprocessQueue_AppliesAdminChangeToWaitingUsers(t *testing.T) {
 
 	settings.settings.DefaultMode = matching.ModeMixed
 	roomRepo.On("Create", mock.Anything, mock.AnythingOfType("*chat.Room")).Return(nil).Once()
-	notifier.On("NotifyMatch", user2, user1, mock.AnythingOfType("uuid.UUID")).Return().Once()
+	queuedUser := mock.MatchedBy(func(id uuid.UUID) bool {
+		return id == user1 || id == user2
+	})
+	notifier.On("NotifyMatch", queuedUser, queuedUser, mock.AnythingOfType("uuid.UUID")).Return().Once()
 	require.NoError(t, qs.ReprocessQueue(context.Background()))
 	assert.False(t, qs.IsInQueue(user1))
 	assert.False(t, qs.IsInQueue(user2))
