@@ -29,6 +29,7 @@ export interface UseWebSocketChatProps {
 	initialHasMore?: boolean;
 	onMatchFound?: (roomId: string) => void;
 	onPartnerLeft?: () => void;
+	onMessageReceived?: () => void;
 }
 
 export function useWebSocketChat({
@@ -38,6 +39,7 @@ export function useWebSocketChat({
 	initialHasMore = false,
 	onMatchFound,
 	onPartnerLeft,
+	onMessageReceived,
 }: UseWebSocketChatProps) {
 	const [messages, setMessages] = useState<ChatMessage[]>(
 		initialMessages ?? [],
@@ -58,6 +60,7 @@ export function useWebSocketChat({
 	const userIdRef = useRef(userId);
 	const onMatchFoundRef = useRef(onMatchFound);
 	const onPartnerLeftRef = useRef(onPartnerLeft);
+	const onMessageReceivedRef = useRef(onMessageReceived);
 	const { room } = useAuth();
 	const invalidateUserState = useInvalidateUserState();
 	const hasRehydratedRef = useRef(false);
@@ -65,13 +68,17 @@ export function useWebSocketChat({
 	const paginationRoomRef = useRef<string | null>(null);
 	const isLoadingOlderRef = useRef(false);
 	const activeRoomIdRef = useRef<string | null>(null);
+	const messageIdsRef = useRef(
+		new Set((initialMessages ?? []).map((message) => message.id)),
+	);
 	const { clearPendingAck, clearAllPendingAcks, schedulePendingAck } =
 		usePendingMessageAcks();
 
 	useEffect(() => {
 		onMatchFoundRef.current = onMatchFound;
 		onPartnerLeftRef.current = onPartnerLeft;
-	}, [onMatchFound, onPartnerLeft]);
+		onMessageReceivedRef.current = onMessageReceived;
+	}, [onMatchFound, onPartnerLeft, onMessageReceived]);
 
 	useEffect(() => {
 		userIdRef.current = userId;
@@ -108,6 +115,7 @@ export function useWebSocketChat({
 		if (!initialMessages?.length) return;
 		for (const message of initialMessages) {
 			clearPendingAck(message.id);
+			messageIdsRef.current.add(message.id);
 		}
 		setMessages((prev) =>
 			reconcileAuthoritativeMessages(prev, initialMessages),
@@ -171,6 +179,7 @@ export function useWebSocketChat({
 			setRoomId(room_id);
 			setPartnerLeft(false);
 			setMessages([]);
+			messageIdsRef.current.clear();
 			paginationRoomRef.current = null;
 			setNextCursor(null);
 			setHasMoreMessages(false);
@@ -194,15 +203,15 @@ export function useWebSocketChat({
 				...(message.payload as unknown as ChatMessage),
 				status: "sent" as const,
 			};
+			if (messageIdsRef.current.has(chatMessage.id)) {
+				return;
+			}
+			messageIdsRef.current.add(chatMessage.id);
 			if (chatMessage.sender_id !== userIdRef.current) {
 				playMessageSound();
+				onMessageReceivedRef.current?.();
 			}
-			setMessages((prev) => {
-				if (prev.some((m) => m.id === chatMessage.id)) {
-					return prev;
-				}
-				return [...prev, chatMessage];
-			});
+			setMessages((prev) => [...prev, chatMessage]);
 		};
 
 		const handleMessageAck = (message: WebSocketMessage) => {
@@ -252,6 +261,7 @@ export function useWebSocketChat({
 			setRoomId(null);
 			setPartnerLeft(false);
 			setMessages([]);
+			messageIdsRef.current.clear();
 			setNextCursor(null);
 			setHasMoreMessages(false);
 			hasJoinedRoomRef.current = null;
@@ -356,6 +366,7 @@ export function useWebSocketChat({
 				created_at: Math.floor(Date.now() / 1000),
 				status: "pending",
 			};
+			messageIdsRef.current.add(messageId);
 			setMessages((prev) => [...prev, optimisticMessage]);
 
 			const client = wsClient.current;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Loader2, RefreshCw, WifiOff } from "lucide-react";
 import { useWebSocketChat } from "@/hooks/use-websocket-chat";
 import { type ChatMessage } from "@/lib/websocket";
@@ -12,6 +12,7 @@ import { ChatEmptyState } from "@/components/chat/chat-empty-state";
 import { ChatMessages } from "@/components/chat/chat-messages";
 import { ChatInput } from "@/components/chat/chat-input";
 import { Button } from "@/components/ui/button";
+import { SITE_NAME } from "@/lib/site";
 
 const CONNECTION_TIMEOUT_MS = 10000;
 
@@ -26,7 +27,9 @@ export default function LocalizedChatBox() {
 	const [connectionTimedOut, setConnectionTimedOut] = useState(false);
 	const [isRetrying, setIsRetrying] = useState(false);
 	const [showReconnected, setShowReconnected] = useState(false);
+	const [unreadCount, setUnreadCount] = useState(0);
 	const wasDisconnectedRef = useRef(false);
+	const clearUnread = useCallback(() => setUnreadCount(0), []);
 
 	const {
 		messages,
@@ -57,7 +60,38 @@ export default function LocalizedChatBox() {
 					descriptionClassName: "!text-foreground",
 				});
 			},
+			onMessageReceived: () => {
+				if (document.hidden || !document.hasFocus()) {
+					setUnreadCount((count) => count + 1);
+				}
+			},
 		});
+
+	useEffect(() => {
+		const markAsSeen = () => {
+			if (!document.hidden && document.hasFocus()) {
+				clearUnread();
+			}
+		};
+
+		document.addEventListener("visibilitychange", markAsSeen);
+		window.addEventListener("focus", markAsSeen);
+		return () => {
+			document.removeEventListener("visibilitychange", markAsSeen);
+			window.removeEventListener("focus", markAsSeen);
+		};
+	}, [clearUnread]);
+
+	useEffect(() => {
+		document.title = unreadCount > 0 ? `(${unreadCount}) ${SITE_NAME}` : SITE_NAME;
+		return () => {
+			document.title = SITE_NAME;
+		};
+	}, [unreadCount]);
+
+	useEffect(() => {
+		clearUnread();
+	}, [roomId, clearUnread]);
 
 	useEffect(() => {
 		if (isConnected) {
