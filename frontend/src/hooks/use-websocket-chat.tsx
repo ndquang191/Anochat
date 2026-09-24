@@ -43,6 +43,7 @@ export function useWebSocketChat({
 		initialMessages ?? [],
 	);
 	const [isConnected, setIsConnected] = useState(false);
+	const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
 	const [roomId, setRoomId] = useState<string | null>(null);
 	const [partnerLeft, setPartnerLeft] = useState(false);
 	const [nextCursor, setNextCursor] = useState<string | null>(
@@ -133,6 +134,7 @@ export function useWebSocketChat({
 				.connect()
 				.then(() => {
 					setIsConnected(true);
+					setHasConnectedOnce(true);
 				})
 				.catch((error) => {
 					console.error("Failed to connect to WebSocket:", error);
@@ -140,12 +142,14 @@ export function useWebSocketChat({
 				});
 		} else {
 			setIsConnected(true);
+			setHasConnectedOnce(true);
 		}
 
 		const handleConnected = () => {
 			// Reset join tracking so join_room is re-sent after reconnection
 			hasJoinedRoomRef.current = null;
 			setIsConnected(true);
+			setHasConnectedOnce(true);
 		};
 
 		const handleDisconnected = () => {
@@ -277,6 +281,22 @@ export function useWebSocketChat({
 		};
 	}, [userId, invalidateUserState, clearPendingAck, clearAllPendingAcks]);
 
+	const reconnect = useCallback(async (): Promise<boolean> => {
+		try {
+			await wsClient.current.connect();
+			const connected = wsClient.current.isConnected();
+			setIsConnected(connected);
+			if (connected) {
+				setHasConnectedOnce(true);
+			}
+			return connected;
+		} catch (error) {
+			console.error("Failed to reconnect to WebSocket:", error);
+			setIsConnected(false);
+			return false;
+		}
+	}, []);
+
 	const loadOlderMessages = useCallback(async (): Promise<boolean> => {
 		if (
 			!roomId ||
@@ -377,6 +397,8 @@ export function useWebSocketChat({
 		messages,
 		sendMessage,
 		isConnected,
+		hasConnectedOnce,
+		reconnect,
 		roomId,
 		partnerLeft,
 		hasMoreMessages,

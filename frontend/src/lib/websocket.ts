@@ -26,6 +26,7 @@ export class WebSocketClient {
 	private maxReconnectDelay = 30000;
 	private isIntentionallyClosed = false;
 	private isConnecting = false;
+	private connectPromise: Promise<void> | null = null;
 
 	constructor(url: string) {
 		this.url = url;
@@ -33,14 +34,14 @@ export class WebSocketClient {
 
 	connect(): Promise<void> {
 		if (this.isConnecting || (this.ws && this.ws.readyState === WebSocket.CONNECTING)) {
-			return Promise.resolve();
+			return this.connectPromise ?? Promise.resolve();
 		}
 
 		if (this.ws && this.ws.readyState === WebSocket.OPEN) {
 			return Promise.resolve();
 		}
 
-		return new Promise((resolve, reject) => {
+		this.connectPromise = new Promise((resolve, reject) => {
 			try {
 				this.isConnecting = true;
 
@@ -51,6 +52,7 @@ export class WebSocketClient {
 					this.reconnectAttempts = 0;
 					this.isIntentionallyClosed = false;
 					this.isConnecting = false;
+					this.connectPromise = null;
 					resolve();
 				};
 
@@ -66,13 +68,19 @@ export class WebSocketClient {
 				this.ws.onerror = (error) => {
 					console.error("WebSocket error:", error);
 					this.isConnecting = false;
+					this.connectPromise = null;
 					reject(error);
 				};
 
 				this.ws.onclose = () => {
 					console.log("WebSocket closed");
+					const closedBeforeOpen = this.isConnecting;
 					this.ws = null;
 					this.isConnecting = false;
+					this.connectPromise = null;
+					if (closedBeforeOpen) {
+						reject(new Error("WebSocket closed before the connection opened"));
+					}
 
 					// Notify listeners that connection was lost
 					this.handleMessage({ type: "disconnected", payload: {} });
@@ -87,9 +95,13 @@ export class WebSocketClient {
 					}
 				};
 			} catch (error) {
+				this.isConnecting = false;
+				this.connectPromise = null;
 				reject(error);
 			}
 		});
+
+		return this.connectPromise;
 	}
 
 	disconnect() {
