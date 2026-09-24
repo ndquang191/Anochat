@@ -2,8 +2,9 @@ const DEFAULT_SITE_URL = "http://localhost:3000";
 
 export const SITE_NAME = "AnoChat";
 export const SITE_TAGLINE = "Chat ẩn danh ngẫu nhiên tại Việt Nam";
+export const SITE_SOCIAL_TITLE = "AnoChat — Nói điều thật lòng";
 export const SITE_DESCRIPTION =
-	"AnoChat là nền tảng anonymous chat VN giúp bạn nói chuyện với người lạ theo cách ngẫu nhiên, riêng tư và nhanh gọn mà không cần phô bày quá nhiều thông tin cá nhân.";
+	"Gặp một người lạ và bắt đầu cuộc trò chuyện riêng tư — không profile, không feed, không áp lực.";
 export const SITE_KEYWORDS = [
 	"AnoChat",
 	"anonymous chat VN",

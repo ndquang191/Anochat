@@ -5,10 +5,15 @@ import { BrandLogo } from "@/components/brand-logo";
 import { HomeCtaActions } from "@/components/home/home-cta-actions";
 import { ShineBorder } from "@/components/ui/shine-border";
 import { Button } from "@/components/ui/button";
-import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, absoluteUrl } from "@/lib/site";
+import {
+	SITE_DESCRIPTION,
+	SITE_NAME,
+	SITE_SOCIAL_TITLE,
+	SITE_TAGLINE,
+	absoluteUrl,
+} from "@/lib/site";
 
-const pageDescription =
-	"AnoChat là landing page cho nhu cầu anonymous chat VN: kết nối ngẫu nhiên, nói chuyện với người lạ, giữ trải nghiệm riêng tư và vào phòng chat rất nhanh.";
+const pageDescription = SITE_DESCRIPTION;
 
 const steps = [
 	{
@@ -67,7 +72,7 @@ export const metadata: Metadata = {
 		follow: true,
 	},
 	openGraph: {
-		title: SITE_NAME,
+		title: SITE_SOCIAL_TITLE,
 		description: pageDescription,
 		url: absoluteUrl("/home"),
 		siteName: SITE_NAME,
@@ -75,16 +80,18 @@ export const metadata: Metadata = {
 		locale: "vi_VN",
 		images: [
 			{
-				url: absoluteUrl("/icon.svg"),
-				alt: SITE_NAME,
+				url: absoluteUrl("/opengraph-image"),
+				width: 1200,
+				height: 630,
+				alt: "AnoChat — Nói điều thật lòng",
 			},
 		],
 	},
 	twitter: {
-		card: "summary",
-		title: SITE_NAME,
+		card: "summary_large_image",
+		title: SITE_SOCIAL_TITLE,
 		description: pageDescription,
-		images: [absoluteUrl("/icon.svg")],
+		images: [absoluteUrl("/opengraph-image")],
 	},
 };
 

@@ -9,7 +9,16 @@ export function middleware(request: NextRequest) {
         request.cookies.get("access_token")?.value;
     const pathname = request.nextUrl.pathname;
 
-    const publicPaths = ["/home", "/login", "/callback", "/error", "/robots.txt", "/sitemap.xml", "/icon.svg"];
+    const publicPaths = [
+        "/home",
+        "/login",
+        "/callback",
+        "/error",
+        "/robots.txt",
+        "/sitemap.xml",
+        "/icon.svg",
+        "/opengraph-image",
+    ];
     const isPublicPath = publicPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 
     const isLoggedIn = !!token;
@@ -30,5 +39,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-    matcher: ["/((?!api|_next/static|_next/image|favicon.ico|icon.svg|robots.txt|sitemap.xml).*)"],
+    matcher: ["/((?!api|_next/static|_next/image|favicon.ico|icon.svg|opengraph-image|robots.txt|sitemap.xml).*)"],
 };
