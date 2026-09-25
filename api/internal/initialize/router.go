@@ -28,11 +28,12 @@ type Server struct {
 	Router       *gin.Engine
 	QueueService *service.QueueService
 	Hub          *ws.Hub
+	PushService  *service.PushService
 	background   sync.WaitGroup
 }
 
 func (s *Server) Start(ctx context.Context) {
-	s.background.Add(2)
+	s.background.Add(3)
 	go func() {
 		defer s.background.Done()
 		s.Hub.Run(ctx)
@@ -40,6 +41,10 @@ func (s *Server) Start(ctx context.Context) {
 	go func() {
 		defer s.background.Done()
 		s.QueueService.Run(ctx)
+	}()
+	go func() {
+		defer s.background.Done()
+		s.PushService.Run(ctx)
 	}()
 }
 
@@ -66,6 +71,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	reportRepo := repository.NewReportRepository(db)
 	adminStatsRepo := repository.NewAdminStatsRepository(db)
 	matchSettingsRepo := repository.NewMatchSettingsRepository(db)
+	pushSubscriptionRepo := repository.NewPushSubscriptionRepository(db)
 
 	if count, err := userRepo.Count(context.Background()); err == nil {
 		metrics.TotalUsers.Set(float64(count))
@@ -89,6 +95,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	matchSettingsService := service.NewMatchSettingsService(matchSettingsRepo, userService, queueService)
 	moderationService := service.NewModerationService(bannedWordRepo, reportRepo, userRepo, roomRepo)
 	adminStatsService := service.NewAdminStatsService(adminStatsRepo, redisClient)
+	pushService := service.NewPushService(pushSubscriptionRepo, cfg.WebPush)
 	if err := moderationService.LoadWords(context.Background()); err != nil {
 		slog.Warn("Failed to load banned words at startup", "error", err)
 	}
@@ -103,10 +110,12 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 		cfg.Chat.MaxMessageLength,
 	)
 	queueService.SetMatchNotifier(wsHub)
+	wsHub.SetPushService(pushService)
 
 	authHandler := handler.NewAuthHandler(authService, oauthConfig, cfg)
 	userHandler := handler.NewUserHandler(userService, roomService, messageService, queueService, roomRepo, cfg)
-	queueHandler := handler.NewQueueHandler(queueService, cfg)
+	queueHandler := handler.NewQueueHandler(queueService, pushService, cfg)
+	pushHandler := handler.NewPushHandler(pushService, queueService)
 	wsHandler := handler.NewWebSocketHandler(wsHub, authService, cfg)
 	moderationHandler := handler.NewModerationHandler(moderationService)
 	adminStatsHandler := handler.NewAdminStatsHandler(adminStatsService)
@@ -138,6 +147,9 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 	{
 		protected.GET("/user/state", userHandler.GetUserState)
 		protected.POST("/user/ban-review", moderationHandler.RequestBanReview)
+		protected.GET("/push/config", pushHandler.Config)
+		protected.POST("/push/subscriptions", pushHandler.Subscribe)
+		protected.DELETE("/push/subscriptions/:id", pushHandler.Delete)
 
 		active := protected.Group("/")
 		active.Use(middleware.RequireActive())
@@ -150,6 +162,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 
 			active.POST("/queue/join", queueHandler.JoinQueue)
 			active.POST("/queue/leave", queueHandler.LeaveQueue)
+			active.POST("/queue/heartbeat", queueHandler.Heartbeat)
 
 			active.GET("/ws", wsHandler.HandleWebSocket)
 
@@ -180,6 +193,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 		Router:       router,
 		QueueService: queueService,
 		Hub:          wsHub,
+		PushService:  pushService,
 	}
 }
 

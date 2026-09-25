@@ -542,6 +542,32 @@ func TestUserDisconnected_NotInQueue(t *testing.T) {
 	qs.UserDisconnected(uuid.New())
 }
 
+func TestUserDisconnected_RetainsQueueWithActivePushLease(t *testing.T) {
+	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
+	userID := uuid.New()
+	subscriptionID := uuid.New()
+	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+
+	require.NoError(t, qs.JoinQueueWithSubscription(context.Background(), userID, subscriptionID))
+	assert.Equal(t, subscriptionID, qs.BackgroundSubscription(context.Background(), userID))
+
+	qs.UserDisconnected(userID)
+	assert.True(t, qs.IsInQueue(userID))
+
+	qs.ClearBackgroundSubscriptions(context.Background(), userID)
+	qs.UserDisconnected(userID)
+	assert.False(t, qs.IsInQueue(userID))
+}
+
+func TestQueueHeartbeatRequiresBackgroundSubscription(t *testing.T) {
+	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
+	userID := uuid.New()
+	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+	require.NoError(t, qs.JoinQueue(context.Background(), userID))
+
+	assert.ErrorIs(t, qs.Heartbeat(context.Background(), userID), apperr.ErrForbidden)
+}
+
 func TestRunStopsWhenContextIsCancelled(t *testing.T) {
 	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	roomRepo.On("ListActive", mock.Anything).Return([]*chat.Room{}, nil).Once()

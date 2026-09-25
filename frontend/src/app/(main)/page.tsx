@@ -14,6 +14,9 @@ import { playMatchSound } from "@/hooks/use-sound-notification";
 import { BannedNotice } from "@/components/chat/banned-notice";
 import { GenericErrorState } from "@/components/generic-error-state";
 import { toast } from "sonner";
+import { queueAPI } from "@/lib/api";
+import { getStoredPushSubscriptionID } from "@/contexts/pwa";
+import { usePWA } from "@/contexts/pwa";
 
 function RippleEffect({ active, onClick }: { active: boolean; onClick: () => void }) {
 	return (
@@ -67,6 +70,7 @@ const Page = () => {
 	const isAdmin = user?.is_admin === true;
 	const { joinQueue, leaveQueue, isLoading: isQueueLoading } = useQueue();
 	const [showEndedChat, setShowEndedChat] = useState(false);
+	const { isOnline } = usePWA();
 	const queueDetail = (() => {
 		if (!inQueue || !queueSettings || queueSettings.queue_display_mode === "hidden") return null;
 		if (queueSettings.queue_display_mode === "count" && queueSettings.queue_count !== undefined) {
@@ -89,6 +93,16 @@ const Page = () => {
 		if (inQueue) {
 			setShowEndedChat(false);
 		}
+	}, [inQueue]);
+
+	useEffect(() => {
+		if (!inQueue || !getStoredPushSubscriptionID()) return;
+		const heartbeat = () => {
+			if (document.visibilityState === "visible") queueAPI.heartbeat().catch(() => {});
+		};
+		heartbeat();
+		const timer = window.setInterval(heartbeat, 60_000);
+		return () => window.clearInterval(timer);
 	}, [inQueue]);
 
 	useEffect(() => {
@@ -153,6 +167,10 @@ const Page = () => {
 
 	const handleCTA = async () => {
 		if (isQueueLoading) return;
+		if (!isOnline) {
+			toast.error(t("connectionUnavailableDescription"));
+			return;
+		}
 
 		try {
 			setShowEndedChat(false);

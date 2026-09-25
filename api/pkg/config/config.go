@@ -22,6 +22,7 @@ type Config struct {
 	User               UserConfig
 	Security           SecurityConfig
 	Redis              RedisConfig
+	WebPush            WebPushConfig
 }
 
 type DatabaseConfig struct {
@@ -61,6 +62,13 @@ type RedisConfig struct {
 	URL      string
 	Password string
 	DB       int
+}
+
+type WebPushConfig struct {
+	Enabled    bool
+	PublicKey  string
+	PrivateKey string
+	Subject    string
 }
 
 // Load reads local development values from .env when present, then builds the
@@ -111,6 +119,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	webPushEnabled, err := boolEnv("WEB_PUSH_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
 
 	clientURL := envOrDefault("SERVER_CLIENT_URL", "http://localhost:3000")
 	cfg := &Config{
@@ -151,6 +163,12 @@ func Load() (*Config, error) {
 			URL:      envOrDefault("REDIS_URL", "localhost:6379"),
 			Password: os.Getenv("REDIS_PASSWORD"),
 			DB:       redisDB,
+		},
+		WebPush: WebPushConfig{
+			Enabled:    webPushEnabled,
+			PublicKey:  strings.TrimSpace(os.Getenv("WEB_PUSH_VAPID_PUBLIC_KEY")),
+			PrivateKey: strings.TrimSpace(os.Getenv("WEB_PUSH_VAPID_PRIVATE_KEY")),
+			Subject:    envOrDefault("WEB_PUSH_VAPID_SUBJECT", "mailto:admin@anochat.app"),
 		},
 	}
 
@@ -233,6 +251,9 @@ func (c *Config) validate() error {
 	}
 	if c.Redis.DB < 0 {
 		return fmt.Errorf("REDIS_DB must be zero or greater")
+	}
+	if c.WebPush.Enabled && (c.WebPush.PublicKey == "" || c.WebPush.PrivateKey == "" || c.WebPush.Subject == "") {
+		return fmt.Errorf("WEB_PUSH_VAPID_PUBLIC_KEY, WEB_PUSH_VAPID_PRIVATE_KEY, and WEB_PUSH_VAPID_SUBJECT are required when WEB_PUSH_ENABLED=true")
 	}
 	return nil
 }

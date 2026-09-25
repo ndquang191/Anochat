@@ -258,10 +258,13 @@
 	}
 	html,
 	body {
-		@apply bg-background text-foreground h-screen overflow-hidden;
+		@apply bg-background text-foreground overflow-hidden;
+		height: 100vh;
+		height: 100dvh;
 	}
 	body > div {
 		height: 100vh;
+		height: 100dvh;
 	}
 }
 

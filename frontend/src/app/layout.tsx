@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Nunito, Changa_One } from "next/font/google";
 import { cookies } from "next/headers";
 import "./globals.css";
@@ -15,6 +15,11 @@ import {
 } from "@/lib/site";
 import { Analytics } from "@vercel/analytics/next";
 
+export const viewport: Viewport = {
+	themeColor: "#516b91",
+	viewportFit: "cover",
+};
+
 const nunito = Nunito({ subsets: ["latin", "vietnamese"] });
 const changaOne = Changa_One({ subsets: ["latin"], weight: "400", variable: "--font-changa-one" });
 
@@ -23,6 +28,14 @@ export const metadata: Metadata = {
 	title: SITE_NAME,
 	description: SITE_DESCRIPTION,
 	applicationName: SITE_NAME,
+	appleWebApp: {
+		capable: true,
+		title: SITE_NAME,
+		statusBarStyle: "default",
+	},
+	icons: {
+		apple: "/icons/apple-touch-icon.png",
+	},
 	keywords: SITE_KEYWORDS,
 	openGraph: {
 		title: SITE_SOCIAL_TITLE,

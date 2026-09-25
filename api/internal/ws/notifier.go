@@ -45,10 +45,16 @@ func (h *Hub) NotifyMatch(user1ID, user2ID, roomID uuid.UUID) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	for _, userID := range []uuid.UUID{user1ID, user2ID} {
+		subscriptionID := h.queueService.BackgroundSubscription(ctx, userID)
 		if err := h.rdb.Publish(ctx, "user:"+userID.String(), data).Err(); err != nil {
 			slog.Error("Failed to publish match_found to user channel", "user_id", userID, "error", err)
 		}
+		if h.pushService != nil {
+			h.pushService.EnqueueMatch(userID, subscriptionID)
+		}
 	}
+	h.queueService.ClearBackgroundSubscriptions(ctx, user1ID, user2ID)
 }

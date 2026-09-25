@@ -73,7 +73,7 @@ export function ChatInput({ onSendMessage, onTypingChange, disabled }: ChatInput
 	return (
 		<form
 			onSubmit={handleSubmit}
-			className="flex items-center gap-2 border-t bg-background p-4 shrink-0"
+			className="flex shrink-0 items-center gap-2 border-t bg-background px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
 		>
 			<Input
 				ref={inputRef}

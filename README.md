@@ -17,6 +17,7 @@ moderation, and horizontal backend coordination through Redis.
 - Reporting, banned-word management, user suspension, review requests, and an
   administrator dashboard
 - Vietnamese and English UI, responsive layout, and theme preferences
+- Installable PWA with safe offline fallback and background match notifications
 
 ## Architecture
 
@@ -184,6 +185,16 @@ inject the same variables through their secret/configuration manager.
 environment variables take precedence over `api/.env`. Next.js exposes
 `NEXT_PUBLIC_*` values at build time, so production frontend values must be set
 before `bun run build`.
+
+Web Push is disabled by default. Generate one stable VAPID key pair, configure
+`WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, and
+`WEB_PUSH_VAPID_SUBJECT`, then set `WEB_PUSH_ENABLED=true`. Keep the private key
+only in the backend secret store.
+
+```bash
+cd api
+go run ./cmd/vapid
+```
 
 ### Docker Compose
 

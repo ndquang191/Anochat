@@ -9,6 +9,7 @@ import { useUserState, USER_STATE_KEY } from "@/hooks/queries/use-user-state";
 import { queryClient } from "@/lib/query-client";
 import { Loader2 } from "lucide-react";
 import { useLanguage } from "@/contexts/theme";
+import { usePWA } from "@/contexts/pwa";
 
 interface AuthContextType {
 	isAuthenticated: boolean;
@@ -37,6 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const [sessionPresent, setSessionPresent] = useState(false);
 	const [isLoggingOut, setIsLoggingOut] = useState(false);
 	const { t } = useLanguage();
+	const { unsubscribe, refreshPushConfig } = usePWA();
 	useEffect(() => {
 		const hasSession = !!getCookie("has_session");
 		// Remove PII cookies created by older versions of the login flow.
@@ -61,18 +63,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			}
 			queryClient.setQueryData(USER_STATE_KEY, response.data);
 			setSessionPresent(true);
+			await refreshPushConfig();
 		} catch (error) {
 			deleteCookie("has_session");
 			queryClient.removeQueries({ queryKey: USER_STATE_KEY });
 			setSessionPresent(false);
 			throw error;
 		}
-	}, []);
+	}, [refreshPushConfig]);
 
 	const logout = useCallback(async () => {
 		setIsLoggingOut(true);
 
 		try {
+			await unsubscribe();
 			await authAPI.logout();
 		} catch {
 		}
@@ -83,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		// Keep the current user state behind the loading overlay until the hard
 		// navigation starts, so the chat never flashes an empty state.
 		window.location.replace("/login");
-	}, []);
+	}, [unsubscribe]);
 
 	const checkAuth = useCallback(async () => {
 		try {

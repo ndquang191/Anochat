@@ -91,6 +91,20 @@ type Message struct {
 	Sender *User `gorm:"foreignKey:SenderID;constraint:OnDelete:CASCADE" json:"sender,omitempty"`
 }
 
+// PushSubscription stores one browser push endpoint. Endpoint uniqueness also
+// prevents a shared browser profile from remaining attached to an old account.
+type PushSubscription struct {
+	ID            uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	UserID        uuid.UUID  `gorm:"type:uuid;not null;index" json:"user_id"`
+	Endpoint      string     `gorm:"type:text;not null;uniqueIndex" json:"-"`
+	P256DH        string     `gorm:"type:text;not null" json:"-"`
+	Auth          string     `gorm:"type:text;not null" json:"-"`
+	Locale        string     `gorm:"type:varchar(2);not null" json:"locale"`
+	CreatedAt     time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt     time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
+	LastSuccessAt *time.Time `gorm:"type:timestamptz" json:"last_success_at,omitempty"`
+}
+
 // BannedWord stores words to filter from chat messages.
 type BannedWord struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -163,6 +177,8 @@ func (RoomSession) TableName() string {
 func (Message) TableName() string {
 	return "messages"
 }
+
+func (PushSubscription) TableName() string { return "push_subscriptions" }
 
 func (BannedWord) TableName() string {
 	return "banned_words"

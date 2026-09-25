@@ -40,6 +40,7 @@ type Hub struct {
 	messageService    *service.MessageService
 	roomService       *service.RoomService
 	moderationService *service.ModerationService
+	pushService       *service.PushService
 	rdb               *redis.Client
 	pubsub            *redis.PubSub
 	messageRateLimit  int
@@ -49,6 +50,8 @@ type Hub struct {
 	roomMutex      sync.RWMutex
 	roomLocalCount map[uuid.UUID]int // number of local clients per room
 }
+
+func (h *Hub) SetPushService(pushService *service.PushService) { h.pushService = pushService }
 
 type BroadcastMessage struct {
 	RoomID  uuid.UUID
