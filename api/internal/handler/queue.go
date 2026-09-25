@@ -10,11 +10,12 @@ import (
 
 type QueueHandler struct {
 	queueService *service.QueueService
+	pushService  *service.PushService
 	config       *config.Config
 }
 
-func NewQueueHandler(queueService *service.QueueService, cfg *config.Config) *QueueHandler {
-	return &QueueHandler{queueService: queueService, config: cfg}
+func NewQueueHandler(queueService *service.QueueService, pushService *service.PushService, cfg *config.Config) *QueueHandler {
+	return &QueueHandler{queueService: queueService, pushService: pushService, config: cfg}
 }
 
 func (h *QueueHandler) JoinQueue(c *gin.Context) {
@@ -24,12 +25,29 @@ func (h *QueueHandler) JoinQueue(c *gin.Context) {
 		return
 	}
 
-	if err := h.queueService.JoinQueue(c.Request.Context(), userID); err != nil {
+	var request struct {
+		PushSubscriptionID string `json:"push_subscription_id"`
+	}
+	_ = c.ShouldBindJSON(&request)
+	subscriptionID := uuid.Nil
+	if parsed, err := uuid.Parse(request.PushSubscriptionID); err == nil && h.pushService.IsOwned(c.Request.Context(), parsed, userID) {
+		subscriptionID = parsed
+	}
+
+	if err := h.queueService.JoinQueueWithSubscription(c.Request.Context(), userID, subscriptionID); err != nil {
 		dto.FailErr(c, err)
 		return
 	}
 
 	dto.OKWithMessage(c, "Successfully joined queue", nil)
+}
+
+func (h *QueueHandler) Heartbeat(c *gin.Context) {
+	if err := h.queueService.Heartbeat(c.Request.Context(), getUserID(c)); err != nil {
+		dto.FailErr(c, err)
+		return
+	}
+	dto.OKWithMessage(c, "Queue lease renewed", nil)
 }
 
 func (h *QueueHandler) LeaveQueue(c *gin.Context) {

@@ -23,6 +23,9 @@ const (
 	queueReservationsKey       = "queue:reservations"
 	queueReservationTokensKey  = "queue:reservation_tokens"
 	queueMetadataKey           = "queue:metadata"
+	queueBackgroundKey         = "queue:background_subscriptions"
+	queueLeaseKeyPrefix        = "queue:lease:"
+	queueLeaseTTL              = 5 * time.Minute
 	recentPartnersKeyPrefix    = "match:recent:"
 	recentMatchHistoryTTL      = 7 * 24 * time.Hour
 	matchReservationTTL        = 30 * time.Second
@@ -526,6 +529,59 @@ func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
 	return nil
 }
 
+// JoinQueueWithSubscription creates a short background lease before joining.
+// It is only called after the subscription has been verified for this user.
+func (qs *QueueService) JoinQueueWithSubscription(ctx context.Context, userID, subscriptionID uuid.UUID) error {
+	if subscriptionID != uuid.Nil {
+		pipe := qs.rdb.TxPipeline()
+		pipe.HSet(ctx, queueBackgroundKey, userID.String(), subscriptionID.String())
+		pipe.Set(ctx, queueLeaseKeyPrefix+userID.String(), "1", queueLeaseTTL)
+		if _, err := pipe.Exec(ctx); err != nil {
+			return fmt.Errorf("create queue lease: %w", err)
+		}
+	}
+	if err := qs.JoinQueue(ctx, userID); err != nil {
+		qs.clearBackgroundSubscription(ctx, userID)
+		return err
+	}
+	return nil
+}
+
+func (qs *QueueService) Heartbeat(ctx context.Context, userID uuid.UUID) error {
+	if !qs.IsInQueue(userID) {
+		return apperr.ErrNotInQueue
+	}
+	if _, err := qs.rdb.HGet(ctx, queueBackgroundKey, userID.String()).Result(); err != nil {
+		return apperr.ErrForbidden
+	}
+	return qs.rdb.Expire(ctx, queueLeaseKeyPrefix+userID.String(), queueLeaseTTL).Err()
+}
+
+func (qs *QueueService) BackgroundSubscription(ctx context.Context, userID uuid.UUID) uuid.UUID {
+	if qs.rdb.Exists(ctx, queueLeaseKeyPrefix+userID.String()).Val() == 0 {
+		return uuid.Nil
+	}
+	value, err := qs.rdb.HGet(ctx, queueBackgroundKey, userID.String()).Result()
+	if err != nil {
+		return uuid.Nil
+	}
+	id, _ := uuid.Parse(value)
+	return id
+}
+
+func (qs *QueueService) clearBackgroundSubscription(ctx context.Context, userID uuid.UUID) {
+	pipe := qs.rdb.TxPipeline()
+	pipe.HDel(ctx, queueBackgroundKey, userID.String())
+	pipe.Del(ctx, queueLeaseKeyPrefix+userID.String())
+	_, _ = pipe.Exec(ctx)
+}
+
+func (qs *QueueService) ClearBackgroundSubscriptions(ctx context.Context, userIDs ...uuid.UUID) {
+	for _, userID := range userIDs {
+		qs.clearBackgroundSubscription(ctx, userID)
+	}
+}
+
 func (qs *QueueService) finishMatchReservationWithRetry(
 	userID uuid.UUID,
 	partnerID uuid.UUID,
@@ -588,6 +644,7 @@ func (qs *QueueService) LeaveQueue(ctx context.Context, userID uuid.UUID) error 
 		return apperr.ErrNotInQueue
 	}
 
+	qs.clearBackgroundSubscription(ctx, userID)
 	qs.updateQueueMetric(ctx)
 	slog.Info("User left queue", "user_id", userID)
 	return nil
@@ -604,6 +661,10 @@ func (qs *QueueService) IsInQueue(userID uuid.UUID) bool {
 func (qs *QueueService) UserDisconnected(userID uuid.UUID) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
+	if qs.BackgroundSubscription(ctx, userID) != uuid.Nil {
+		slog.Info("User disconnected with an active background queue lease", "user_id", userID)
+		return
+	}
 
 	removed, err := removeFromQueueScript.Run(
 		ctx,
@@ -635,10 +696,33 @@ func (qs *QueueService) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			qs.cleanupExpiredBackgroundLeases(ctx)
 			qs.reconcileAllActiveRooms(ctx)
 			if err := qs.ReprocessQueue(ctx); err != nil {
 				slog.Warn("Failed to reprocess waiting queue", "error", err)
 			}
+		}
+	}
+}
+
+func (qs *QueueService) cleanupExpiredBackgroundLeases(ctx context.Context) {
+	entries, err := qs.rdb.HGetAll(ctx, queueBackgroundKey).Result()
+	if err != nil {
+		return
+	}
+	for userText := range entries {
+		if qs.rdb.Exists(ctx, queueLeaseKeyPrefix+userText).Val() != 0 {
+			continue
+		}
+		userID, parseErr := uuid.Parse(userText)
+		if parseErr != nil {
+			continue
+		}
+		removed, removeErr := removeFromQueueScript.Run(ctx, qs.rdb,
+			[]string{queueKey, queueReservationsKey, queueReservationTokensKey, queueMetadataKey},
+			userText, time.Now().UnixMilli()).Int()
+		if removeErr == nil && removed != -1 {
+			qs.clearBackgroundSubscription(ctx, userID)
 		}
 	}
 }

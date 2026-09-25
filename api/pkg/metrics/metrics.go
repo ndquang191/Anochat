@@ -28,6 +28,10 @@ var (
 		Help:    "Time in seconds from joining queue to being matched",
 		Buckets: []float64{0.5, 1, 2, 5, 10, 30, 60, 120, 300},
 	})
+
+	PushEnqueued  = prometheus.NewCounter(prometheus.CounterOpts{Name: "anochat_push_enqueued_total", Help: "Web Push jobs enqueued"})
+	PushDropped   = prometheus.NewCounter(prometheus.CounterOpts{Name: "anochat_push_dropped_total", Help: "Web Push jobs dropped because the queue was full"})
+	PushSendTotal = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "anochat_push_send_total", Help: "Web Push delivery results"}, []string{"result"})
 )
 
 func Register() {
@@ -37,5 +41,8 @@ func Register() {
 		NewRegistrations,
 		QueueSize,
 		MatchDuration,
+		PushEnqueued,
+		PushDropped,
+		PushSendTotal,
 	)
 }

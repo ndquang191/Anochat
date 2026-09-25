@@ -9,6 +9,8 @@ import {
 	SlidersHorizontal,
 	Volume2,
 	VolumeX,
+	Download,
+	Bell,
 } from "lucide-react";
 import {
 	LanguageToggle,
@@ -26,6 +28,8 @@ import { userAPI } from "@/lib/api";
 import { useUserState, useInvalidateUserState } from "@/hooks/queries/use-user-state";
 import type { MatchMode } from "@/types";
 import { toast } from "sonner";
+import { usePWA } from "@/contexts/pwa";
+import { useAlertDialogContext } from "@/contexts/alert-dialog";
 
 const themeOrder = ["blue", "dark", "pink"] as const;
 const iconButtonClass =
@@ -47,6 +51,8 @@ export function SidebarPreferences({
 	const { data } = useUserState();
 	const invalidateUserState = useInvalidateUserState();
 	const [isUpdatingMatchMode, setIsUpdatingMatchMode] = useState(false);
+	const { canInstall, isIOS, isStandalone, install, pushEnabled, isPushSubscribed, ensurePushSubscription, unsubscribe } = usePWA();
+	const alertDialog = useAlertDialogContext();
 	const soundLabel = soundEnabled ? t("turnOffSound") : t("turnOnSound");
 
 	const cycleTheme = (origin: HTMLElement) => {
@@ -91,6 +97,40 @@ export function SidebarPreferences({
 						className="rounded-md border border-border/50 bg-card p-4 shadow-sm"
 					>
 						<div className="flex flex-col gap-3">
+							{canInstall && (
+								<button
+									type="button"
+									className="flex min-h-8 items-center gap-3 text-left text-sm"
+									onClick={async () => {
+										if (isIOS) {
+											await alertDialog.open({ title: language === "vi" ? "Cài đặt AnoChat" : "Install AnoChat", description: language === "vi" ? "Mở menu Chia sẻ của trình duyệt rồi chọn “Thêm vào Màn hình chính”." : "Open the browser Share menu and choose “Add to Home Screen”.", confirmText: t("confirm") });
+											return;
+										}
+										await install();
+									}}
+								>
+									<Download size={16} aria-hidden="true" />
+									<span>{language === "vi" ? "Cài đặt AnoChat" : "Install AnoChat"}</span>
+								</button>
+							)}
+							{pushEnabled && (
+								<div className="flex min-h-8 items-center gap-3">
+									<Bell size={16} aria-hidden="true" />
+									<Switch
+										checked={isPushSubscribed}
+										onCheckedChange={async (checked) => {
+											if (!checked) { await unsubscribe(); return; }
+											if (isIOS && !isStandalone) {
+												await alertDialog.open({ title: language === "vi" ? "Cài đặt AnoChat" : "Install AnoChat", description: language === "vi" ? "Trên iPhone/iPad, hãy thêm AnoChat vào Màn hình chính trước khi bật thông báo." : "On iPhone/iPad, add AnoChat to the Home Screen before enabling notifications.", confirmText: t("confirm") });
+												return;
+											}
+											await ensurePushSubscription();
+										}}
+										aria-label={language === "vi" ? "Thông báo ghép đôi" : "Match notifications"}
+									/>
+									<span className="text-sm">{language === "vi" ? "Thông báo ghép đôi" : "Match notifications"}</span>
+								</div>
+							)}
 							<div className="flex items-center gap-3">
 								<button
 									type="button"

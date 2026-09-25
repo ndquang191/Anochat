@@ -16,12 +16,36 @@ func setRequiredEnv(t *testing.T) {
 		"CHAT_MESSAGE_RATE_LIMIT", "CHAT_MAX_MESSAGE_LENGTH",
 		"USER_MIN_AGE", "USER_MAX_AGE", "SECURITY_RATE_LIMIT", "ALLOW_DATABASE_RESET",
 		"DEV_AUTH_ENABLED",
+		"WEB_PUSH_ENABLED", "WEB_PUSH_VAPID_PUBLIC_KEY", "WEB_PUSH_VAPID_PRIVATE_KEY", "WEB_PUSH_VAPID_SUBJECT",
 	} {
 		t.Setenv(key, "")
 	}
 	t.Setenv("DATABASE_USER", "postgres")
 	t.Setenv("DATABASE_PASSWORD", "postgres")
 	t.Setenv("OAUTH_JWT_SECRET", "test-secret")
+}
+
+func TestLoadRequiresVAPIDKeysWhenWebPushEnabled(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("WEB_PUSH_ENABLED", "true")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() error = nil, want missing VAPID key error")
+	}
+}
+
+func TestLoadAcceptsCompleteWebPushConfig(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("WEB_PUSH_ENABLED", "true")
+	t.Setenv("WEB_PUSH_VAPID_PUBLIC_KEY", "public")
+	t.Setenv("WEB_PUSH_VAPID_PRIVATE_KEY", "private")
+	t.Setenv("WEB_PUSH_VAPID_SUBJECT", "mailto:ops@example.com")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.WebPush.Enabled || cfg.WebPush.PublicKey != "public" {
+		t.Fatalf("unexpected WebPush config: %#v", cfg.WebPush)
+	}
 }
 
 func TestLoadUsesDefaults(t *testing.T) {

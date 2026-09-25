@@ -89,8 +89,11 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 }
 
 export const queueAPI = {
-	join: async () => {
-		const result = await apiCall<{ message: string }>("/queue/join", { method: "POST" });
+	join: async (pushSubscriptionId?: string | null) => {
+		const result = await apiCall<{ message: string }>("/queue/join", {
+			method: "POST",
+			body: JSON.stringify({ push_subscription_id: pushSubscriptionId ?? "" }),
+		});
 		toast.success(translateStored("joinQueueSuccess"));
 		return result;
 	},
@@ -100,6 +103,20 @@ export const queueAPI = {
 		toast.success(translateStored("leaveQueueSuccess"));
 		return result;
 	},
+	heartbeat: () => apiCall<void>("/queue/heartbeat", { method: "POST" }),
+};
+
+export interface SerializedPushSubscription {
+	endpoint: string;
+	keys: { p256dh: string; auth: string };
+	locale: "vi" | "en";
+}
+
+export const pushAPI = {
+	config: () => apiCall<{ enabled: boolean; public_key: string }>("/push/config"),
+	subscribe: (subscription: SerializedPushSubscription) =>
+		apiCall<{ id: string }>("/push/subscriptions", { method: "POST", body: JSON.stringify(subscription) }),
+	unsubscribe: (id: string) => apiCall<void>(`/push/subscriptions/${id}`, { method: "DELETE" }),
 };
 
 export const userAPI = {

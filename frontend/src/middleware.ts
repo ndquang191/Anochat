@@ -14,6 +14,9 @@ export function middleware(request: NextRequest) {
         "/login",
         "/callback",
         "/error",
+		"/offline",
+		"/manifest.webmanifest",
+		"/sw.js",
         "/robots.txt",
         "/sitemap.xml",
         "/icon.svg",
@@ -39,5 +42,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-    matcher: ["/((?!api|_next/static|_next/image|favicon.ico|icon.svg|opengraph-image|robots.txt|sitemap.xml).*)"],
+    matcher: ["/((?!api|_next/static|_next/image|favicon.ico|icons|sw.js|manifest.webmanifest|icon.svg|opengraph-image|robots.txt|sitemap.xml).*)"],
 };

@@ -87,3 +87,21 @@ $function$ LANGUAGE plpgsql;
 		t.Errorf("function body was split incorrectly: %q", statements[2])
 	}
 }
+
+func TestPushSubscriptionMigrationHasOwnershipAndEndpointConstraints(t *testing.T) {
+	items, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var source string
+	for _, item := range items {
+		if item.Version == 6 {
+			source = item.SQL
+		}
+	}
+	for _, required := range []string{"CREATE TABLE IF NOT EXISTS push_subscriptions", "REFERENCES users(id) ON DELETE CASCADE", "endpoint TEXT NOT NULL UNIQUE", "CHECK (locale IN ('vi', 'en'))"} {
+		if !strings.Contains(source, required) {
+			t.Errorf("push migration is missing %q", required)
+		}
+	}
+}

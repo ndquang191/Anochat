@@ -8,6 +8,7 @@ import { AuthProvider } from "./auth";
 import { AlertDialogProvider } from "./alert-dialog";
 import { ThemeProvider } from "./theme";
 import type { Language } from "@/lib/i18n";
+import { PWAProvider } from "./pwa";
 
 interface AppProviderProps {
 	children: ReactNode;
@@ -18,11 +19,13 @@ export function AppProvider({ children, initialLanguage }: AppProviderProps) {
 	return (
 		<ThemeProvider initialLanguage={initialLanguage}>
 			<QueryClientProvider client={queryClient}>
-				<ErrorBoundary>
-					<AuthProvider>
-						<AlertDialogProvider>{children}</AlertDialogProvider>
-					</AuthProvider>
-				</ErrorBoundary>
+				<PWAProvider>
+					<ErrorBoundary>
+						<AuthProvider>
+							<AlertDialogProvider>{children}</AlertDialogProvider>
+						</AuthProvider>
+					</ErrorBoundary>
+				</PWAProvider>
 			</QueryClientProvider>
 		</ThemeProvider>
 	);

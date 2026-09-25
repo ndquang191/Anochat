@@ -85,7 +85,15 @@ Update profile fields. All fields are optional.
 
 Join the matchmaking queue. Match notification is delivered via WebSocket `match_found`.
 
-**Request body:** _(empty)_
+**Request body:**
+
+```json
+{ "push_subscription_id": "uuid-or-empty" }
+```
+
+When the ID belongs to the current user, the queue entry gets a five-minute
+background lease. Without it, disconnecting the WebSocket removes the user from
+the queue as before.
 
 **Errors:** `409` if already in queue or already in an active room.
 
@@ -94,6 +102,32 @@ Join the matchmaking queue. Match notification is delivered via WebSocket `match
 ### POST `/queue/leave`
 
 Leave the queue without being matched.
+
+### POST `/queue/heartbeat`
+
+Extend an active push-backed queue lease by five minutes. The frontend calls
+this every minute while it is visible and waiting.
+
+### Web Push
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/push/config` | Return `{ enabled, public_key }` |
+| POST | `/push/subscriptions` | Register or update this browser subscription |
+| DELETE | `/push/subscriptions/:id` | Remove an owned browser subscription |
+
+Subscription request body:
+
+```json
+{
+  "endpoint": "https://push-service.example/subscription",
+  "keys": { "p256dh": "...", "auth": "..." },
+  "locale": "vi"
+}
+```
+
+AnoChat v1 sends Web Push only for `match_found`. Payloads contain no chat
+content or partner identity. Expired endpoints (`404` or `410`) are removed.
 
 An administrator-configured cooldown can prevent two recent partners from
 matching again for 6 hours, 12 hours, 24 hours, or 7 days. Recent pairs are
