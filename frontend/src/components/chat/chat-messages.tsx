@@ -119,6 +119,14 @@ export function ChatMessages({
 		overscan: 5,
 	});
 
+	// Standalone PWAs do not always emit a resize/paint signal when only the
+	// virtual list's item count changes. Measure explicitly so a newly received
+	// message is rendered without waiting for an unrelated layout change (for
+	// example, opening or closing the sidebar).
+	useLayoutEffect(() => {
+		virtualizer.measure();
+	}, [rows.length, virtualizer]);
+
 	const loadOlder = useCallback(async () => {
 		const el = scrollContainerRef.current;
 		if (
@@ -189,11 +197,11 @@ export function ChatMessages({
 			!prependAnchorRef.current
 		) {
 			requestAnimationFrame(() => {
-				const el = scrollContainerRef.current;
-				if (el) el.scrollTop = el.scrollHeight;
+				virtualizer.measure();
+				virtualizer.scrollToIndex(rows.length - 1, { align: "end" });
 			});
 		}
-	}, [messages, virtualizer]);
+	}, [messages, rows.length, virtualizer]);
 
 	if (messages.length === 0) {
 		return (
