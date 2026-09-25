@@ -1,5 +1,9 @@
 # Anochat Documentation
 
+## Architecture
+
+- **architecture-websocket-pwa.md** — Current system architecture, focused on distributed WebSocket delivery and PWA/Web Push
+
 ## Backend
 
 - **api.md** — REST and WebSocket API reference
