@@ -34,6 +34,8 @@ export const metadata: Metadata = {
 		statusBarStyle: "default",
 	},
 	icons: {
+		icon: "/icon.svg",
+		shortcut: "/icon.svg",
 		apple: "/icons/apple-touch-icon.png",
 	},
 	keywords: SITE_KEYWORDS,

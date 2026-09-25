@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Ghost body — fills the viewbox -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 36 36">
+  <!-- Keep a safe area around the ghost so mobile launchers do not clip it. -->
   <path
     d="M3 13
        A13 13 0 0 1 29 13
