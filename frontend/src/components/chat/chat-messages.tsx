@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useEffect, useLayoutEffect, useCallback, useMemo } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { Loader2 } from "lucide-react";
 import { ChatMessage } from "./chat-message";
 import { useLanguage } from "@/contexts/theme";
@@ -112,21 +111,6 @@ export function ChatMessages({
 		[messages, language, todayLabel, yesterdayLabel]
 	);
 
-	const virtualizer = useVirtualizer({
-		count: rows.length,
-		getScrollElement: () => scrollContainerRef.current,
-		estimateSize: (index) => (rows[index].kind === "date" ? 28 : 44),
-		overscan: 5,
-	});
-
-	// Standalone PWAs do not always emit a resize/paint signal when only the
-	// virtual list's item count changes. Measure explicitly so a newly received
-	// message is rendered without waiting for an unrelated layout change (for
-	// example, opening or closing the sidebar).
-	useLayoutEffect(() => {
-		virtualizer.measure();
-	}, [rows.length, virtualizer]);
-
 	const loadOlder = useCallback(async () => {
 		const el = scrollContainerRef.current;
 		if (
@@ -170,7 +154,6 @@ export function ChatMessages({
 		const el = scrollContainerRef.current;
 		if (!anchor || !el || messages[0]?.id === anchor.firstMessageId) return;
 
-		virtualizer.measure();
 		requestAnimationFrame(() => {
 			const current = scrollContainerRef.current;
 			if (!current) return;
@@ -178,7 +161,7 @@ export function ChatMessages({
 				anchor.scrollTop + (current.scrollHeight - anchor.scrollHeight);
 			prependAnchorRef.current = null;
 		});
-	}, [messages, virtualizer]);
+	}, [messages]);
 
 	useEffect(() => {
 		const prevCount = prevMessageCountRef.current;
@@ -187,7 +170,6 @@ export function ChatMessages({
 
 		if (nextCount === 0) {
 			isAtBottomRef.current = true;
-			virtualizer.measure();
 			return;
 		}
 
@@ -197,14 +179,11 @@ export function ChatMessages({
 			!prependAnchorRef.current
 		) {
 			requestAnimationFrame(() => {
-				virtualizer.measure();
-				requestAnimationFrame(() => {
-					const el = scrollContainerRef.current;
-					if (el) el.scrollTop = el.scrollHeight;
-				});
+				const el = scrollContainerRef.current;
+				if (el) el.scrollTop = el.scrollHeight;
 			});
 		}
-	}, [messages, virtualizer]);
+	}, [messages]);
 
 	if (messages.length === 0) {
 		return (
@@ -217,92 +196,69 @@ export function ChatMessages({
 		);
 	}
 
-	const virtualItems = virtualizer.getVirtualItems();
-	const totalSize = virtualizer.getTotalSize();
-	const viewportHeight = scrollContainerRef.current?.clientHeight ?? 0;
-	const alignToBottom = totalSize > 0 && totalSize < viewportHeight;
-
 	return (
 		<div
 			ref={scrollContainerRef}
 			onScroll={handleScroll}
 			className="flex-1 min-h-0 overflow-y-auto overscroll-none px-4 pt-2"
 		>
-				{(isLoadingOlder || loadOlderError) && (
-					<div className="pointer-events-none sticky top-2 z-10 flex h-0 justify-center">
-						{isLoadingOlder ? (
-							<span className="rounded-full border bg-background/95 p-2 shadow-sm">
-								<Loader2 className="size-4 animate-spin text-muted-foreground" />
-							</span>
-						) : (
-							<button
-								type="button"
-								onClick={() => void loadOlder()}
-								className="pointer-events-auto rounded-full border bg-background/95 px-3 py-1 text-xs text-muted-foreground shadow-sm hover:text-foreground"
-							>
-								{t("pleaseTryAgain")}
-							</button>
-						)}
-					</div>
-				)}
-				<div
-					style={{
-						height: alignToBottom ? "100%" : totalSize,
-						width: "100%",
-						position: "relative",
-					}}
-				>
-					<div
-						style={{
-							position: "absolute",
-							top: alignToBottom ? undefined : 0,
-							bottom: alignToBottom ? 0 : undefined,
-							left: 0,
-							width: "100%",
-							transform: alignToBottom
-								? undefined
-								: `translateY(${virtualItems[0]?.start ?? 0}px)`,
-						}}
-					>
-						{virtualItems.map((virtualItem) => {
-							const row = rows[virtualItem.index];
-							const nextRow = rows[virtualItem.index + 1];
-							const endsSenderGroup =
-								row.kind === "message" &&
-								(nextRow?.kind !== "message" ||
-									nextRow.message.sender_id !== row.message.sender_id);
-							return (
-								<div
-									key={virtualItem.key}
-									data-index={virtualItem.index}
-									ref={virtualizer.measureElement}
-									className={
-										row.kind === "date"
-											? "pb-2"
-											: endsSenderGroup
-												? "pb-1.5"
-												: "pb-1"
-									}
-								>
-									{row.kind === "date" ? (
-										<div className="flex items-center gap-3 py-1">
-											<div className="flex-1 h-px bg-border" />
-											<span className="text-xs text-muted-foreground">{row.label}</span>
-											<div className="flex-1 h-px bg-border" />
-										</div>
-									) : (
-											<ChatMessage
-												content={row.message.content}
-												isCurrentUser={row.message.sender_id === currentUserId}
-												created_at={row.message.created_at}
-												status={row.message.status}
-											/>
-									)}
-								</div>
-							);
-						})}
-					</div>
+			{(isLoadingOlder || loadOlderError) && (
+				<div className="pointer-events-none sticky top-2 z-10 flex h-0 justify-center">
+					{isLoadingOlder ? (
+						<span className="rounded-full border bg-background/95 p-2 shadow-sm">
+							<Loader2 className="size-4 animate-spin text-muted-foreground" />
+						</span>
+					) : (
+						<button
+							type="button"
+							onClick={() => void loadOlder()}
+							className="pointer-events-auto rounded-full border bg-background/95 px-3 py-1 text-xs text-muted-foreground shadow-sm hover:text-foreground"
+						>
+							{t("pleaseTryAgain")}
+						</button>
+					)}
 				</div>
+			)}
+			<div className="flex min-h-full flex-col justify-end">
+				{rows.map((row, index) => {
+					const nextRow = rows[index + 1];
+					const endsSenderGroup =
+						row.kind === "message" &&
+						(nextRow?.kind !== "message" ||
+							nextRow.message.sender_id !== row.message.sender_id);
+					return (
+						<div
+							key={
+								row.kind === "message"
+									? row.message.id
+									: `date-${row.label}-${index}`
+							}
+							className={
+								row.kind === "date"
+									? "pb-2"
+									: endsSenderGroup
+										? "pb-1.5"
+										: "pb-1"
+							}
+						>
+							{row.kind === "date" ? (
+								<div className="flex items-center gap-3 py-1">
+									<div className="flex-1 h-px bg-border" />
+									<span className="text-xs text-muted-foreground">{row.label}</span>
+									<div className="flex-1 h-px bg-border" />
+								</div>
+							) : (
+								<ChatMessage
+									content={row.message.content}
+									isCurrentUser={row.message.sender_id === currentUserId}
+									created_at={row.message.created_at}
+									status={row.message.status}
+								/>
+							)}
+						</div>
+					);
+				})}
 			</div>
+		</div>
 	);
 }

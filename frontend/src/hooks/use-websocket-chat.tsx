@@ -21,6 +21,7 @@ import {
 import { usePendingMessageAcks } from "@/hooks/use-pending-message-acks";
 
 const MESSAGE_ACK_TIMEOUT_MS = 10000;
+const MESSAGE_SYNC_INTERVAL_MS = 5000;
 
 export interface UseWebSocketChatProps {
 	userId: string;
@@ -67,6 +68,7 @@ export function useWebSocketChat({
 	const hasJoinedRoomRef = useRef<string | null>(null);
 	const paginationRoomRef = useRef<string | null>(null);
 	const isLoadingOlderRef = useRef(false);
+	const isSyncingLatestRef = useRef(false);
 	const activeRoomIdRef = useRef<string | null>(null);
 	const messageIdsRef = useRef(
 		new Set((initialMessages ?? []).map((message) => message.id)),
@@ -306,6 +308,73 @@ export function useWebSocketChat({
 			return false;
 		}
 	}, []);
+
+	const syncLatestMessages = useCallback(async () => {
+		const requestedRoomId = activeRoomIdRef.current;
+		if (!requestedRoomId || isSyncingLatestRef.current) return;
+
+		isSyncingLatestRef.current = true;
+		try {
+			const response = await roomAPI.getMessages(requestedRoomId);
+			const page = response.data;
+			if (
+				activeRoomIdRef.current !== requestedRoomId ||
+				!page
+			) {
+				return;
+			}
+
+			for (const message of page.messages) {
+				clearPendingAck(message.id);
+				messageIdsRef.current.add(message.id);
+			}
+			setMessages((current) => {
+				const currentById = new Map(
+					current.map((message) => [message.id, message]),
+				);
+				const needsReconcile = page.messages.some((message) => {
+					const existing = currentById.get(message.id);
+					return (
+						!existing ||
+						existing.status !== "sent" ||
+						existing.created_at !== message.created_at
+					);
+				});
+				return needsReconcile
+					? reconcileAuthoritativeMessages(current, page.messages)
+					: current;
+			});
+		} catch {
+			// WebSocket remains the primary transport. A failed fallback sync can
+			// safely retry on the next interval without disrupting the chat UI.
+		} finally {
+			isSyncingLatestRef.current = false;
+		}
+	}, [clearPendingAck]);
+
+	useEffect(() => {
+		if (!roomId) return;
+
+		const syncWhenVisible = () => {
+			if (document.visibilityState === "visible") {
+				void syncLatestMessages();
+			}
+		};
+
+		syncWhenVisible();
+		const interval = window.setInterval(
+			syncWhenVisible,
+			MESSAGE_SYNC_INTERVAL_MS,
+		);
+		document.addEventListener("visibilitychange", syncWhenVisible);
+		window.addEventListener("focus", syncWhenVisible);
+
+		return () => {
+			window.clearInterval(interval);
+			document.removeEventListener("visibilitychange", syncWhenVisible);
+			window.removeEventListener("focus", syncWhenVisible);
+		};
+	}, [roomId, syncLatestMessages]);
 
 	const loadOlderMessages = useCallback(async (): Promise<boolean> => {
 		if (
