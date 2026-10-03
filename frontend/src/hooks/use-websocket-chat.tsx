@@ -345,8 +345,9 @@ export function useWebSocketChat({
 					: current;
 			});
 		} catch {
-			// WebSocket remains the primary transport. A failed fallback sync can
-			// safely retry on the next interval without disrupting the chat UI.
+			// WebSocket remains the primary transport. While it is disconnected,
+			// a failed fallback sync can retry on the next interval without
+			// disrupting the chat UI.
 		} finally {
 			isSyncingLatestRef.current = false;
 		}
@@ -362,19 +363,20 @@ export function useWebSocketChat({
 		};
 
 		syncWhenVisible();
-		const interval = window.setInterval(
-			syncWhenVisible,
-			MESSAGE_SYNC_INTERVAL_MS,
-		);
+		const interval = isConnected
+			? null
+			: window.setInterval(syncWhenVisible, MESSAGE_SYNC_INTERVAL_MS);
 		document.addEventListener("visibilitychange", syncWhenVisible);
 		window.addEventListener("focus", syncWhenVisible);
 
 		return () => {
-			window.clearInterval(interval);
+			if (interval !== null) {
+				window.clearInterval(interval);
+			}
 			document.removeEventListener("visibilitychange", syncWhenVisible);
 			window.removeEventListener("focus", syncWhenVisible);
 		};
-	}, [roomId, syncLatestMessages]);
+	}, [roomId, isConnected, syncLatestMessages]);
 
 	const loadOlderMessages = useCallback(async (): Promise<boolean> => {
 		if (
