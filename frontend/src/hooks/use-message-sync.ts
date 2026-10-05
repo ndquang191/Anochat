@@ -24,35 +24,47 @@ export function useMessageSync({
 }: UseMessageSyncProps) {
 	const activeRoomIdRef = useRef(roomId);
 	const isSyncingRef = useRef(false);
+	const syncRequestedRef = useRef(false);
 	const lastSyncAttemptAtRef = useRef(Date.now());
 	const wasConnectedRef = useRef(isConnected);
 
-	useEffect(() => {
-		activeRoomIdRef.current = roomId;
-		lastSyncAttemptAtRef.current = Date.now();
-	}, [roomId]);
-
 	const syncLatestMessages = useCallback(async () => {
-		const requestedRoomId = activeRoomIdRef.current;
-		if (!requestedRoomId || isSyncingRef.current) return;
+		syncRequestedRef.current = true;
+		if (isSyncingRef.current) return;
 
 		isSyncingRef.current = true;
-		lastSyncAttemptAtRef.current = Date.now();
 		try {
-			const response = await roomAPI.getMessages(requestedRoomId);
-			if (
-				activeRoomIdRef.current === requestedRoomId &&
-				response.data
-			) {
-				onMessagesSynced(response.data.messages);
+			while (syncRequestedRef.current) {
+				syncRequestedRef.current = false;
+				const requestedRoomId = activeRoomIdRef.current;
+				if (!requestedRoomId) continue;
+
+				lastSyncAttemptAtRef.current = Date.now();
+				try {
+					const response = await roomAPI.getMessages(requestedRoomId);
+					if (
+						activeRoomIdRef.current === requestedRoomId &&
+						response.data
+					) {
+						onMessagesSynced(response.data.messages);
+					}
+				} catch {
+					// A failed fallback sync can safely retry on the next trigger without
+					// disrupting WebSocket delivery or the chat UI.
+				}
 			}
-		} catch {
-			// A failed fallback sync can safely retry on the next trigger without
-			// disrupting WebSocket delivery or the chat UI.
 		} finally {
 			isSyncingRef.current = false;
 		}
 	}, [onMessagesSynced]);
+
+	useEffect(() => {
+		activeRoomIdRef.current = roomId;
+		lastSyncAttemptAtRef.current = Date.now();
+		if (roomId) {
+			void syncLatestMessages();
+		}
+	}, [roomId, syncLatestMessages]);
 
 	useEffect(() => {
 		const connectionEstablished = isConnected && !wasConnectedRef.current;
