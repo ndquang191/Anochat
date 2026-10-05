@@ -19,9 +19,9 @@ import {
 	updateMessageDeliveryStatus,
 } from "@/lib/message-delivery";
 import { usePendingMessageAcks } from "@/hooks/use-pending-message-acks";
+import { useMessageSync } from "@/hooks/use-message-sync";
 
 const MESSAGE_ACK_TIMEOUT_MS = 10000;
-const MESSAGE_SYNC_INTERVAL_MS = 5000;
 
 export interface UseWebSocketChatProps {
 	userId: string;
@@ -68,7 +68,6 @@ export function useWebSocketChat({
 	const hasJoinedRoomRef = useRef<string | null>(null);
 	const paginationRoomRef = useRef<string | null>(null);
 	const isLoadingOlderRef = useRef(false);
-	const isSyncingLatestRef = useRef(false);
 	const activeRoomIdRef = useRef<string | null>(null);
 	const messageIdsRef = useRef(
 		new Set((initialMessages ?? []).map((message) => message.id)),
@@ -309,22 +308,9 @@ export function useWebSocketChat({
 		}
 	}, []);
 
-	const syncLatestMessages = useCallback(async () => {
-		const requestedRoomId = activeRoomIdRef.current;
-		if (!requestedRoomId || isSyncingLatestRef.current) return;
-
-		isSyncingLatestRef.current = true;
-		try {
-			const response = await roomAPI.getMessages(requestedRoomId);
-			const page = response.data;
-			if (
-				activeRoomIdRef.current !== requestedRoomId ||
-				!page
-			) {
-				return;
-			}
-
-			for (const message of page.messages) {
+	const handleMessagesSynced = useCallback(
+		(syncedMessages: ChatMessage[]) => {
+			for (const message of syncedMessages) {
 				clearPendingAck(message.id);
 				messageIdsRef.current.add(message.id);
 			}
@@ -332,7 +318,7 @@ export function useWebSocketChat({
 				const currentById = new Map(
 					current.map((message) => [message.id, message]),
 				);
-				const needsReconcile = page.messages.some((message) => {
+				const needsReconcile = syncedMessages.some((message) => {
 					const existing = currentById.get(message.id);
 					return (
 						!existing ||
@@ -341,42 +327,18 @@ export function useWebSocketChat({
 					);
 				});
 				return needsReconcile
-					? reconcileAuthoritativeMessages(current, page.messages)
+					? reconcileAuthoritativeMessages(current, syncedMessages)
 					: current;
 			});
-		} catch {
-			// WebSocket remains the primary transport. While it is disconnected,
-			// a failed fallback sync can retry on the next interval without
-			// disrupting the chat UI.
-		} finally {
-			isSyncingLatestRef.current = false;
-		}
-	}, [clearPendingAck]);
+		},
+		[clearPendingAck],
+	);
 
-	useEffect(() => {
-		if (!roomId) return;
-
-		const syncWhenVisible = () => {
-			if (document.visibilityState === "visible") {
-				void syncLatestMessages();
-			}
-		};
-
-		syncWhenVisible();
-		const interval = isConnected
-			? null
-			: window.setInterval(syncWhenVisible, MESSAGE_SYNC_INTERVAL_MS);
-		document.addEventListener("visibilitychange", syncWhenVisible);
-		window.addEventListener("focus", syncWhenVisible);
-
-		return () => {
-			if (interval !== null) {
-				window.clearInterval(interval);
-			}
-			document.removeEventListener("visibilitychange", syncWhenVisible);
-			window.removeEventListener("focus", syncWhenVisible);
-		};
-	}, [roomId, isConnected, syncLatestMessages]);
+	useMessageSync({
+		roomId,
+		isConnected,
+		onMessagesSynced: handleMessagesSynced,
+	});
 
 	const loadOlderMessages = useCallback(async (): Promise<boolean> => {
 		if (
