@@ -230,11 +230,13 @@ export function useWebSocketChat({
 		};
 
 		const handleMessageAck = (message: WebSocketMessage) => {
-			if (message.payload.room_id !== activeRoomIdRef.current) return;
 			const id = message.payload.id;
 			if (typeof id !== "string") {
 				return;
 			}
+			// The client-generated UUID is the delivery correlation key. Do not
+			// require room_id here: older API instances omit it, and an ACK may
+			// arrive just after the user switches rooms.
 			const createdAt =
 				typeof message.payload.created_at === "number"
 					? message.payload.created_at
