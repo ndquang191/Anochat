@@ -72,7 +72,7 @@ export function AdminPanel() {
 	return (
 		<div className="h-full flex flex-col bg-background">
 			{/* Tabs */}
-			<div className="flex shrink-0 overflow-x-auto border-b px-6">
+			<div className="flex shrink-0 overflow-x-auto border-b px-2 sm:px-6">
 				{TABS.map((tab) => (
 					<button
 						key={tab.id}
@@ -89,7 +89,7 @@ export function AdminPanel() {
 			</div>
 
 			{/* Content */}
-			<div className="flex-1 overflow-y-auto px-6 py-3">
+			<div className="flex-1 overflow-y-auto px-3 py-4 sm:px-6">
 				{activeTab === "overview" && <OverviewTab />}
 				{activeTab === "settings" && <MatchSettingsTab />}
 				{activeTab === "words" && <BannedWordsTab />}
