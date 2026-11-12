@@ -55,16 +55,16 @@ Database-enforced ownership for active rooms. These rows are inserted in the
 same transaction as the room and removed in the transaction that ends it.
 
 ```sql
-user_id    UUID        PK, FK → users.id (CASCADE)
-room_id    UUID        FK → rooms.id (CASCADE)
+user_id    UUID        composite PK, FK → users.id (CASCADE)
+room_id    UUID        composite PK, FK → rooms.id (CASCADE)
 created_at TIMESTAMPTZ not null
 ```
 
 The `rooms_active_membership_trigger` inserts/removes these rows whenever a room
-is created, ended, or changes participants. Because `user_id` is the primary
-key, PostgreSQL rejects any concurrent room creation that would place one user
-in two active rooms, regardless of whether that user appears as `user1_id` or
-`user2_id`. This also protects direct SQL writes that bypass the Go repository.
+is created, ended, or changes participants. The trigger takes transaction-level
+advisory locks in stable user-ID order and rejects membership number four.
+This protects concurrent matching and direct SQL writes that bypass the Go
+repository while allowing each user up to three active rooms.
 
 ## `match_settings`
 

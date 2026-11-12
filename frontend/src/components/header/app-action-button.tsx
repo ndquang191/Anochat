@@ -23,9 +23,17 @@ export function AppActionButton() {
 	const [partnerLeft, setPartnerLeft] = useState(false);
 
 	useEffect(() => {
+		setPartnerLeft(false);
+	}, [room?.id]);
+
+	useEffect(() => {
 		const client = getWebSocketClient();
-		const handlePartnerLeft = () => setPartnerLeft(true);
-		const handleRoomActive = () => setPartnerLeft(false);
+		const handlePartnerLeft = (message: { payload: Record<string, unknown> }) => {
+			if (message.payload.room_id === room?.id) setPartnerLeft(true);
+		};
+		const handleRoomActive = (message: { payload: Record<string, unknown> }) => {
+			if (!room || message.payload.room_id === room.id) setPartnerLeft(false);
+		};
 
 		client.on("partner_left", handlePartnerLeft);
 		client.on("match_found", handleRoomActive);
@@ -35,7 +43,7 @@ export function AppActionButton() {
 			client.off("match_found", handleRoomActive);
 			client.off("room_rejoined", handleRoomActive);
 		};
-	}, []);
+	}, [room]);
 
 	const leaveRoom = useCallback(async () => {
 		if (!room) return;
@@ -137,7 +145,7 @@ export function AppActionButton() {
 			onClick={handleClick}
 			disabled={isLoading}
 			size="icon"
-			className="shrink-0"
+			className="size-8 shrink-0 p-0"
 			aria-label={title}
 			title={title}
 		>

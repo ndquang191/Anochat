@@ -11,7 +11,6 @@ import (
 	"github.com/ndquang191/Anochat/api/internal/domain/chat"
 	"github.com/ndquang191/Anochat/api/internal/domain/identity"
 	"github.com/ndquang191/Anochat/api/internal/domain/matching"
-	"github.com/ndquang191/Anochat/api/internal/repository"
 	"github.com/ndquang191/Anochat/api/pkg/apperr"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
@@ -52,7 +51,7 @@ func TestJoinQueue(t *testing.T) {
 	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
 
-	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+	roomRepo.On("CountActiveByUserID", mock.Anything, userID).Return(int64(0), nil)
 
 	err := qs.JoinQueue(context.Background(), userID)
 	require.NoError(t, err)
@@ -63,7 +62,7 @@ func TestJoinQueue_AlreadyInQueue(t *testing.T) {
 	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
 
-	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+	roomRepo.On("CountActiveByUserID", mock.Anything, userID).Return(int64(0), nil)
 
 	err := qs.JoinQueue(context.Background(), userID)
 	require.NoError(t, err)
@@ -73,15 +72,26 @@ func TestJoinQueue_AlreadyInQueue(t *testing.T) {
 	assert.Contains(t, err.Error(), "đã ở trong hàng chờ")
 }
 
-func TestJoinQueue_HasActiveRoom(t *testing.T) {
+func TestJoinQueue_HasReachedActiveRoomLimit(t *testing.T) {
 	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
 
-	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(&chat.Room{ID: uuid.New()}, nil)
+	roomRepo.On("CountActiveByUserID", mock.Anything, userID).Return(int64(3), nil)
 
 	err := qs.JoinQueue(context.Background(), userID)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "đang có phòng chat")
+	assert.ErrorIs(t, err, apperr.ErrActiveRoomLimit)
+}
+
+func TestJoinQueue_AllowsUserWithTwoActiveRooms(t *testing.T) {
+	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
+	userID := uuid.New()
+
+	roomRepo.On("CountActiveByUserID", mock.Anything, userID).Return(int64(2), nil)
+
+	err := qs.JoinQueue(context.Background(), userID)
+	require.NoError(t, err)
+	assert.True(t, qs.IsInQueue(userID))
 }
 
 func TestJoinQueue_Match(t *testing.T) {
@@ -89,8 +99,8 @@ func TestJoinQueue_Match(t *testing.T) {
 	user1 := uuid.New()
 	user2 := uuid.New()
 
-	roomRepo.On("FindActiveByUserID", mock.Anything, user1).Return(nil, repository.ErrNotFound)
-	roomRepo.On("FindActiveByUserID", mock.Anything, user2).Return(nil, repository.ErrNotFound)
+	roomRepo.On("CountActiveByUserID", mock.Anything, user1).Return(int64(0), nil)
+	roomRepo.On("CountActiveByUserID", mock.Anything, user2).Return(int64(0), nil)
 	roomRepo.On("Create", mock.Anything, mock.AnythingOfType("*chat.Room")).Return(nil)
 	notifier.On("NotifyMatch", user1, user2, mock.AnythingOfType("uuid.UUID")).Return()
 
@@ -120,7 +130,7 @@ func TestJoinQueue_SkipsRecentPartner(t *testing.T) {
 	qs.SetMatchmakingRepositories(nil, settings)
 	user1, user2, user3 := uuid.New(), uuid.New(), uuid.New()
 	for _, id := range []uuid.UUID{user1, user2, user3} {
-		roomRepo.On("FindActiveByUserID", mock.Anything, id).Return(nil, repository.ErrNotFound)
+		roomRepo.On("CountActiveByUserID", mock.Anything, id).Return(int64(0), nil)
 	}
 
 	qs.RecordRecentPair(context.Background(), user1, user2)
@@ -147,7 +157,7 @@ func TestReprocessQueue_AppliesCooldownChangesToExistingMatchHistory(t *testing.
 	qs.SetMatchmakingRepositories(nil, settings)
 	user1, user2 := uuid.New(), uuid.New()
 	for _, id := range []uuid.UUID{user1, user2} {
-		roomRepo.On("FindActiveByUserID", mock.Anything, id).Return(nil, repository.ErrNotFound)
+		roomRepo.On("CountActiveByUserID", mock.Anything, id).Return(int64(0), nil)
 	}
 
 	qs.RecordRecentPair(context.Background(), user1, user2)
@@ -175,7 +185,7 @@ func TestJoinQueue_OppositeSexSkipsSameGender(t *testing.T) {
 	qs.SetMatchmakingRepositories(profiles, settings)
 	male1, male2, female := uuid.New(), uuid.New(), uuid.New()
 	for _, id := range []uuid.UUID{male1, male2, female} {
-		roomRepo.On("FindActiveByUserID", mock.Anything, id).Return(nil, repository.ErrNotFound)
+		roomRepo.On("CountActiveByUserID", mock.Anything, id).Return(int64(0), nil)
 	}
 	isMale, isFemale := true, false
 	profiles.On("FindByUserID", mock.Anything, male1).Return(&identity.Profile{UserID: male1, IsMale: &isMale}, nil)
@@ -201,7 +211,7 @@ func TestJoinQueue_OppositeSexRequiresGender(t *testing.T) {
 	settings := &stubMatchSettingsRepo{settings: matching.Settings{DefaultMode: matching.ModeOppositeSex}}
 	qs.SetMatchmakingRepositories(profiles, settings)
 	userID := uuid.New()
-	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+	roomRepo.On("CountActiveByUserID", mock.Anything, userID).Return(int64(0), nil)
 	profiles.On("FindByUserID", mock.Anything, userID).Return(&identity.Profile{UserID: userID}, nil)
 
 	err := qs.JoinQueue(context.Background(), userID)
@@ -217,7 +227,7 @@ func TestReprocessQueue_AppliesAdminChangeToWaitingUsers(t *testing.T) {
 	user1, user2 := uuid.New(), uuid.New()
 	isMale := true
 	for _, id := range []uuid.UUID{user1, user2} {
-		roomRepo.On("FindActiveByUserID", mock.Anything, id).Return(nil, repository.ErrNotFound)
+		roomRepo.On("CountActiveByUserID", mock.Anything, id).Return(int64(0), nil)
 		profiles.On("FindByUserID", mock.Anything, id).Return(&identity.Profile{UserID: id, IsMale: &isMale}, nil)
 	}
 	require.NoError(t, qs.JoinQueue(context.Background(), user1))
@@ -241,8 +251,8 @@ func TestJoinQueue_CreateRoomFailureReleasesReservation(t *testing.T) {
 	userID := uuid.New()
 	createErr := errors.New("database unavailable")
 
-	roomRepo.On("FindActiveByUserID", mock.Anything, partnerID).Return(nil, repository.ErrNotFound)
-	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+	roomRepo.On("CountActiveByUserID", mock.Anything, partnerID).Return(int64(0), nil)
+	roomRepo.On("CountActiveByUserID", mock.Anything, userID).Return(int64(0), nil)
 	roomRepo.On("Create", mock.Anything, mock.AnythingOfType("*chat.Room")).Return(createErr)
 
 	require.NoError(t, qs.JoinQueue(context.Background(), partnerID))
@@ -276,7 +286,7 @@ func TestJoinQueue_ConcurrentDuplicateOnlyCreatesOneRoom(t *testing.T) {
 		redis.Z{Score: 2, Member: partner2.String()},
 	).Err())
 
-	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+	roomRepo.On("CountActiveByUserID", mock.Anything, userID).Return(int64(0), nil)
 	roomRepo.On("Create", mock.Anything, mock.AnythingOfType("*chat.Room")).
 		Run(func(mock.Arguments) {
 			close(createStarted)
@@ -341,7 +351,7 @@ func TestJoinQueue_ExpiredReservationDoesNotBlockCandidate(t *testing.T) {
 		staleToken,
 	).Err())
 
-	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+	roomRepo.On("CountActiveByUserID", mock.Anything, userID).Return(int64(0), nil)
 	roomRepo.On("Create", mock.Anything, mock.AnythingOfType("*chat.Room")).Return(nil).Once()
 	notifier.On("NotifyMatch", partnerID, userID, mock.AnythingOfType("uuid.UUID")).Return().Once()
 
@@ -396,7 +406,7 @@ func TestLeaveQueue(t *testing.T) {
 	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
 
-	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+	roomRepo.On("CountActiveByUserID", mock.Anything, userID).Return(int64(0), nil)
 
 	err := qs.JoinQueue(context.Background(), userID)
 	require.NoError(t, err)
@@ -518,7 +528,7 @@ func TestIsInQueue(t *testing.T) {
 
 	assert.False(t, qs.IsInQueue(userID))
 
-	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+	roomRepo.On("CountActiveByUserID", mock.Anything, userID).Return(int64(0), nil)
 	_ = qs.JoinQueue(context.Background(), userID)
 
 	assert.True(t, qs.IsInQueue(userID))
@@ -528,7 +538,7 @@ func TestUserDisconnected(t *testing.T) {
 	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
 
-	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+	roomRepo.On("CountActiveByUserID", mock.Anything, userID).Return(int64(0), nil)
 	_ = qs.JoinQueue(context.Background(), userID)
 	assert.True(t, qs.IsInQueue(userID))
 
@@ -546,7 +556,7 @@ func TestUserDisconnected_RetainsQueueWithActivePushLease(t *testing.T) {
 	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
 	subscriptionID := uuid.New()
-	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+	roomRepo.On("CountActiveByUserID", mock.Anything, userID).Return(int64(0), nil)
 
 	require.NoError(t, qs.JoinQueueWithSubscription(context.Background(), userID, subscriptionID))
 	assert.Equal(t, subscriptionID, qs.BackgroundSubscription(context.Background(), userID))
@@ -562,7 +572,7 @@ func TestUserDisconnected_RetainsQueueWithActivePushLease(t *testing.T) {
 func TestQueueHeartbeatRequiresBackgroundSubscription(t *testing.T) {
 	qs, roomRepo, _, _ := newQueueServiceWithMocks(t)
 	userID := uuid.New()
-	roomRepo.On("FindActiveByUserID", mock.Anything, userID).Return(nil, repository.ErrNotFound)
+	roomRepo.On("CountActiveByUserID", mock.Anything, userID).Return(int64(0), nil)
 	require.NoError(t, qs.JoinQueue(context.Background(), userID))
 
 	assert.ErrorIs(t, qs.Heartbeat(context.Background(), userID), apperr.ErrForbidden)

@@ -237,8 +237,8 @@ export const roomAPI = {
 		if (before) params.set("before", before);
 		return apiCall<MessagePageDTO>(`/rooms/${roomId}/messages?${params.toString()}`);
 	},
-	leaveRoom: async () => {
-		const result = await apiCall<{ success: boolean; message: string }>("/room/leave", { method: "POST" });
+	leaveRoom: async (roomId: string) => {
+		const result = await apiCall<{ success: boolean; message: string }>(`/rooms/${roomId}/leave`, { method: "POST" });
 		toast.success(translateStored("leaveChatRoomSuccess"));
 		return result;
 	},

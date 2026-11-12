@@ -30,7 +30,7 @@ export interface UseWebSocketChatProps {
 	initialHasMore?: boolean;
 	onMatchFound?: (roomId: string) => void;
 	onPartnerLeft?: () => void;
-	onMessageReceived?: () => void;
+	onMessageReceived?: (roomId: string) => void;
 }
 
 export function useWebSocketChat({
@@ -62,7 +62,7 @@ export function useWebSocketChat({
 	const onMatchFoundRef = useRef(onMatchFound);
 	const onPartnerLeftRef = useRef(onPartnerLeft);
 	const onMessageReceivedRef = useRef(onMessageReceived);
-	const { room } = useAuth();
+	const { room, rooms } = useAuth();
 	const invalidateUserState = useInvalidateUserState();
 	const hasRehydratedRef = useRef(false);
 	const hasJoinedRoomRef = useRef<string | null>(null);
@@ -95,6 +95,14 @@ export function useWebSocketChat({
 	}, [room, roomId]);
 
 	useEffect(() => {
+		if (roomId && !rooms.some((item) => item.id === roomId)) {
+			const fallback = rooms[0]?.id ?? null;
+			activeRoomIdRef.current = fallback;
+			setRoomId(fallback);
+		}
+	}, [rooms, roomId]);
+
+	useEffect(() => {
 		if (!roomId) {
 			paginationRoomRef.current = null;
 			setNextCursor(null);
@@ -102,7 +110,7 @@ export function useWebSocketChat({
 			setLoadOlderError(false);
 			return;
 		}
-		if (room?.id !== roomId || paginationRoomRef.current === roomId) {
+		if (rooms[0]?.id !== roomId || paginationRoomRef.current === roomId) {
 			return;
 		}
 
@@ -110,10 +118,11 @@ export function useWebSocketChat({
 		setNextCursor(initialNextCursor ?? null);
 		setHasMoreMessages(initialHasMore && !!initialNextCursor);
 		setLoadOlderError(false);
-	}, [room?.id, roomId, initialNextCursor, initialHasMore]);
+	}, [rooms, roomId, initialNextCursor, initialHasMore]);
 
 	useEffect(() => {
 		if (!initialMessages?.length) return;
+		if (rooms[0]?.id !== activeRoomIdRef.current) return;
 		for (const message of initialMessages) {
 			clearPendingAck(message.id);
 			messageIdsRef.current.add(message.id);
@@ -121,7 +130,7 @@ export function useWebSocketChat({
 		setMessages((prev) =>
 			reconcileAuthoritativeMessages(prev, initialMessages),
 		);
-	}, [initialMessages, clearPendingAck]);
+	}, [initialMessages, clearPendingAck, rooms]);
 
 	useEffect(() => {
 		if (isConnected && roomId && hasJoinedRoomRef.current !== roomId) {
@@ -193,10 +202,9 @@ export function useWebSocketChat({
 
 		const handleRoomRejoined = (message: WebSocketMessage) => {
 			const room_id = message.payload.room_id as string;
-			activeRoomIdRef.current = room_id;
-			setRoomId(room_id);
-			setPartnerLeft(false);
-			hasJoinedRoomRef.current = room_id;
+			if (activeRoomIdRef.current === room_id) {
+				hasJoinedRoomRef.current = room_id;
+			}
 		};
 
 		const handleReceiveMessage = (message: WebSocketMessage) => {
@@ -207,15 +215,22 @@ export function useWebSocketChat({
 			if (messageIdsRef.current.has(chatMessage.id)) {
 				return;
 			}
+			if (chatMessage.room_id !== activeRoomIdRef.current) {
+				playMessageSound();
+				onMessageReceivedRef.current?.(chatMessage.room_id);
+				invalidateUserState();
+				return;
+			}
 			messageIdsRef.current.add(chatMessage.id);
 			if (chatMessage.sender_id !== userIdRef.current) {
 				playMessageSound();
-				onMessageReceivedRef.current?.();
+				onMessageReceivedRef.current?.(chatMessage.room_id);
 			}
 			setMessages((prev) => [...prev, chatMessage]);
 		};
 
 		const handleMessageAck = (message: WebSocketMessage) => {
+			if (message.payload.room_id !== activeRoomIdRef.current) return;
 			const id = message.payload.id;
 			if (typeof id !== "string") {
 				return;
@@ -241,7 +256,11 @@ export function useWebSocketChat({
 			);
 		};
 
-		const handlePartnerLeft = () => {
+		const handlePartnerLeft = (message: WebSocketMessage) => {
+			if (message.payload.room_id !== activeRoomIdRef.current) {
+				invalidateUserState();
+				return;
+			}
 			clearAllPendingAcks();
 			activeRoomIdRef.current = null;
 			setRoomId(null);
@@ -256,7 +275,8 @@ export function useWebSocketChat({
 			invalidateUserState();
 		};
 
-		const handleRoomLeft = () => {
+		const handleRoomLeft = (message: WebSocketMessage) => {
+			if (message.payload.room_id !== activeRoomIdRef.current) return;
 			clearAllPendingAcks();
 			activeRoomIdRef.current = null;
 			setRoomId(null);
@@ -405,6 +425,7 @@ export function useWebSocketChat({
 			const client = wsClient.current;
 			const sent = client.send("send_message", {
 				id: messageId,
+				room_id: roomId,
 				content,
 			});
 			if (!sent) {
@@ -424,18 +445,40 @@ export function useWebSocketChat({
 	);
 
 	const joinRoom = useCallback(
-		(targetRoomId: string) => {
-			if (!isConnected) {
-				return;
+		async (targetRoomId: string) => {
+			if (targetRoomId === activeRoomIdRef.current) return;
+			clearAllPendingAcks();
+			activeRoomIdRef.current = targetRoomId;
+			setRoomId(targetRoomId);
+			setPartnerLeft(false);
+			setMessages([]);
+			messageIdsRef.current.clear();
+			setNextCursor(null);
+			setHasMoreMessages(false);
+			setLoadOlderError(false);
+			if (isConnected) {
+				wsClient.current.send("join_room", { room_id: targetRoomId });
 			}
-
-			const client = wsClient.current;
-			client.send("join_room", {
-				room_id: targetRoomId,
-			});
+			try {
+				const response = await roomAPI.getMessages(targetRoomId);
+				if (activeRoomIdRef.current !== targetRoomId || !response.data) return;
+				const page = response.data;
+				messageIdsRef.current = new Set(page.messages.map((message) => message.id));
+				setMessages(page.messages);
+				setNextCursor(page.next_cursor ?? null);
+				setHasMoreMessages(page.has_more && !!page.next_cursor);
+			} catch {
+				if (activeRoomIdRef.current === targetRoomId) setLoadOlderError(true);
+			}
 		},
-		[isConnected],
+		[isConnected, clearAllPendingAcks],
 	);
+
+	useEffect(() => {
+		if (room?.id && room.id !== activeRoomIdRef.current) {
+			void joinRoom(room.id);
+		}
+	}, [room?.id, joinRoom]);
 
 	return {
 		messages,

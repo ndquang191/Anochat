@@ -105,3 +105,26 @@ func TestPushSubscriptionMigrationHasOwnershipAndEndpointConstraints(t *testing.
 		}
 	}
 }
+
+func TestMultipleActiveRoomsMigrationEnforcesLimit(t *testing.T) {
+	items, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var source string
+	for _, item := range items {
+		if item.Version == 7 {
+			source = item.SQL
+		}
+	}
+	for _, required := range []string{
+		"ADD PRIMARY KEY (user_id, room_id)",
+		"pg_advisory_xact_lock",
+		">= 3",
+		"active room limit reached",
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("multiple-room migration is missing %q", required)
+		}
+	}
+}

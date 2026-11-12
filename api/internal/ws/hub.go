@@ -190,21 +190,19 @@ func (h *Hub) registerClient(client *Client) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		room, err := h.roomService.GetActiveRoomByUserID(ctx, client.UserID)
-		if err != nil || room == nil {
+		rooms, err := h.roomService.ListActiveRoomsByUserID(ctx, client.UserID)
+		if err != nil {
 			return
 		}
-
-		h.AddClientToRoom(client.UserID, room.ID)
-		slog.Info("Client auto-rejoined room", "user_id", client.UserID, "room_id", room.ID)
-
-		client.SendJSON(WSMessage{
-			Type: "room_rejoined",
-			Payload: map[string]interface{}{
-				"room_id":   room.ID.String(),
-				"timestamp": time.Now().Unix(),
-			},
-		})
+		for _, room := range rooms {
+			h.AddClientToRoom(client.UserID, room.ID)
+			client.SendJSON(WSMessage{
+				Type: "room_rejoined",
+				Payload: map[string]interface{}{
+					"room_id": room.ID.String(), "timestamp": time.Now().Unix(),
+				},
+			})
+		}
 	}()
 }
 
@@ -217,8 +215,8 @@ func (h *Hub) unregisterClient(client *Client) {
 	}
 	h.mutex.Unlock()
 
-	if client.RoomID != nil {
-		h.removeClientFromRoom(client, *client.RoomID)
+	for _, roomID := range client.roomIDs() {
+		h.removeClientFromRoom(client, roomID)
 	}
 
 	if isLatest {
@@ -249,7 +247,9 @@ func (h *Hub) AddClientToRoom(userID uuid.UUID, roomID uuid.UUID) {
 		return
 	}
 
-	client.RoomID = &roomID
+	if !client.addRoom(roomID) {
+		return
+	}
 	h.roomClients[roomID][userID] = client
 
 	prev := h.roomLocalCount[roomID]
@@ -280,6 +280,7 @@ func (h *Hub) removeClientFromRoom(client *Client, roomID uuid.UUID) {
 	}
 
 	delete(roomUsers, client.UserID)
+	client.removeRoom(roomID)
 	h.roomLocalCount[roomID]--
 
 	if h.roomLocalCount[roomID] <= 0 {

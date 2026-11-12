@@ -43,7 +43,9 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 		return
 	}
 
-	if c.RoomID == nil {
+	roomIDRaw, ok := payload["room_id"].(string)
+	roomID, err := uuid.Parse(roomIDRaw)
+	if !ok || err != nil || !c.hasRoom(roomID) {
 		slog.Warn("User tried to send message without room", "user_id", c.UserID)
 		c.sendMessageFailed(messageIDRaw, "NOT_IN_ROOM", "You are not in a chat room.")
 		return
@@ -70,7 +72,6 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 	}
 
 	now := time.Now().UTC()
-	roomID := *c.RoomID
 	isSensitive := c.Hub.moderationService.ContainsBannedWord(content)
 	triggerMessage := &chat.Message{
 		ID:        messageID,
@@ -110,7 +111,7 @@ func (c *Client) handleSendMessage(payload map[string]interface{}) {
 		Exclude: c.UserID,
 	}
 
-	c.sendMessageAck(messageID, now)
+	c.sendMessageAck(messageID, roomID, now)
 
 	if isSensitive {
 		go c.createAutoReport(triggerMessage)
@@ -130,11 +131,12 @@ func (c *Client) sendMessageFailed(id, code, message string) {
 	})
 }
 
-func (c *Client) sendMessageAck(id uuid.UUID, createdAt time.Time) {
+func (c *Client) sendMessageAck(id, roomID uuid.UUID, createdAt time.Time) {
 	c.SendJSON(WSMessage{
 		Type: "message_ack",
 		Payload: map[string]interface{}{
 			"id":         id.String(),
+			"room_id":    roomID.String(),
 			"created_at": createdAt.Unix(),
 		},
 	})
@@ -201,12 +203,12 @@ func (c *Client) handleJoinRoom(payload map[string]interface{}) {
 }
 
 func (c *Client) handleLeaveRoom(payload map[string]interface{}) {
-	if c.RoomID == nil {
+	roomIDRaw, ok := payload["room_id"].(string)
+	roomID, err := uuid.Parse(roomIDRaw)
+	if !ok || err != nil || !c.hasRoom(roomID) {
 		c.sendRoomLeaveFailed("", "NOT_IN_ROOM", "You are not in a chat room.")
 		return
 	}
-
-	roomID := *c.RoomID
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -218,7 +220,6 @@ func (c *Client) handleLeaveRoom(payload map[string]interface{}) {
 
 	c.Hub.removeClientFromRoom(c, roomID)
 	c.Hub.notifyPartnerLeft(roomID, c.UserID)
-	c.RoomID = nil
 
 	confirmation := WSMessage{
 		Type: "room_left",

@@ -157,7 +157,7 @@ func Router(cfg *config.Config, db *gorm.DB, redisClient *redis.Client) *Server 
 			active.GET("/metrics", middleware.RequireAdmin(), gin.WrapH(promhttp.Handler()))
 			active.PUT("/profile", userHandler.UpdateProfile)
 			active.PUT("/match-settings", matchSettingsHandler.UpdateUser)
-			active.POST("/room/leave", userHandler.LeaveCurrentRoom)
+			active.POST("/rooms/:id/leave", userHandler.LeaveRoom)
 			active.GET("/rooms/:id/messages", userHandler.GetRoomMessages)
 
 			active.POST("/queue/join", queueHandler.JoinQueue)

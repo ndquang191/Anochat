@@ -461,14 +461,12 @@ func (qs *QueueService) ReprocessQueue(ctx context.Context) error {
 }
 
 func (qs *QueueService) JoinQueue(ctx context.Context, userID uuid.UUID) error {
-	activeRoom, err := qs.roomRepo.FindActiveByUserID(ctx, userID)
-	if err == nil {
-		if reconcileErr := qs.reconcileRooms(ctx, []*chat.Room{activeRoom}); reconcileErr != nil {
-			slog.Warn("Failed to reconcile active room before rejecting queue join", "room_id", activeRoom.ID, "error", reconcileErr)
-		}
-		return apperr.ErrHasActiveRoom
-	} else if err != repository.ErrNotFound {
-		return fmt.Errorf("failed to check active room: %w", err)
+	activeRoomCount, err := qs.roomRepo.CountActiveByUserID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to count active rooms: %w", err)
+	}
+	if activeRoomCount >= MaxActiveRoomsPerUser {
+		return apperr.ErrActiveRoomLimit
 	}
 
 	gender, preference, settings, err := qs.matchData(ctx, userID)

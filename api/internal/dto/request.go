@@ -57,6 +57,8 @@ type UserStateResponse struct {
 	User               *UserDTO          `json:"user,omitempty"`
 	Profile            *ProfileDTO       `json:"profile,omitempty"`
 	Room               *RoomDTO          `json:"room"`
+	Rooms              []RoomDTO         `json:"rooms"`
+	MaxActiveRooms     int64             `json:"max_active_rooms"`
 	Messages           []MessageDTO      `json:"messages"`
 	MessagesNextCursor *string           `json:"messages_next_cursor,omitempty"`
 	MessagesHasMore    bool              `json:"messages_has_more"`
@@ -102,6 +104,7 @@ type RoomDTO struct {
 // MessageDTO is the message data in API responses.
 type MessageDTO struct {
 	ID        string `json:"id"`
+	RoomID    string `json:"room_id"`
 	SenderID  string `json:"sender_id"`
 	Content   string `json:"content"`
 	CreatedAt int64  `json:"created_at"`

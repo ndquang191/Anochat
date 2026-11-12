@@ -95,7 +95,7 @@ sequenceDiagram
     H2->>R: SUBSCRIBE user:B, room:X
 
     A->>A: Tạo UUID + hiển thị message pending
-    A->>H1: send_message {id, content}
+    A->>H1: send_message {id, room_id, content}
     H1->>H1: validate length + rate limit + banned words
     H1->>DB: INSERT message với UUID từ client
     DB-->>H1: persisted

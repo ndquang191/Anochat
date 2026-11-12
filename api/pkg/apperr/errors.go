@@ -30,11 +30,12 @@ var (
 	ErrDisplayNameCooldown = &AppError{HTTPStatus: http.StatusTooManyRequests, Message: "Tên hiển thị chỉ có thể thay đổi một lần trong 30 ngày"}
 
 	// Room
-	ErrNoActiveRoom  = &AppError{HTTPStatus: http.StatusNotFound, Message: "Bạn hiện không có phòng chat nào đang hoạt động"}
-	ErrNotRoomMember = &AppError{HTTPStatus: http.StatusForbidden, Message: "Bạn không phải thành viên của phòng chat này"}
+	ErrNoActiveRoom    = &AppError{HTTPStatus: http.StatusNotFound, Message: "Bạn hiện không có phòng chat nào đang hoạt động"}
+	ErrNotRoomMember   = &AppError{HTTPStatus: http.StatusForbidden, Message: "Bạn không phải thành viên của phòng chat này"}
+	ErrActiveRoomLimit = &AppError{HTTPStatus: http.StatusConflict, Message: "Bạn đã đạt giới hạn 3 phòng chat đang hoạt động"}
 
 	// Queue
-	ErrHasActiveRoom       = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Bạn đang có phòng chat đang hoạt động, vui lòng rời phòng trước khi tham gia hàng chờ"}
+	ErrHasActiveRoom       = ErrActiveRoomLimit
 	ErrAlreadyInQueue      = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Bạn đã ở trong hàng chờ rồi"}
 	ErrMatchInProgress     = &AppError{HTTPStatus: http.StatusConflict, Message: "Yêu cầu ghép đôi của bạn đang được xử lý"}
 	ErrNotInQueue          = &AppError{HTTPStatus: http.StatusBadRequest, Message: "Bạn không có trong hàng chờ"}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,7 +30,8 @@ type Client struct {
 	Conn         *websocket.Conn
 	Hub          *Hub
 	Send         chan []byte
-	RoomID       *uuid.UUID
+	roomMutex    sync.RWMutex
+	RoomIDs      map[uuid.UUID]struct{}
 	LastActivity time.Time
 	ctx          context.Context
 }
@@ -41,10 +43,43 @@ func NewClient(hub *Hub, conn *websocket.Conn, userID uuid.UUID) *Client {
 		Conn:         conn,
 		Hub:          hub,
 		Send:         make(chan []byte, 256),
-		RoomID:       nil,
+		RoomIDs:      make(map[uuid.UUID]struct{}),
 		LastActivity: time.Now(),
 		ctx:          context.Background(),
 	}
+}
+
+func (c *Client) addRoom(roomID uuid.UUID) bool {
+	c.roomMutex.Lock()
+	defer c.roomMutex.Unlock()
+	if _, exists := c.RoomIDs[roomID]; exists {
+		return false
+	}
+	c.RoomIDs[roomID] = struct{}{}
+	return true
+}
+
+func (c *Client) removeRoom(roomID uuid.UUID) {
+	c.roomMutex.Lock()
+	delete(c.RoomIDs, roomID)
+	c.roomMutex.Unlock()
+}
+
+func (c *Client) hasRoom(roomID uuid.UUID) bool {
+	c.roomMutex.RLock()
+	_, exists := c.RoomIDs[roomID]
+	c.roomMutex.RUnlock()
+	return exists
+}
+
+func (c *Client) roomIDs() []uuid.UUID {
+	c.roomMutex.RLock()
+	rooms := make([]uuid.UUID, 0, len(c.RoomIDs))
+	for roomID := range c.RoomIDs {
+		rooms = append(rooms, roomID)
+	}
+	c.roomMutex.RUnlock()
+	return rooms
 }
 
 func (c *Client) SendJSON(msg WSMessage) {

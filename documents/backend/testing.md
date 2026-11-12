@@ -185,7 +185,7 @@ This document outlines testing strategies and procedures for the Anochat backend
 
 **Steps:**
 1. Match User A and User B
-2. User A sends message: `{type: "send_message", payload: {id: "<uuid>", content: "Hello"}}`
+2. User A sends message: `{type: "send_message", payload: {id: "<uuid>", room_id: "<uuid>", content: "Hello"}}`
 3. Verify User B receives `receive_message` event
 4. Verify User A receives `message_ack` with the same ID
 5. Check message saved to database

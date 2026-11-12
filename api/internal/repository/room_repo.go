@@ -15,6 +15,8 @@ import (
 type RoomRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*chat.Room, error)
 	FindActiveByUserID(ctx context.Context, userID uuid.UUID) (*chat.Room, error)
+	ListActiveByUserID(ctx context.Context, userID uuid.UUID) ([]*chat.Room, error)
+	CountActiveByUserID(ctx context.Context, userID uuid.UUID) (int64, error)
 	ListActive(ctx context.Context) ([]*chat.Room, error)
 	Create(ctx context.Context, room *chat.Room) error
 	UpdateEndedAt(ctx context.Context, roomID uuid.UUID, endedAt time.Time) error
@@ -51,6 +53,29 @@ func (r *roomRepo) FindActiveByUserID(ctx context.Context, userID uuid.UUID) (*c
 		return nil, err
 	}
 	return roomModelToDomain(&m), nil
+}
+
+func (r *roomRepo) ListActiveByUserID(ctx context.Context, userID uuid.UUID) ([]*chat.Room, error) {
+	var models []model.Room
+	if err := r.db.WithContext(ctx).
+		Joins("JOIN active_room_members arm ON arm.room_id = rooms.id").
+		Where("arm.user_id = ? AND rooms.ended_at IS NULL", userID).
+		Order("rooms.created_at ASC").
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+	rooms := make([]*chat.Room, len(models))
+	for i := range models {
+		rooms[i] = roomModelToDomain(&models[i])
+	}
+	return rooms, nil
+}
+
+func (r *roomRepo) CountActiveByUserID(ctx context.Context, userID uuid.UUID) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.ActiveRoomMember{}).
+		Where("user_id = ?", userID).Count(&count).Error
+	return count, err
 }
 
 func (r *roomRepo) ListActive(ctx context.Context) ([]*chat.Room, error) {

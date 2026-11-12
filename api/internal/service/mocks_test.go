@@ -208,6 +208,19 @@ func (m *mockRoomRepo) FindActiveByUserID(ctx context.Context, userID uuid.UUID)
 	return args.Get(0).(*chat.Room), args.Error(1)
 }
 
+func (m *mockRoomRepo) ListActiveByUserID(ctx context.Context, userID uuid.UUID) ([]*chat.Room, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*chat.Room), args.Error(1)
+}
+
+func (m *mockRoomRepo) CountActiveByUserID(ctx context.Context, userID uuid.UUID) (int64, error) {
+	args := m.Called(ctx, userID)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *mockRoomRepo) ListActive(ctx context.Context) ([]*chat.Room, error) {
 	args := m.Called(ctx)
 	if args.Get(0) == nil {

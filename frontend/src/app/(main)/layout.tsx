@@ -24,7 +24,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
 				<AppShellSidebar />
 				<SidebarInset className="h-dvh flex flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
 					<AppHeader trigger={<SidebarTrigger className="-ml-1 size-8" />} />
-					<main className="flex-1 mt-16 overflow-hidden">{children}</main>
+					<main className="flex-1 mt-12 overflow-hidden">{children}</main>
 				</SidebarInset>
 			</AdminProvider>
 		</SidebarProvider>

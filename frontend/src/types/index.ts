@@ -62,6 +62,8 @@ export interface UserStateResponse {
 	user: UserDTO;
 	profile?: ProfileDTO;
 	room?: RoomDTO;
+	rooms: RoomDTO[];
+	max_active_rooms: number;
 	messages?: MessageDTO[];
 	messages_next_cursor?: string;
 	messages_has_more: boolean;

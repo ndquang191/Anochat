@@ -157,7 +157,7 @@ const Page = () => {
 		);
 	}
 
-	if (!inQueue && (room || showEndedChat)) {
+	if (room || showEndedChat) {
 		return (
 			<div className="h-full w-full">
 				<LocalizedChatBox />

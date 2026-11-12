@@ -82,9 +82,10 @@ func TestHandleSendMessageRejectsInvalidClientMessageID(t *testing.T) {
 func TestSendMessageAckReturnsPersistedClientMessageID(t *testing.T) {
 	client := &Client{Send: make(chan []byte, 1)}
 	messageID := uuid.New()
+	roomID := uuid.New()
 	createdAt := time.Unix(123, 0)
 
-	client.sendMessageAck(messageID, createdAt)
+	client.sendMessageAck(messageID, roomID, createdAt)
 
 	var message WSMessage
 	if err := json.Unmarshal(<-client.Send, &message); err != nil {
@@ -96,8 +97,30 @@ func TestSendMessageAckReturnsPersistedClientMessageID(t *testing.T) {
 	if got := message.Payload["id"]; got != messageID.String() {
 		t.Errorf("message id = %v, want %s", got, messageID)
 	}
+	if got := message.Payload["room_id"]; got != roomID.String() {
+		t.Errorf("room id = %v, want %s", got, roomID)
+	}
 	if got := message.Payload["created_at"]; got != float64(createdAt.Unix()) {
 		t.Errorf("created_at = %v, want %d", got, createdAt.Unix())
+	}
+}
+
+func TestClientTracksMultipleRooms(t *testing.T) {
+	client := &Client{RoomIDs: make(map[uuid.UUID]struct{})}
+	room1, room2 := uuid.New(), uuid.New()
+
+	if !client.addRoom(room1) || !client.addRoom(room2) {
+		t.Fatal("client should accept two different rooms")
+	}
+	if client.addRoom(room1) {
+		t.Fatal("adding the same room twice should be idempotent")
+	}
+	if !client.hasRoom(room1) || !client.hasRoom(room2) {
+		t.Fatal("client did not retain both room memberships")
+	}
+	client.removeRoom(room1)
+	if client.hasRoom(room1) || !client.hasRoom(room2) {
+		t.Fatal("removing one room should preserve the other")
 	}
 }
 

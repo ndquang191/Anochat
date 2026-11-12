@@ -56,13 +56,11 @@ type Room struct {
 	Messages []Message `gorm:"foreignKey:RoomID;constraint:OnDelete:CASCADE" json:"messages,omitempty"`
 }
 
-// ActiveRoomMember is the database-enforced ownership record for a user who is
-// currently in a room. UserID is the primary key, so PostgreSQL rejects any
-// attempt to place the same user in two active rooms, regardless of which room
-// user column they occupy.
+// ActiveRoomMember is the database-enforced membership record for a user in an
+// active room. The database trigger limits each user to three active rooms.
 type ActiveRoomMember struct {
 	UserID    uuid.UUID `gorm:"type:uuid;primaryKey" json:"user_id"`
-	RoomID    uuid.UUID `gorm:"type:uuid;not null;index" json:"room_id"`
+	RoomID    uuid.UUID `gorm:"type:uuid;primaryKey;index" json:"room_id"`
 	CreatedAt time.Time `gorm:"type:timestamptz;not null;autoCreateTime" json:"created_at"`
 
 	Room *Room `gorm:"foreignKey:RoomID;constraint:OnDelete:CASCADE" json:"room,omitempty"`

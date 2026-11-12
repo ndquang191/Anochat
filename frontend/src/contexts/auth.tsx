@@ -15,6 +15,12 @@ interface AuthContextType {
 	isAuthenticated: boolean;
 	user: UserDTO | null;
 	room: RoomDTO | null;
+	rooms: RoomDTO[];
+	maxActiveRooms: number;
+	selectRoom: (roomId: string) => void;
+	unreadByRoom: Record<string, number>;
+	markRoomUnread: (roomId: string) => void;
+	clearRoomUnread: (roomId: string) => void;
 	messages: MessageDTO[];
 	messagesNextCursor: string | null;
 	messagesHasMore: boolean;
@@ -37,6 +43,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const [mounted, setMounted] = useState(false);
 	const [sessionPresent, setSessionPresent] = useState(false);
 	const [isLoggingOut, setIsLoggingOut] = useState(false);
+	const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+	const [unreadByRoom, setUnreadByRoom] = useState<Record<string, number>>({});
 	const { t } = useLanguage();
 	const { unsubscribe, refreshPushConfig } = usePWA();
 	useEffect(() => {
@@ -99,11 +107,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 	const isAuthenticated = sessionPresent && !isError && !!data?.user;
 	const user = data?.user ?? null;
+	const rooms = data?.rooms ?? (data?.room ? [data.room] : []);
+	const room = rooms.find((item) => item.id === activeRoomId) ?? rooms[0] ?? null;
+	const selectRoom = useCallback((roomId: string) => {
+		setActiveRoomId(roomId);
+		setUnreadByRoom((current) => {
+			if (!current[roomId]) return current;
+			const next = { ...current };
+			delete next[roomId];
+			return next;
+		});
+	}, []);
+	const markRoomUnread = useCallback((roomId: string) => {
+		setUnreadByRoom((current) => ({
+			...current,
+			[roomId]: (current[roomId] ?? 0) + 1,
+		}));
+	}, []);
+	const clearRoomUnread = useCallback((roomId: string) => {
+		setUnreadByRoom((current) => {
+			if (!current[roomId]) return current;
+			const next = { ...current };
+			delete next[roomId];
+			return next;
+		});
+	}, []);
+
+	useEffect(() => {
+		if (room && room.id !== activeRoomId) selectRoom(room.id);
+		if (!room && activeRoomId) setActiveRoomId(null);
+	}, [room, activeRoomId, selectRoom]);
 
 	const value: AuthContextType = {
 		isAuthenticated,
 		user,
-		room: data?.room ?? null,
+		room,
+		rooms,
+		maxActiveRooms: data?.max_active_rooms ?? 3,
+		selectRoom,
+		unreadByRoom,
+		markRoomUnread,
+		clearRoomUnread,
 		messages: data?.messages ?? [],
 		messagesNextCursor: data?.messages_next_cursor ?? null,
 		messagesHasMore: data?.messages_has_more ?? false,

@@ -40,7 +40,9 @@ Include `credentials: "include"` on every frontend fetch.
 
 ### GET `/user/state`
 
-Returns the current user's full state, including any active room and messages.
+Returns the current user's state and up to three active rooms. The legacy
+`room` and `messages` fields describe the first room; clients should use
+`rooms` and fetch history for the selected room.
 
 **Response:**
 ```json
@@ -58,6 +60,8 @@ Returns the current user's full state, including any active room and messages.
     }
   },
   "room": null,
+  "rooms": [],
+  "max_active_rooms": 3,
   "messages": null,
   "is_new_user": false
 }
@@ -95,7 +99,7 @@ When the ID belongs to the current user, the queue entry gets a five-minute
 background lease. Without it, disconnecting the WebSocket removes the user from
 the queue as before.
 
-**Errors:** `409` if already in queue or already in an active room.
+**Errors:** rejected when already in queue or when three rooms are active.
 
 ---
 
@@ -149,9 +153,9 @@ already waiting.
 
 ---
 
-### POST `/room/leave`
+### POST `/rooms/:id/leave`
 
-End the current active room and clean up messages.
+End the identified active room and clean up its messages.
 
 ---
 
@@ -174,9 +178,9 @@ Upgrade to WebSocket. Requires valid `access_token` cookie.
 
 | Type | Payload | Description |
 |------|---------|-------------|
-| `send_message` | `{ "id": "uuid", "content": "..." }` | Send a message using a client-generated id |
+| `send_message` | `{ "id": "uuid", "room_id": "uuid", "content": "..." }` | Send a message using a client-generated id |
 | `join_room` | `{ "room_id": "uuid" }` | Re-join room after reconnect |
-| `leave_room` | `{ "room_id": "uuid" }` | Leave current room |
+| `leave_room` | `{ "room_id": "uuid" }` | Leave the identified room |
 | `typing` | `{ "is_typing": true\|false }` | Typing indicator |
 
 #### Server → Client events
@@ -188,7 +192,7 @@ Upgrade to WebSocket. Requires valid `access_token` cookie.
 | `match_found` | `{ room_id, timestamp, message }` | Matched with a partner |
 | `room_joined` | `{ room_id, timestamp }` | `join_room` confirmed |
 | `receive_message` | `{ id, room_id, sender_id, content, created_at }` | Incoming message |
-| `message_ack` | `{ id, created_at }` | Sender confirmation after the message is persisted |
+| `message_ack` | `{ id, room_id, created_at }` | Sender confirmation after the message is persisted |
 | `message_failed` | `{ id, code, message }` | Sender-specific delivery failure |
 | `partner_typing` | `{ is_typing, user_id }` | Partner typing status |
 | `partner_left` | `{ room_id, timestamp, message }` | Partner left |

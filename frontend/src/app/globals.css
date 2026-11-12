@@ -35,6 +35,8 @@
 	--color-secondary: var(--secondary);
 	--color-primary-foreground: var(--primary-foreground);
 	--color-primary: var(--primary);
+	--color-unread: var(--unread);
+	--color-unread-foreground: var(--unread-foreground);
 	--color-popover-foreground: var(--popover-foreground);
 	--color-popover: var(--popover);
 	--color-card-foreground: var(--card-foreground);
@@ -58,6 +60,8 @@
 	/* Primary - #516b91 (slate blue) */
 	--primary: oklch(0.45 0.08 230);
 	--primary-foreground: oklch(0.98 0.01 220);
+	--unread: oklch(0.78 0.08 220);
+	--unread-foreground: oklch(0.25 0.05 230);
 
 	/* Secondary - #93b7e3 (soft blue) */
 	--secondary: oklch(0.75 0.08 220);
@@ -106,6 +110,8 @@
 	/* Primary - light gray for buttons */
 	--primary: oklch(0.82 0 0);
 	--primary-foreground: oklch(0.15 0 0);
+	--unread: oklch(0.42 0.04 250);
+	--unread-foreground: oklch(0.93 0 0);
 
 	/* Secondary */
 	--secondary: oklch(0.3 0 0);
@@ -154,6 +160,8 @@
 	/* Primary - hot pink */
 	--primary: oklch(0.55 0.18 340);
 	--primary-foreground: oklch(0.97 0.01 350);
+	--unread: oklch(0.78 0.1 340);
+	--unread-foreground: oklch(0.25 0.05 340);
 
 	/* Secondary - soft rose */
 	--secondary: oklch(0.82 0.08 330);
@@ -247,6 +255,28 @@
   0% { background-position: 0% 0%; }
   50% { background-position: 100% 100%; }
   100% { background-position: 0% 0%; }
+}
+
+@keyframes queue-border-pulse {
+	0%, 100% {
+		border-color: var(--border);
+		box-shadow: 0 0 0 0 transparent;
+	}
+	50% {
+		border-color: var(--primary);
+		box-shadow: 0 0 0 1px var(--primary);
+	}
+}
+
+.queue-border-spinner {
+	animation: queue-border-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.queue-border-spinner {
+		animation: none;
+		border-color: var(--primary);
+	}
 }
 
 

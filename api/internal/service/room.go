@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,10 +14,12 @@ import (
 )
 
 type RoomService struct {
-	roomRepo    repository.RoomRepository
-	messageRepo repository.MessageRepository
+	roomRepo         repository.RoomRepository
+	messageRepo      repository.MessageRepository
 	recordRecentPair func(context.Context, uuid.UUID, uuid.UUID)
 }
+
+const MaxActiveRoomsPerUser int64 = 3
 
 func (s *RoomService) SetRecentPairRecorder(recorder func(context.Context, uuid.UUID, uuid.UUID)) {
 	s.recordRecentPair = recorder
@@ -35,6 +38,9 @@ func (s *RoomService) CreateRoom(ctx context.Context, user1ID, user2ID uuid.UUID
 		User2ID: user2ID,
 	}
 	if err := s.roomRepo.Create(ctx, room); err != nil {
+		if strings.Contains(err.Error(), "active room limit reached") {
+			return nil, apperr.ErrActiveRoomLimit
+		}
 		return nil, err
 	}
 	return room, nil
@@ -53,6 +59,10 @@ func (s *RoomService) GetActiveRoomByUserID(ctx context.Context, userID uuid.UUI
 		return nil, err
 	}
 	return room, nil
+}
+
+func (s *RoomService) ListActiveRoomsByUserID(ctx context.Context, userID uuid.UUID) ([]*chat.Room, error) {
+	return s.roomRepo.ListActiveByUserID(ctx, userID)
 }
 
 func (s *RoomService) UpdateConnectionStatus(
@@ -89,6 +99,8 @@ func (s *RoomService) LeaveRoom(ctx context.Context, roomID, userID uuid.UUID) e
 	return nil
 }
 
+// LeaveCurrentRoom is retained for non-HTTP callers during the multi-room
+// transition. User-facing APIs must identify the room explicitly.
 func (s *RoomService) LeaveCurrentRoom(ctx context.Context, userID uuid.UUID) error {
 	room, err := s.GetActiveRoomByUserID(ctx, userID)
 	if err != nil {

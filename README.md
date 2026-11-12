@@ -10,8 +10,7 @@ moderation, and horizontal backend coordination through Redis.
 - Anonymous profiles with nickname, age, gender, and visibility controls
 - Redis-backed matchmaking with atomic reservations and stale-state
   reconciliation
-- PostgreSQL-enforced invariant preventing one user from joining two active
-  rooms
+- PostgreSQL-enforced invariant limiting each user to three active rooms
 - Distributed WebSocket delivery through Redis pub/sub
 - Optimistic messages with server acknowledgements and cursor-based history
 - Reporting, banned-word management, user suspension, review requests, and an
@@ -89,8 +88,9 @@ User B → POST /queue/join
 ```
 
 PostgreSQL also writes one `active_room_members` row per participant through a
-room trigger in the same transaction. Its primary key on `user_id` is the final
-guard against two active rooms for one user, including direct SQL writes. A
+room trigger in the same transaction. A composite membership key plus a locked
+count in that trigger is the final guard against more than three active rooms
+for one user, including concurrent matches and direct SQL writes. A
 background reconciliation pass removes stale Redis queue/reservation entries
 for users PostgreSQL already marks as active.
 
@@ -117,7 +117,7 @@ local client joins and unsubscribed when the last local client leaves.
 
 ```
 Users ── Profiles (1:1)
-  ├── Rooms ── ActiveRoomMembers (unique user_id)
+  ├── Rooms ── ActiveRoomMembers (unique user_id + room_id, max 3/user)
   │     └── Messages
   ├── Reports ── ReportMessages
   └── BannedWords (admin-managed)

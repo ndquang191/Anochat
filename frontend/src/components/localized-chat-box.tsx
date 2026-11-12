@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Loader2, RefreshCw, WifiOff } from "lucide-react";
 import { useWebSocketChat } from "@/hooks/use-websocket-chat";
 import { type ChatMessage } from "@/lib/websocket";
@@ -22,14 +22,18 @@ export default function LocalizedChatBox() {
 		messages: initialMessages,
 		messagesNextCursor,
 		messagesHasMore,
+		room,
+		selectRoom: selectActiveRoom,
+		unreadByRoom,
+		markRoomUnread,
+		clearRoomUnread,
 	} = useAuth();
 	const { t } = useLanguage();
 	const [connectionTimedOut, setConnectionTimedOut] = useState(false);
 	const [isRetrying, setIsRetrying] = useState(false);
 	const [showReconnected, setShowReconnected] = useState(false);
-	const [unreadCount, setUnreadCount] = useState(0);
 	const wasDisconnectedRef = useRef(false);
-	const clearUnread = useCallback(() => setUnreadCount(0), []);
+	const totalUnread = Object.values(unreadByRoom).reduce((total, count) => total + count, 0);
 
 	const {
 		messages,
@@ -49,7 +53,8 @@ export default function LocalizedChatBox() {
 			initialMessages: initialMessages as ChatMessage[],
 			initialNextCursor: messagesNextCursor,
 			initialHasMore: messagesHasMore,
-			onMatchFound: () => {
+			onMatchFound: (matchedRoomId) => {
+				selectActiveRoom(matchedRoomId);
 				toast.success(t("matchFound"), {
 					description: t("matchFoundDescription"),
 				});
@@ -60,9 +65,9 @@ export default function LocalizedChatBox() {
 					descriptionClassName: "!text-foreground",
 				});
 			},
-			onMessageReceived: () => {
-				if (document.hidden || !document.hasFocus()) {
-					setUnreadCount((count) => count + 1);
+			onMessageReceived: (messageRoomId) => {
+				if (messageRoomId !== room?.id || document.hidden || !document.hasFocus()) {
+					markRoomUnread(messageRoomId);
 				}
 			},
 		});
@@ -70,7 +75,7 @@ export default function LocalizedChatBox() {
 	useEffect(() => {
 		const markAsSeen = () => {
 			if (!document.hidden && document.hasFocus()) {
-				clearUnread();
+				if (room?.id) clearRoomUnread(room.id);
 			}
 		};
 
@@ -80,18 +85,18 @@ export default function LocalizedChatBox() {
 			document.removeEventListener("visibilitychange", markAsSeen);
 			window.removeEventListener("focus", markAsSeen);
 		};
-	}, [clearUnread]);
+	}, [room?.id, clearRoomUnread]);
 
 	useEffect(() => {
-		document.title = unreadCount > 0 ? `(${unreadCount}) ${SITE_NAME}` : SITE_NAME;
+		document.title = totalUnread > 0 ? `(${totalUnread}) ${SITE_NAME}` : SITE_NAME;
 		return () => {
 			document.title = SITE_NAME;
 		};
-	}, [unreadCount]);
+	}, [totalUnread]);
 
 	useEffect(() => {
-		clearUnread();
-	}, [roomId, clearUnread]);
+		if (roomId) clearRoomUnread(roomId);
+	}, [roomId, clearRoomUnread]);
 
 	useEffect(() => {
 		if (isConnected) {
@@ -165,7 +170,7 @@ export default function LocalizedChatBox() {
 	}
 
 	return (
-		<div className="relative flex h-full flex-col bg-card text-card-foreground shadow-sm">
+		<div className="relative flex h-full flex-col bg-card text-card-foreground">
 			{!isConnected && (
 				<div className="flex items-center justify-between gap-3 border-b border-amber-500/25 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-900 dark:text-amber-200" role="status" aria-live="polite">
 					<div className="flex min-w-0 items-center gap-2">

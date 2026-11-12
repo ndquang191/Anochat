@@ -125,8 +125,10 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 		}
 	}
 
-	room, err := h.roomRepo.FindActiveByUserID(c.Request.Context(), userID)
-	if err == nil && room != nil {
+	rooms, err := h.roomRepo.ListActiveByUserID(c.Request.Context(), userID)
+	resp.Rooms = make([]dto.RoomDTO, 0, len(rooms))
+	resp.MaxActiveRooms = service.MaxActiveRoomsPerUser
+	for _, room := range rooms {
 		roomDTO := &dto.RoomDTO{
 			ID:      room.ID.String(),
 			User1ID: room.User1ID.String(),
@@ -160,18 +162,19 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 			roomDTO.Partner = partnerDTO
 		}
 
-		resp.Room = roomDTO
-
-		page, err := h.messageService.GetMessagePage(
-			c.Request.Context(),
-			room.ID,
-			nil,
-			service.DefaultMessagePageSize,
-		)
-		if err == nil {
-			resp.Messages = messageDTOs(page.Messages)
-			resp.MessagesHasMore = page.HasMore
-			resp.MessagesNextCursor = encodeMessageCursor(page.NextCursor)
+		resp.Rooms = append(resp.Rooms, *roomDTO)
+		// Keep the legacy single-room fields populated with the first room while
+		// clients migrate to rooms[].
+		if resp.Room == nil {
+			resp.Room = roomDTO
+			page, pageErr := h.messageService.GetMessagePage(
+				c.Request.Context(), room.ID, nil, service.DefaultMessagePageSize,
+			)
+			if pageErr == nil {
+				resp.Messages = messageDTOs(page.Messages)
+				resp.MessagesHasMore = page.HasMore
+				resp.MessagesNextCursor = encodeMessageCursor(page.NextCursor)
+			}
 		}
 	}
 	dto.OK(c, resp)
@@ -269,6 +272,7 @@ func messageDTOs(messages []*chat.Message) []dto.MessageDTO {
 	for i, msg := range messages {
 		result[i] = dto.MessageDTO{
 			ID:        msg.ID.String(),
+			RoomID:    msg.RoomID.String(),
 			SenderID:  msg.SenderID.String(),
 			Content:   msg.Content,
 			CreatedAt: msg.CreatedAt.Unix(),
@@ -314,14 +318,19 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	})
 }
 
-func (h *UserHandler) LeaveCurrentRoom(c *gin.Context) {
+func (h *UserHandler) LeaveRoom(c *gin.Context) {
 	userID := getUserID(c)
 	if userID == uuid.Nil {
 		signOutAndRedirect(c, h.config)
 		return
 	}
 
-	err := h.roomService.LeaveCurrentRoom(c.Request.Context(), userID)
+	roomID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		dto.FailErr(c, apperr.ErrInvalidID)
+		return
+	}
+	err = h.roomService.LeaveRoom(c.Request.Context(), roomID, userID)
 	if err != nil {
 		dto.FailErr(c, err)
 		return
