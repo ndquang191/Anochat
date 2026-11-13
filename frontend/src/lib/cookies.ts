@@ -5,6 +5,10 @@ export const setCookie = (name: string, value: string, days: number = 7) => {
 	document.cookie = cookieString;
 };
 
+export const setCookieMaxAge = (name: string, value: string, maxAgeSeconds: number) => {
+	document.cookie = `${name}=${value};max-age=${Math.max(0, Math.floor(maxAgeSeconds))};path=/;SameSite=Lax`;
+};
+
 export const getCookie = (name: string): string | null => {
 	if (typeof document === "undefined") return null;
 	const value = `; ${document.cookie}`;

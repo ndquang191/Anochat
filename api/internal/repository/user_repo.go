@@ -15,6 +15,8 @@ type UserRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*identity.User, error)
 	FindByIDWithProfile(ctx context.Context, id uuid.UUID) (*identity.User, error)
 	FindByEmail(ctx context.Context, email string) (*identity.User, error)
+	FindByOAuthIdentity(ctx context.Context, provider, subject string) (*identity.User, error)
+	LinkOAuthIdentity(ctx context.Context, userID uuid.UUID, provider, subject string) error
 	Create(ctx context.Context, user *identity.User) error
 	Update(ctx context.Context, user *identity.User) error
 	Count(ctx context.Context) (int64, error)
@@ -59,6 +61,25 @@ func (r *userRepo) FindByEmail(ctx context.Context, email string) (*identity.Use
 		return nil, err
 	}
 	return userModelToDomain(&m), nil
+}
+
+func (r *userRepo) FindByOAuthIdentity(ctx context.Context, provider, subject string) (*identity.User, error) {
+	var m model.User
+	if err := r.db.WithContext(ctx).
+		Where("oauth_provider = ? AND oauth_subject = ? AND is_deleted = false", provider, subject).
+		First(&m).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return userModelToDomain(&m), nil
+}
+
+func (r *userRepo) LinkOAuthIdentity(ctx context.Context, userID uuid.UUID, provider, subject string) error {
+	return r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ? AND is_deleted = false", userID).
+		Updates(map[string]any{"oauth_provider": provider, "oauth_subject": subject}).Error
 }
 
 func (r *userRepo) Create(ctx context.Context, user *identity.User) error {
@@ -154,6 +175,8 @@ func userModelToDomain(m *model.User) *identity.User {
 		Email:              m.Email,
 		Name:               m.Name,
 		AvatarURL:          m.AvatarURL,
+		OAuthProvider:      m.OAuthProvider,
+		OAuthSubject:       m.OAuthSubject,
 		IsActive:           m.IsActive,
 		IsAdmin:            m.IsAdmin,
 		IsDeleted:          m.IsDeleted,
@@ -176,6 +199,8 @@ func userDomainToModel(u *identity.User) *model.User {
 		Email:              u.Email,
 		Name:               u.Name,
 		AvatarURL:          u.AvatarURL,
+		OAuthProvider:      u.OAuthProvider,
+		OAuthSubject:       u.OAuthSubject,
 		IsActive:           u.IsActive,
 		IsAdmin:            u.IsAdmin,
 		IsDeleted:          u.IsDeleted,

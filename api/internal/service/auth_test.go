@@ -1,19 +1,24 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/ndquang191/Anochat/api/internal/domain/identity"
+	"github.com/ndquang191/Anochat/api/pkg/apperr"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 func newTestAuthService(secret string) *AuthService {
 	return &AuthService{
-		jwtSecret:       []byte(secret),
+		jwtSecret:         []byte(secret),
 		accessTokenExpiry: 15 * time.Minute,
 	}
 }
@@ -79,4 +84,37 @@ func TestValidateJWT_Malformed(t *testing.T) {
 
 	_, err = svc.ValidateJWT("")
 	assert.Error(t, err)
+}
+
+func TestRefreshTokenRotatesAndConcurrentRetryConverges(t *testing.T) {
+	redisServer := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
+	userService, userRepo, _ := newUserServiceWithMocks()
+	userID := uuid.New()
+	email := "person@example.com"
+	userRepo.On("FindByID", mock.Anything, userID).
+		Return(&identity.User{ID: userID, Email: &email}, nil)
+
+	svc := &AuthService{
+		jwtSecret:          []byte("test-secret-key-at-least-32-bytes!"),
+		userService:        userService,
+		rdb:                redisClient,
+		accessTokenExpiry:  15 * time.Minute,
+		refreshTokenExpiry: 30 * 24 * time.Hour,
+	}
+	oldToken, err := svc.generateRefreshToken(context.Background(), userID)
+	require.NoError(t, err)
+
+	first, err := svc.RefreshAccessToken(context.Background(), oldToken)
+	require.NoError(t, err)
+	require.NotEqual(t, oldToken, first.RefreshToken)
+	require.NotEmpty(t, first.AccessToken)
+
+	second, err := svc.RefreshAccessToken(context.Background(), oldToken)
+	require.NoError(t, err)
+	assert.Equal(t, first.RefreshToken, second.RefreshToken)
+
+	svc.RevokeRefreshToken(context.Background(), oldToken)
+	_, err = svc.RefreshAccessToken(context.Background(), first.RefreshToken)
+	assert.ErrorIs(t, err, apperr.ErrInvalidRefreshToken)
 }

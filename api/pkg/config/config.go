@@ -237,6 +237,14 @@ func (c *Config) validate() error {
 	if c.OAuth.JWTSecret == "" {
 		return fmt.Errorf("OAUTH_JWT_SECRET is required")
 	}
+	if c.IsProduction() {
+		if len(c.OAuth.JWTSecret) < 32 {
+			return fmt.Errorf("OAUTH_JWT_SECRET must be at least 32 bytes in production")
+		}
+		if c.OAuth.GoogleClientID == "" || c.OAuth.GoogleClientSecret == "" || c.OAuth.RedirectURL == "" {
+			return fmt.Errorf("Google OAuth client ID, client secret, and redirect URL are required in production")
+		}
+	}
 	if c.Chat.MessageRateLimit <= 0 {
 		return fmt.Errorf("CHAT_MESSAGE_RATE_LIMIT must be greater than zero")
 	}

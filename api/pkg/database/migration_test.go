@@ -128,3 +128,26 @@ func TestMultipleActiveRoomsMigrationEnforcesLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestOAuthIdentityMigrationAddsUniqueProviderSubject(t *testing.T) {
+	items, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var source string
+	for _, item := range items {
+		if item.Version == 8 {
+			source = item.SQL
+		}
+	}
+	for _, required := range []string{
+		"oauth_provider TEXT",
+		"oauth_subject TEXT",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oauth_identity",
+		"users_oauth_identity_complete",
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("OAuth identity migration is missing %q", required)
+		}
+	}
+}

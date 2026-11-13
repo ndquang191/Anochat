@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useCallback, useState, useEffect, ReactNode } from "react";
 import { UserDTO, RoomDTO, MessageDTO, MatchSettingsDTO } from "@/types";
-import { setCookie, getCookie, deleteCookie } from "@/lib/cookies";
+import { setCookieMaxAge, getCookie, deleteCookie } from "@/lib/cookies";
 import { authAPI, userAPI } from "@/lib/api";
 import { resetWebSocketClient } from "@/lib/websocket";
 import { useUserState, USER_STATE_KEY } from "@/hooks/queries/use-user-state";
@@ -63,12 +63,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const login = useCallback(async () => {
 		// This is only a frontend routing hint. Authentication still relies on
 		// the backend's HttpOnly access and refresh token cookies.
-		setCookie("has_session", "1", 30);
 		try {
 			const response = await userAPI.getState();
 			if (!response.data?.user) {
 				throw new Error("No authenticated user state");
 			}
+			setCookieMaxAge("has_session", "1", response.data.session_max_age_seconds);
 			queryClient.setQueryData(USER_STATE_KEY, response.data);
 			setSessionPresent(true);
 			await refreshPushConfig();
@@ -85,6 +85,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 		try {
 			await unsubscribe();
+		} catch {
+		}
+		try {
 			await authAPI.logout();
 		} catch {
 		}

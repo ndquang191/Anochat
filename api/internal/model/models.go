@@ -12,6 +12,8 @@ type User struct {
 	Email              *string    `gorm:"type:text" json:"email"`
 	Name               *string    `gorm:"type:text" json:"name"`
 	AvatarURL          *string    `gorm:"type:text;column:avatar_url" json:"avatar_url"`
+	OAuthProvider      *string    `gorm:"type:text;column:oauth_provider" json:"-"`
+	OAuthSubject       *string    `gorm:"type:text;column:oauth_subject" json:"-"`
 	IsActive           bool       `gorm:"default:false" json:"is_active"`
 	IsAdmin            bool       `gorm:"default:false;not null" json:"is_admin"`
 	IsDeleted          bool       `gorm:"default:false" json:"is_deleted"`

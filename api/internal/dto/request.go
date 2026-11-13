@@ -59,6 +59,7 @@ type UserStateResponse struct {
 	Room               *RoomDTO          `json:"room"`
 	Rooms              []RoomDTO         `json:"rooms"`
 	MaxActiveRooms     int64             `json:"max_active_rooms"`
+	SessionMaxAge      int               `json:"session_max_age_seconds"`
 	Messages           []MessageDTO      `json:"messages"`
 	MessagesNextCursor *string           `json:"messages_next_cursor,omitempty"`
 	MessagesHasMore    bool              `json:"messages_has_more"`

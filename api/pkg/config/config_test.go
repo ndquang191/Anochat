@@ -22,7 +22,10 @@ func setRequiredEnv(t *testing.T) {
 	}
 	t.Setenv("DATABASE_USER", "postgres")
 	t.Setenv("DATABASE_PASSWORD", "postgres")
-	t.Setenv("OAUTH_JWT_SECRET", "test-secret")
+	t.Setenv("OAUTH_JWT_SECRET", "test-secret-key-at-least-32-bytes")
+	t.Setenv("OAUTH_GOOGLE_CLIENT_ID", "google-client-id")
+	t.Setenv("OAUTH_GOOGLE_CLIENT_SECRET", "google-client-secret")
+	t.Setenv("OAUTH_REDIRECT_URL", "https://api.example.com/auth/callback")
 }
 
 func TestLoadRequiresVAPIDKeysWhenWebPushEnabled(t *testing.T) {

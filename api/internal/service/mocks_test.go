@@ -39,6 +39,19 @@ func (m *mockUserRepo) FindByEmail(ctx context.Context, email string) (*identity
 	return args.Get(0).(*identity.User), args.Error(1)
 }
 
+func (m *mockUserRepo) FindByOAuthIdentity(ctx context.Context, provider, subject string) (*identity.User, error) {
+	args := m.Called(ctx, provider, subject)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*identity.User), args.Error(1)
+}
+
+func (m *mockUserRepo) LinkOAuthIdentity(ctx context.Context, userID uuid.UUID, provider, subject string) error {
+	args := m.Called(ctx, userID, provider, subject)
+	return args.Error(0)
+}
+
 func (m *mockUserRepo) Create(ctx context.Context, user *identity.User) error {
 	args := m.Called(ctx, user)
 	return args.Error(0)

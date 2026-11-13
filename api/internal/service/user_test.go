@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -106,6 +107,43 @@ func TestGetOrCreateUser_New(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, email, *user.Email)
 	userRepo.AssertCalled(t, "Create", mock.Anything, mock.Anything)
+}
+
+func TestGetOrCreateOAuthUserLinksExistingEmailAccount(t *testing.T) {
+	svc, userRepo, _ := newUserServiceWithMocks()
+	email := "person@example.com"
+	existing := &identity.User{ID: uuid.New(), Email: &email}
+
+	userRepo.On("FindByOAuthIdentity", mock.Anything, "google", "google-123").
+		Return(nil, repository.ErrNotFound)
+	userRepo.On("FindByEmail", mock.Anything, email).Return(existing, nil)
+	userRepo.On("LinkOAuthIdentity", mock.Anything, existing.ID, "google", "google-123").Return(nil)
+
+	user, err := svc.GetOrCreateOAuthUser(
+		context.Background(), "google", "google-123", " Person@Example.com ", "Person", "avatar",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, existing.ID, user.ID)
+	require.NotNil(t, user.OAuthSubject)
+	assert.Equal(t, "google-123", *user.OAuthSubject)
+	userRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+}
+
+func TestGetOrCreateOAuthUserRecoversFromConcurrentCreate(t *testing.T) {
+	svc, userRepo, _ := newUserServiceWithMocks()
+	winner := &identity.User{ID: uuid.New()}
+
+	userRepo.On("FindByOAuthIdentity", mock.Anything, "google", "google-456").
+		Return(nil, repository.ErrNotFound).Once()
+	userRepo.On("FindByEmail", mock.Anything, "new@example.com").Return(nil, repository.ErrNotFound)
+	userRepo.On("Create", mock.Anything, mock.AnythingOfType("*identity.User")).Return(errors.New("unique violation"))
+	userRepo.On("FindByOAuthIdentity", mock.Anything, "google", "google-456").Return(winner, nil).Once()
+
+	user, err := svc.GetOrCreateOAuthUser(
+		context.Background(), "google", "google-456", "new@example.com", "New", "avatar",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, winner.ID, user.ID)
 }
 
 func TestGetProfile_Existing(t *testing.T) {

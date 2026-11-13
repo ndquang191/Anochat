@@ -79,6 +79,7 @@ func (h *UserHandler) GetUserState(c *gin.Context) {
 		BanCount:           c.GetInt("ban_count"),
 		ReviewRequestCount: c.GetInt("review_request_count"),
 		ReviewRequested:    c.GetBool("review_requested"),
+		SessionMaxAge:      int(h.config.OAuth.RefreshTokenExpiry.Seconds()),
 	}
 	currentUser, err := h.userService.GetUserByID(c.Request.Context(), userID)
 	if err != nil {

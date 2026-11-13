@@ -1,6 +1,7 @@
 import { toast } from "sonner";
 import type { AdminMatchSettingsDTO, AdminOverviewDTO, ApiResponse, UserStateResponse, ProfileDTO, BannedWordDTO, ReportGroupPageDTO, BannedUserPageDTO, MessagePageDTO, MatchMode, MatchSettingsDTO } from "@/types";
 import { translateStored } from "@/lib/i18n";
+import { setCookieMaxAge } from "@/lib/cookies";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 const API_HEALTH_CHECK_TIMEOUT_MS = 8_000;
@@ -18,7 +19,15 @@ function doRefresh(): Promise<boolean> {
 			method: "POST",
 			credentials: "include",
 		})
-			.then((r) => r.ok)
+			.then(async (response) => {
+				if (!response.ok) return false;
+				const payload = await response.json().catch(() => null);
+				const maxAge = payload?.data?.session_max_age_seconds;
+				if (typeof maxAge === "number") {
+					setCookieMaxAge("has_session", "1", maxAge);
+				}
+				return true;
+			})
 			.catch(() => false)
 			.finally(() => {
 				refreshPromise = null;

@@ -12,6 +12,8 @@ type User struct {
 	Email              *string
 	Name               *string
 	AvatarURL          *string
+	OAuthProvider      *string
+	OAuthSubject       *string
 	IsActive           bool
 	IsAdmin            bool
 	IsDeleted          bool

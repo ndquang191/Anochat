@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -86,9 +87,14 @@ func (s *AuthService) ProcessOAuthCallback(ctx context.Context, code string) (*O
 		return nil, err
 	}
 
-	slog.Info("Google OAuth user info received", "email", googleUser.Email, "name", googleUser.Name)
+	if !googleUser.Verified || googleUser.ID == "" || googleUser.Email == "" {
+		return nil, fmt.Errorf("Google account email is missing or unverified")
+	}
+	slog.Info("Google OAuth user info received", "google_subject", googleUser.ID)
 
-	user, err := s.userService.GetOrCreateUser(ctx, googleUser.Email, googleUser.Name, googleUser.Picture)
+	user, err := s.userService.GetOrCreateOAuthUser(
+		ctx, "google", googleUser.ID, googleUser.Email, googleUser.Name, googleUser.Picture,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +169,7 @@ func (s *AuthService) ValidateJWT(tokenString string) (*identity.JWTClaims, erro
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return s.jwtSecret, nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithIssuer("anochat-api"), jwt.WithExpirationRequired())
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse JWT: %w", err)
 	}
@@ -177,6 +183,24 @@ func (s *AuthService) ValidateJWT(tokenString string) (*identity.JWTClaims, erro
 // --- Refresh Token ---
 
 const refreshTokenPrefix = "refresh:"
+const refreshRotationGrace = 30 * time.Second
+
+var rotateRefreshTokenScript = redis.NewScript(`
+local current = redis.call("GET", KEYS[1])
+if not current then
+    return {0, ""}
+end
+if string.sub(current, 1, 8) == "rotated:" then
+    return {2, string.sub(current, 9)}
+end
+local user_id = current
+if string.sub(current, 1, 5) == "user:" then
+    user_id = string.sub(current, 6)
+end
+redis.call("SET", KEYS[2], "user:" .. user_id, "PX", ARGV[2])
+redis.call("SET", KEYS[1], "rotated:" .. ARGV[1], "PX", ARGV[3])
+return {1, user_id}
+`)
 
 func hashToken(token string) string {
 	h := sha256.Sum256([]byte(token))
@@ -184,54 +208,101 @@ func hashToken(token string) string {
 }
 
 func (s *AuthService) generateRefreshToken(ctx context.Context, userID uuid.UUID) (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate refresh token: %w", err)
+	token, err := newRefreshToken()
+	if err != nil {
+		return "", err
 	}
-	token := base64.URLEncoding.EncodeToString(b)
 
 	key := refreshTokenPrefix + hashToken(token)
-	if err := s.rdb.Set(ctx, key, userID.String(), s.refreshTokenExpiry).Err(); err != nil {
+	if err := s.rdb.Set(ctx, key, "user:"+userID.String(), s.refreshTokenExpiry).Err(); err != nil {
 		return "", fmt.Errorf("failed to store refresh token: %w", err)
 	}
 
 	return token, nil
 }
 
-// RefreshAccessToken validates a refresh token and returns a new access token.
-// Uses a sliding window: the refresh token TTL is reset on each use.
-func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshToken string) (string, error) {
-	key := refreshTokenPrefix + hashToken(refreshToken)
-	userIDStr, err := s.rdb.Get(ctx, key).Result()
+func newRefreshToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate refresh token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+type TokenRefreshResult struct {
+	AccessToken  string
+	RefreshToken string
+}
+
+// RefreshAccessToken rotates the refresh token atomically. The old token keeps
+// a short mapping to the replacement so concurrent browser tabs converge on
+// the same new token instead of invalidating one another.
+func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshToken string) (*TokenRefreshResult, error) {
+	newToken, err := newRefreshToken()
 	if err != nil {
-		return "", apperr.ErrInvalidRefreshToken
+		return nil, err
+	}
+	oldKey := refreshTokenPrefix + hashToken(refreshToken)
+	newKey := refreshTokenPrefix + hashToken(newToken)
+	result, err := rotateRefreshTokenScript.Run(
+		ctx,
+		s.rdb,
+		[]string{oldKey, newKey},
+		newToken,
+		s.refreshTokenExpiry.Milliseconds(),
+		refreshRotationGrace.Milliseconds(),
+	).Slice()
+	if err != nil || len(result) != 2 {
+		return nil, apperr.ErrInvalidRefreshToken
+	}
+	status, ok := result[0].(int64)
+	if !ok || status == 0 {
+		return nil, apperr.ErrInvalidRefreshToken
+	}
+	value, ok := result[1].(string)
+	if !ok || value == "" {
+		return nil, apperr.ErrInvalidRefreshToken
+	}
+
+	userIDStr := value
+	if status == 2 {
+		newToken = value
+		stored, getErr := s.rdb.Get(ctx, refreshTokenPrefix+hashToken(newToken)).Result()
+		if getErr != nil || !strings.HasPrefix(stored, "user:") {
+			return nil, apperr.ErrInvalidRefreshToken
+		}
+		userIDStr = strings.TrimPrefix(stored, "user:")
 	}
 
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
-		return "", apperr.ErrCorruptTokenData
+		return nil, apperr.ErrCorruptTokenData
 	}
 
 	user, err := s.userService.GetUserByID(ctx, userID)
 	if err != nil {
-		return "", apperr.ErrUserNotFound
+		return nil, apperr.ErrUserNotFound
 	}
 	if user.Email == nil {
-		return "", fmt.Errorf("user email is nil")
+		return nil, fmt.Errorf("user email is nil")
 	}
 
-	// Sliding window: reset TTL so active users never get kicked out
-	if err := s.rdb.Expire(ctx, key, s.refreshTokenExpiry).Err(); err != nil {
-		slog.Warn("Failed to extend refresh token TTL", "error", err)
+	accessToken, err := s.generateJWT(userID, *user.Email)
+	if err != nil {
+		return nil, err
 	}
-
-	return s.generateJWT(userID, *user.Email)
+	return &TokenRefreshResult{AccessToken: accessToken, RefreshToken: newToken}, nil
 }
 
 // RevokeRefreshToken removes a refresh token from Redis (used on logout).
 func (s *AuthService) RevokeRefreshToken(ctx context.Context, refreshToken string) {
 	key := refreshTokenPrefix + hashToken(refreshToken)
-	if err := s.rdb.Del(ctx, key).Err(); err != nil {
+	keys := []string{key}
+	if current, err := s.rdb.Get(ctx, key).Result(); err == nil && strings.HasPrefix(current, "rotated:") {
+		replacement := strings.TrimPrefix(current, "rotated:")
+		keys = append(keys, refreshTokenPrefix+hashToken(replacement))
+	}
+	if err := s.rdb.Del(ctx, keys...).Err(); err != nil {
 		slog.Warn("Failed to revoke refresh token", "error", err)
 	}
 }

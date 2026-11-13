@@ -76,6 +76,7 @@ func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*identi
 }
 
 func (s *UserService) GetOrCreateUser(ctx context.Context, email, name, avatarURL string) (*identity.User, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
 	user, err := s.GetUserByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, apperr.ErrUserNotFound) {
@@ -89,6 +90,72 @@ func (s *UserService) GetOrCreateUser(ctx context.Context, email, name, avatarUR
 		}
 		return nil, err
 	}
+	return user, nil
+}
+
+// GetOrCreateOAuthUser resolves an account by the provider's stable subject.
+// Existing email-based accounts are linked on their first login after the
+// identity migration. A unique database index makes concurrent callbacks safe.
+func (s *UserService) GetOrCreateOAuthUser(
+	ctx context.Context,
+	provider, subject, email, name, avatarURL string,
+) (*identity.User, error) {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	subject = strings.TrimSpace(subject)
+	email = strings.ToLower(strings.TrimSpace(email))
+	if provider == "" || subject == "" || email == "" {
+		return nil, errors.New("OAuth identity is incomplete")
+	}
+
+	user, err := s.userRepo.FindByOAuthIdentity(ctx, provider, subject)
+	if err == nil {
+		return user, nil
+	}
+	if !errors.Is(err, repository.ErrNotFound) {
+		return nil, err
+	}
+
+	user, err = s.userRepo.FindByEmail(ctx, email)
+	if err == nil {
+		if user.OAuthProvider != nil || user.OAuthSubject != nil {
+			if user.OAuthProvider == nil || user.OAuthSubject == nil ||
+				*user.OAuthProvider != provider || *user.OAuthSubject != subject {
+				return nil, errors.New("email is already linked to a different OAuth identity")
+			}
+			return user, nil
+		}
+		if err := s.userRepo.LinkOAuthIdentity(ctx, user.ID, provider, subject); err != nil {
+			if concurrent, findErr := s.userRepo.FindByOAuthIdentity(ctx, provider, subject); findErr == nil {
+				return concurrent, nil
+			}
+			return nil, err
+		}
+		providerCopy, subjectCopy := provider, subject
+		user.OAuthProvider = &providerCopy
+		user.OAuthSubject = &subjectCopy
+		return user, nil
+	}
+	if !errors.Is(err, repository.ErrNotFound) {
+		return nil, err
+	}
+
+	providerCopy, subjectCopy := provider, subject
+	user = &identity.User{
+		Email:         &email,
+		Name:          &name,
+		AvatarURL:     &avatarURL,
+		OAuthProvider: &providerCopy,
+		OAuthSubject:  &subjectCopy,
+		IsActive:      true,
+	}
+	if err := s.userRepo.Create(ctx, user); err != nil {
+		if concurrent, findErr := s.userRepo.FindByOAuthIdentity(ctx, provider, subject); findErr == nil {
+			return concurrent, nil
+		}
+		return nil, err
+	}
+	metrics.TotalUsers.Inc()
+	metrics.NewRegistrations.Inc()
 	return user, nil
 }
 

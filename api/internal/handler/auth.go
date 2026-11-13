@@ -127,7 +127,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	accessToken, err := h.authService.RefreshAccessToken(c.Request.Context(), refreshToken)
+	result, err := h.authService.RefreshAccessToken(c.Request.Context(), refreshToken)
 	if err != nil {
 		// Clear invalid refresh token cookie
 		h.clearRefreshTokenCookie(c)
@@ -136,9 +136,13 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	h.setAccessTokenCookie(c, accessToken)
+	h.setAccessTokenCookie(c, result.AccessToken)
+	h.setRefreshTokenCookie(c, result.RefreshToken)
 	h.setSessionCookie(c) // Reset has_session TTL alongside access token
-	dto.OK(c, gin.H{"message": "Token refreshed"})
+	dto.OK(c, gin.H{
+		"message":                 "Token refreshed",
+		"session_max_age_seconds": int(h.config.OAuth.RefreshTokenExpiry.Seconds()),
+	})
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
